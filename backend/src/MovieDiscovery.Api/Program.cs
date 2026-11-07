@@ -67,6 +67,7 @@ public class Program
             o.Password.RequiredLength = 8;
             o.Password.RequireDigit = true;
             o.Password.RequireUppercase = true;
+            o.Password.RequireNonAlphanumeric = false; // контракт: ≥8 + цифра + велика (без спецсимвола)
             o.User.RequireUniqueEmail = true;
         }).AddEntityFrameworkStores<MovieDiscoveryDbContext>();
 
