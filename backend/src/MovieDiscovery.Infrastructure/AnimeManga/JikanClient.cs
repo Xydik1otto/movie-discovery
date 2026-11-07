@@ -6,6 +6,12 @@ using MovieDiscovery.Infrastructure.Tmdb;
 
 namespace MovieDiscovery.Infrastructure.AnimeManga;
 
+/// <summary>Опції Jikan (дзеркало MAL): BaseUrl можна перевизначити env JIKAN_URL (дзеркала/проксі). Джоба dormant.</summary>
+public sealed class JikanOptions
+{
+    public string BaseUrl { get; set; } = "https://api.jikan.moe/v4";
+}
+
 /// <summary>
 /// Клієнт Jikan v4 (дзеркало MyAnimeList). Тротлінг ≥400 мс між запитами (спільний singleton),
 /// 404 → null, 429/5xx → ретраї з backoff. Каталог іде через source_cache.

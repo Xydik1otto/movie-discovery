@@ -39,9 +39,22 @@ public sealed class ShikimoriThrottle() : IntervalThrottle(TimeSpan.FromMillisec
 /// <summary>AniList: 90 req/min → інтервал ~700 мс.</summary>
 public sealed class AniListThrottle() : IntervalThrottle(TimeSpan.FromMilliseconds(700));
 
+/// <summary>Офіційний MAL API v2: квоти не документовані → ввічливий інтервал 350 мс.</summary>
+public sealed class MalOfficialThrottle() : IntervalThrottle(TimeSpan.FromMilliseconds(350));
+
 /// <summary>Осмислена помилка джерела (403 Shikimori, приватний/незнайдений профіль) → у stats/error джоби.</summary>
 public sealed class SourceAccessException(string userMessage) : Exception(userMessage)
 {
     /// <summary>Повідомлення українською для stats/error (без стек-трейсу).</summary>
+    public string UserMessage { get; } = userMessage;
+}
+
+/// <summary>
+/// Шар джерела пропущено БЕЗ помилки (наприклад, MAL official без MAL_CLIENT_ID) — синк
+/// продовжується з рештою шарів; reason у UserMessage потрапляє в warn-лог.
+/// </summary>
+public sealed class SyncSkipException(string userMessage) : Exception(userMessage)
+{
+    /// <summary>Повідомлення українською (без стек-трейсу).</summary>
     public string UserMessage { get; } = userMessage;
 }

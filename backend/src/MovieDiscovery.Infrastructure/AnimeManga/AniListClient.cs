@@ -22,6 +22,9 @@ public sealed class AniListClient(
     private const int MaxRetries = 3;
     private const int ListsTtlSeconds = 600;
 
+    /// <summary>TTL каталогу (Page/POPULARITY_DESC) — як TMDB/Jikan-каталоги: 6 годин.</summary>
+    private const int CatalogTtlSeconds = 21600;
+
     public const string UserQuery = """
         query ($name: String) {
           User(name: $name) { id }
@@ -38,7 +41,7 @@ public sealed class AniListClient(
                 score(format: POINT_10)
                 media {
                   id
-                  title { romaji english ukrainian }
+                  title { romaji english }
                   coverImage { large }
                   episodes
                   chapters
@@ -55,7 +58,10 @@ public sealed class AniListClient(
         }
         """;
 
-    /// <summary>Резерв без title.ukrainian — якщо поле ще немає в прод-схемі AniList (GraphQL-валідація відхилить).</summary>
+    /// <summary>
+    /// Резерв ідентичний первинному запиту: title.ukrainian в API НЕ існує (GraphQL-валідація
+    /// відхиляла первинний запит), тому ukrainian прибрано й з первинного — fallback лишається страховкою.
+    /// </summary>
     public const string MediaListQueryFallback = """
         query ($userId: Int, $type: MediaType) {
           MediaListCollection(userId: $userId, type: $type) {
@@ -160,6 +166,77 @@ public sealed class AniListClient(
         catch (JsonException ex)
         {
             log.LogWarning(ex, "Не вдалося розібрати відповідь AniList MediaListCollection({UserId}, {Type})", userId, type);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Каталог-запит (sync аніме/манги): Page(perPage:50, page:N), sort=POPULARITY_DESC.
+    /// title.ukrainian НЕ запитуємо — поля в API не існує (GraphQL-валідація відхиляє весь запит).
+    /// </summary>
+    public const string CatalogQuery = """
+        query ($page: Int, $perPage: Int, $type: MediaType) {
+          Page(perPage: $perPage, page: $page) {
+            media(type: $type, sort: POPULARITY_DESC) {
+              id
+              title { romaji english }
+              coverImage { large }
+              episodes
+              chapters
+              volumes
+              format
+              genres
+              studios { nodes { name } }
+              startDate { year }
+              averageScore
+              favourites
+              meanScore
+            }
+          }
+        }
+        """;
+
+    /// <summary>Сторінка каталогу AniList (50 елементів, sort=POPULARITY_DESC); TTL 6 годин у source_cache.</summary>
+    public async Task<List<AniListMedia>?> CatalogPageAsync(int page, string mediaType, CancellationToken ct = default)
+    {
+        var type = (mediaType ?? "").Trim().ToUpperInvariant();
+        if (type is not ("ANIME" or "MANGA"))
+            throw new ArgumentException("mediaType має бути ANIME | MANGA", nameof(mediaType));
+
+        var key = $"catalog:{type.ToLowerInvariant()}:p{page}";
+        var cached = await cache.GetAsync(Source, key, ct);
+        if (cached is not null)
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<AniListResponse<AniListPageData>>(cached, TmdbJson.Options)?.Data?.Page?.Media;
+            }
+            catch (JsonException ex)
+            {
+                log.LogWarning(ex, "Пошкоджений кеш AniList ({Key}) — тягну свіжі дані", key);
+            }
+        }
+
+        var variables = new Dictionary<string, object?>
+        {
+            ["page"] = page,
+            ["perPage"] = 50,
+            ["type"] = type,
+        };
+        var json = await PostAsync(CatalogQuery, variables, ct);
+        if (json is null) return null;
+
+        try
+        {
+            var resp = JsonSerializer.Deserialize<AniListResponse<AniListPageData>>(json, TmdbJson.Options);
+            if (resp?.Errors is { Count: > 0 })
+                log.LogWarning("AniList GraphQL errors: {Errors}", string.Join("; ", resp.Errors.Select(e => e.Message)));
+            await cache.SetAsync(Source, key, json, CatalogTtlSeconds, ct);
+            return resp?.Data?.Page?.Media;
+        }
+        catch (JsonException ex)
+        {
+            log.LogWarning(ex, "Не вдалося розібрати відповідь AniList Page({Page}, {Type})", page, type);
             return null;
         }
     }

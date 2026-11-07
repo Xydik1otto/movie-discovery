@@ -5,8 +5,8 @@ using System.Threading.Channels;
 
 namespace MovieDiscovery.Infrastructure.AnimeManga;
 
-/// <summary>Джоба синку аніме/манга-каталогу (kind: anime | manga).</summary>
-public sealed record AnimeSyncJob(int Pages, string Kind);
+/// <summary>Джоба синку аніме/манга-каталогу (kind: anime | manga | mal-season; year/season — для mal-season).</summary>
+public sealed record AnimeSyncJob(int Pages, string Kind, int? Year = null, string? Season = null);
 
 /// <summary>Черга синку каталогу аніме/манги (POST /api/admin/sync/anime|manga → 202 + фонова обробка).</summary>
 public sealed class AnimeSyncQueue
@@ -39,10 +39,14 @@ public sealed class AnimeSyncBackgroundService(
             try
             {
                 using var scope = scopeFactory.CreateScope();
-                var catalog = scope.ServiceProvider.GetRequiredService<AnimeCatalogService>();
-                var count = job.Kind == "manga"
-                    ? await catalog.SyncMangaAsync(job.Pages, stoppingToken)
-                    : await catalog.SyncAnimeAsync(job.Pages, stoppingToken);
+                var catalog = scope.ServiceProvider.GetRequiredService<AniListCatalogService>();
+                var count = job.Kind switch
+                {
+                    "manga" => await catalog.SyncMangaAsync(job.Pages, stoppingToken),
+                    "mal-season" => await catalog.SyncMalSeasonAsync(
+                        job.Year ?? DateTime.UtcNow.Year, job.Season ?? "winter", job.Pages, stoppingToken),
+                    _ => await catalog.SyncAnimeAsync(job.Pages, stoppingToken),
+                };
                 log.LogInformation("Синк {Kind} завершено: {Count} тайтлів", job.Kind, count);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

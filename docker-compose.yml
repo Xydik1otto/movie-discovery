@@ -29,6 +29,9 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
       ADMIN_KEY: ${ADMIN_KEY:-changeme_admin}
+      # Аніме/манга-каталог: AniList (primary) + офіційний MAL API v2; Jikan — dormant
+      MAL_CLIENT_ID: ${MAL_CLIENT_ID:-}
+      JIKAN_URL: ${JIKAN_URL:-https://api.jikan.moe/v4}
     ports:
       - "${API_PORT:-5200}:5200"
     depends_on:

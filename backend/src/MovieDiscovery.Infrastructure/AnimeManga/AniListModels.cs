@@ -60,7 +60,20 @@ public sealed class AniListMedia
     [JsonPropertyName("studios")] public AniListStudios? Studios { get; set; }
     [JsonPropertyName("startDate")] public AniListDate? StartDate { get; set; }
     [JsonPropertyName("averageScore")] public int? AverageScore { get; set; } // 0–100 → зберігаємо /10
+    [JsonPropertyName("meanScore")] public int? MeanScore { get; set; }       // 0–100 (середня оцінка користувачів) → пріоритет для каталогу
+    [JsonPropertyName("favourites")] public int? Favourites { get; set; }     // популярність каталогу (нормуємо /10000)
     [JsonPropertyName("popularity")] public int? Popularity { get; set; }
+}
+
+/// <summary>Обгортка Page(perPage, page) — каталог-запит (POPULARITY_DESC).</summary>
+public sealed class AniListPageData
+{
+    [JsonPropertyName("Page")] public AniListPage? Page { get; set; }
+}
+
+public sealed class AniListPage
+{
+    [JsonPropertyName("media")] public List<AniListMedia> Media { get; set; } = [];
 }
 
 public sealed class AniListTitle

@@ -44,6 +44,7 @@ public static class AnimeUpsertCore
         if (patch.ScoreMal is > 0) target.ScoreMal = patch.ScoreMal;
         if (patch.ScoreAnilist is > 0) target.ScoreAnilist = patch.ScoreAnilist;
         if (patch.ScoreShikimori is > 0) target.ScoreShikimori = patch.ScoreShikimori;
+        if (patch.RatingTmdb is > 0) target.RatingTmdb = patch.RatingTmdb; // MAL official: rating_tmdb = mean
         if (patch.Popularity > target.Popularity) target.Popularity = patch.Popularity;
         if (!string.IsNullOrWhiteSpace(patch.PosterPath)) target.PosterPath = patch.PosterPath;
         if (!string.IsNullOrWhiteSpace(patch.Status)) target.Status = patch.Status;
