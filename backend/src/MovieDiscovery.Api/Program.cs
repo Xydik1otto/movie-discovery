@@ -1,7 +1,14 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Abstractions;
+using MovieDiscovery.Core.Discover;
+using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Core.Similarity;
+using MovieDiscovery.Core.Taste;
 using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Caching;
 using MovieDiscovery.Infrastructure.Embeddings;
@@ -29,7 +36,8 @@ public class Program
         builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
             .WithOrigins("http://localhost:3001", "http://127.0.0.1:3001")
             .AllowAnyHeader()
-            .AllowAnyMethod()));
+            .AllowAnyMethod()
+            .AllowCredentials()));
 
         builder.Services.Configure<SimilarityOptions>(builder.Configuration.GetSection("Similarity"));
         builder.Services.Configure<TmdbOptions>(builder.Configuration.GetSection("Tmdb"));
@@ -41,11 +49,66 @@ public class Program
         builder.Services.Configure<JikanOptions>(builder.Configuration.GetSection("Jikan"));
         builder.Services.Configure<ImdbOptions>(builder.Configuration.GetSection("Imdb"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
+        // FR-16/17/18: ваги профілю смаку + опції discover
+        builder.Services.Configure<ProfileOptions>(builder.Configuration.GetSection("Profile"));
+        builder.Services.Configure<DiscoverOptions>(builder.Configuration.GetSection("Discover"));
 
         var cs = builder.Configuration.GetConnectionString("Default")
                  ?? throw new InvalidOperationException("ConnectionStrings:Default не задано");
         builder.Services.AddDbContext<MovieDiscoveryDbContext>(o =>
             o.UseNpgsql(cs, npg => npg.UseVector()).UseSnakeCaseNamingConvention());
+
+        // FR-16: Identity (EF store) — лише core (без ролей, без UI); lockout 5×15 хв; пароль ≥8 + цифра + велика.
+        builder.Services.AddIdentityCore<ApplicationUser>(o =>
+        {
+            o.Lockout.AllowedForNewUsers = true;
+            o.Lockout.MaxFailedAccessAttempts = 5;
+            o.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+            o.Password.RequiredLength = 8;
+            o.Password.RequireDigit = true;
+            o.Password.RequireUppercase = true;
+            o.User.RequireUniqueEmail = true;
+        }).AddEntityFrameworkStores<MovieDiscoveryDbContext>();
+
+        // FR-16: cookie-автентифікація HttpOnly SameSite=Lax (Secure — на публічній стадії Е4+).
+        // Для API 401/403 замість redirect на сторінку логіна.
+        builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddCookie(o =>
+            {
+                o.Cookie.Name = "md_auth";
+                o.Cookie.HttpOnly = true;
+                o.Cookie.SameSite = SameSiteMode.Lax;
+                o.Cookie.SecurePolicy = CookieSecurePolicy.None;
+                o.Events.OnRedirectToLogin = ctx =>
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                };
+                o.Events.OnRedirectToAccessDenied = ctx =>
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return Task.CompletedTask;
+                };
+            });
+        builder.Services.AddAuthorization();
+
+        // FR-16: RateLimiter — login 5/хв/IP, register 3/год/IP (429 при перевищенні).
+        builder.Services.AddRateLimiter(o =>
+        {
+            o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            o.AddPolicy("auth-login", ctx => RateLimitPartition.GetFixedWindowLimiter(
+                ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+                }));
+            o.AddPolicy("auth-register", ctx => RateLimitPartition.GetFixedWindowLimiter(
+                ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 3, Window = TimeSpan.FromHours(1), QueueLimit = 0,
+                }));
+        });
 
         builder.Services.AddHttpClient<TmdbClient>(c =>
         {
@@ -101,11 +164,12 @@ public class Program
             c.BaseAddress = new Uri("https://datasets.imdbws.com/");
             c.Timeout = TimeSpan.FromMinutes(60);
         });
-        // FR-14: Internet Archive advancedsearch
+        // FR-14: Internet Archive advancedsearch (сторінка на 500 рядків у IA віддається
+        // довше 30 с — таймаут 120 с; інакше sync падає TaskCanceledException)
         builder.Services.AddHttpClient<ArchiveWatchService>(c =>
         {
             c.BaseAddress = new Uri("https://archive.org/");
-            c.Timeout = TimeSpan.FromSeconds(30);
+            c.Timeout = TimeSpan.FromSeconds(120);
         });
         // FR-14: sweet.tv — чесний User-Agent, тротлінг 1 req/2 c у сервісі
         builder.Services.AddHttpClient<SweetTvService>((sp, c) =>
@@ -142,6 +206,10 @@ public class Program
         builder.Services.AddScoped<AniListCatalogService>(); // PRIMARY sync каталогу аніме/манги + MAL official-шар
         builder.Services.AddScoped<ImportService>();
         builder.Services.AddScoped<TmdbProvidersService>();
+        // FR-16/17/18: акаунти, профіль смаку, discover, онбординг
+        builder.Services.AddScoped<TasteProfileService>();
+        builder.Services.AddScoped<UserListService>();
+        builder.Services.AddScoped<DiscoverService>();
 
         builder.Services.AddHostedService<EmbeddingBackgroundService>();
         builder.Services.AddHostedService<SyncBackgroundService>();
@@ -159,6 +227,9 @@ public class Program
         }
 
         app.UseCors();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseRateLimiter();
 
         // Міграції + сід єдиного профілю «Головний». На design-time (dotnet ef) БД не чіпаємо.
         if (!EF.IsDesignTime)
