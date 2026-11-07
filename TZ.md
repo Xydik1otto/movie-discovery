@@ -132,7 +132,7 @@ TMDB/IMDb дають лише фіксований «similar/recommended». Ту
 
 ### FR-18. Режим «Кінотека-свайпи» (discover) + онбординг
 - `GET /api/discover?count=10` (авторизований): кандидати з titles, яких нема в liked/disliked/watched/watchlist; скоринг за user_profiles (жанри+era+актори+rating+popularity; семантика пізніше). Diversity: ≤2 тайтлів одного жанру в одній видачі; 70% exploitation (найкращий прогноз) / 20% safe (популярні високооцінені близькі до профілю) / 10% exploration (жанр з онбординг-цікавостей, яких мало в профілі).
-- Anti-fatigue (замість жорсткого «не більше 5 дизлайків підряд»): лічильник dislike-стріка; 3 підряд → наступні видачі лише safe/exploration (кластер, який не зайшов, «вимикається»); після 5 підряд — soft-пауза: повідомлення + пропозиція списків/пошуку (не блокує). Окрема дія «Not now» (skip) — не впливає на профіль зовсім.
+- Anti-fatigue (за рішенням власника: БЕЗ обмежень на дизлайки): дизлайк лише знижує вагу профілю (−0.8 + cooldown негативного жанру в negative_genres); streak-лічильників і пауз НЕМАЄ. Окрема дія «Not now» (skip) — не впливає на профіль зовсім.
 - `POST /api/discover/action {titleId, action: like|dislike|skip|watchlist|watched}` → пише в list_items + interaction_log, інкрементально оновлює профіль.
 - Онбординг після реєстрації: 8–12 мультивибірів по постерах (жанри/настрій/ера) + 3 улюблених тайтли через пошук → cold-start профіль. `POST /api/onboarding/answers`. Квіз можна пропустити (onboarding_done=false не блокує нічого, але discover до квізу працює лише на popularity+safe).
 
