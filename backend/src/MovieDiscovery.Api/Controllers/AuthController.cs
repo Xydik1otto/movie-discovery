@@ -19,12 +19,15 @@ public sealed class AuthController(
     UserManager<ApplicationUser> users,
     TasteProfileService taste) : ControllerBase
 {
+    // ВАЖЛИВО: атрибути валідації — на ПАРАМЕТРИ конструктора record'а (без [property:]):
+    // MVC-валідація для record'ів читає тільки параметри; [property:...] дає
+    // InvalidOperationException "validation metadata must be associated with the constructor parameter".
     public sealed record RegisterRequest(
-        [property: Required, EmailAddress] string Email,
-        [property: Required, MinLength(3)] string Username,
-        [property: Required, MinLength(8)] string Password);
+        [Required, EmailAddress] string Email,
+        [Required, MinLength(3)] string Username,
+        [Required, MinLength(8)] string Password);
 
-    public sealed record LoginRequest([property: Required] string Email, [property: Required] string Password);
+    public sealed record LoginRequest([Required] string Email, [Required] string Password);
 
     /// <summary>200 {userId} | 400 {errors:{поле:[помилки Identity]}}.</summary>
     [HttpPost("register")]
