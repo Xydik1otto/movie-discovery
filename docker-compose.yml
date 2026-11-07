@@ -1,0 +1,62 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: moviediscovery-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-movie}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_pg}
+      POSTGRES_DB: ${POSTGRES_DB:-moviediscovery}
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-movie} -d ${POSTGRES_DB:-moviediscovery}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    container_name: moviediscovery-api
+    environment:
+      ASPNETCORE_URLS: http://+:5200
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-moviediscovery};Username=${POSTGRES_USER:-movie};Password=${POSTGRES_PASSWORD:-changeme_pg}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      OMDB_API_KEY: ${OMDB_API_KEY:-}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
+      ADMIN_KEY: ${ADMIN_KEY:-changeme_admin}
+    ports:
+      - "${API_PORT:-5200}:5200"
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    container_name: moviediscovery-web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-5200}
+      API_SERVER_URL: http://api:5200
+    ports:
+      - "${WEB_PORT:-3001}:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  bot:
+    build: ./bot
+    container_name: moviediscovery-bot
+    environment:
+      API_URL: http://api:5200
+      TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+    depends_on:
+      - api
+    restart: unless-stopped

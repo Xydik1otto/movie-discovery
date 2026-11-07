@@ -1,0 +1,29 @@
+# dependencies / build artifacts
+node_modules/
+.next/
+out/
+bin/
+obj/
+*.user
+*.suo
+publish/
+
+# local data (DB volumes can be huge)
+data/
+
+# secrets
+.env
+*.env.local
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# test/temp
+TestResults/
+*.log
