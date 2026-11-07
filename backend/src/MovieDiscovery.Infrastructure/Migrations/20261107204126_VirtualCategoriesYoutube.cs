@@ -69,7 +69,7 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 CREATE INDEX IF NOT EXISTS ix_titles_director_trgm
                     ON titles USING gin (director gin_trgm_ops);
                 CREATE INDEX IF NOT EXISTS ix_titles_actors_trgm
-                    ON titles USING gin (actors gin_trgm_ops);
+                    ON titles USING gin ((array_to_string(actors, ' ')) gin_trgm_ops);
                 """);
         }
 

@@ -79,7 +79,7 @@ SELECT * FROM titles
 WHERE title_uk ILIKE {pat}
    OR title_en ILIKE {pat}
    OR director ILIKE {pat}
-   OR EXISTS (SELECT 1 FROM unnest(actors) a WHERE a ILIKE {pat})");
+   OR array_to_string(actors, ' ') ILIKE {pat}");
         }
         else
         {
