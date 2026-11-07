@@ -21,7 +21,7 @@ public class ImdbMergeServiceTests
         var sql = ImdbStaging.MergeSql;
         Assert.Contains("INSERT INTO titles", sql);
         Assert.Contains("FROM imdb_raw", sql);
-        Assert.Contains("ON CONFLICT (imdb_id) DO UPDATE SET", sql);
+        Assert.Contains("ON CONFLICT (imdb_id) WHERE imdb_id IS NOT NULL DO UPDATE SET", sql);
     }
 
     [Fact]

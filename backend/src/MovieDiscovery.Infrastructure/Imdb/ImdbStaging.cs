@@ -58,7 +58,7 @@ public static class ImdbStaging
                s.average_rating, s.num_votes, s.popularity, s.is_adult,
                '{}', '{}', '{}', now(), now()
         FROM imdb_raw s
-        ON CONFLICT (imdb_id) DO UPDATE SET
+        ON CONFLICT (imdb_id) WHERE imdb_id IS NOT NULL DO UPDATE SET
             title_en = EXCLUDED.title_en,
             year = EXCLUDED.year,
             runtime_min = EXCLUDED.runtime_min,
