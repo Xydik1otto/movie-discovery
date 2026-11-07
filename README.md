@@ -7,7 +7,7 @@
 ## Стек
 
 - **Backend:** ASP.NET Core 8 (C#), EF Core, PostgreSQL 16 + pgvector
-- **Frontend:** Next.js 15 + TypeScript + Tailwind
+- **Frontend:** Next.js 15 + TypeScript + Tailwind (+ **PWA**: встановлюється на Android/iPhone як «ретранслятор» — manifest, service worker, офлайн-сторінка)
 - **Бот:** Telegram.Bot (C#), long polling
 - **Дані:** TMDB (ядро) + OMDb + Wikidata + власні скрапери (Е3)
 - **Семантика:** локальні embeddings через Ollama (bge-m3, uk/en) — безкоштовно
