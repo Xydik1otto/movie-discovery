@@ -245,3 +245,32 @@ export interface GuestListItem {
   tmdbId?: number | null;
   rating?: number | null;
 }
+
+// --- FR-21: «Схоже на...» — студія, збірники, reasons-коди ---
+
+// Опційні фільтри студії для GET /api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=.
+// genres — soft-boost (не hard-фільтр), type/рік — hard-рамки.
+export interface SimilarSeedsFilters {
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  // "" | "movie" | "series" | "anime" (null/"" = усі типи)
+  type?: string | null;
+  genres?: string[] | null;
+}
+
+// Елемент збірки: бекенд повертає або внутрішні titleId (форма POST),
+// або повні картки тайтлів (пресети) — толеруємо обидва вигляди.
+export type CollectionEntry = TitleCard | number;
+
+export interface CollectionSummary {
+  id: number;
+  name: string;
+  itemCount?: number | null;
+  items?: CollectionEntry[] | null;
+  createdAt?: string | null;
+}
+
+export interface PresetCollection {
+  key: string;
+  items: CollectionEntry[];
+}

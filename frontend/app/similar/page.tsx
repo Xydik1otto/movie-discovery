@@ -1,11 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
-import { guardedBySeeds, guardedByText } from "@/lib/fallback";
-import type { SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
+import { guardedBySeedsEx, guardedByText } from "@/lib/fallback";
+import type {
+  SimilarItem,
+  SimilarSeedsFilters,
+  TitleCard as TitleCardType,
+} from "@/lib/types";
 import SeedsBuilder from "@/components/SeedsBuilder";
 import QuickSimilar from "@/components/QuickSimilar";
+import StudioPanel from "@/components/StudioPanel";
+import CollectionsPanel from "@/components/CollectionsPanel";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
@@ -17,13 +24,35 @@ interface HistoryEntry {
   unavailable: boolean;
 }
 
-type Mode = "quick" | "seeds";
+// Знімок для ланцюга (FR-21.5): «назад» повертає попередні еталони й
+// результати без повторного запиту — simple stack у стані сторінки.
+interface ChainEntry {
+  mode: Mode;
+  label: string;
+  items: SimilarItem[];
+  unavailable: boolean;
+  picked: TitleCardType | null;
+  seeds: TitleCardType[];
+  studioSeeds: TitleCardType[];
+  studioFilters: SimilarSeedsFilters;
+}
 
-// Дворежимна сторінка «Схоже на...»:
+type Mode = "quick" | "seeds" | "studio" | "collections";
+
+const STUDIO_DEBOUNCE_MS = 500;
+const CHAIN_LIMIT = 10;
+
+// Чотирирежимна сторінка «Схоже на...» (FR-21):
 //  — «Швидко» (дефолт): один тайтл з дропдауна → одразу результати;
-//  — «Еталони»: старий мультисід-конструктор (1–10 seed'ів) для точного тюнінгу.
-export default function SimilarPage() {
+//  — «Еталони»: старий мультисід-конструктор (1–10 seed'ів) + пошук за текстом;
+//  — «Студія»: ті самі референси + рамки (роки/тип/жанри), живе оновлення 500 мс;
+//  — «Збірники»: пресети, генератор добірок, свої збірки.
+// Кнопка «Схожі» на кожній картці результату = ланцюг: підміняє еталони цим
+// тайтлом і шукає знову; ← повертає попередні еталони (stack у стані).
+function SimilarInner() {
   const { t, lang } = useI18n();
+  const searchParams = useSearchParams();
+  const seedParam = searchParams.get("seed");
 
   const [mode, setMode] = useState<Mode>("quick");
 
@@ -34,6 +63,11 @@ export default function SimilarPage() {
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [currentLabel, setCurrentLabel] = useState("");
+  const [chainStack, setChainStack] = useState<ChainEntry[]>([]);
+
+  const [studioSeeds, setStudioSeeds] = useState<TitleCardType[]>([]);
+  const [studioFilters, setStudioFilters] = useState<SimilarSeedsFilters>({ genres: [] });
 
   const [textForm, setTextForm] = useState("");
   const [textBusy, setTextBusy] = useState(false);
@@ -42,6 +76,9 @@ export default function SimilarPage() {
   // Захист від гонок: відповіді застарілих запитів (після нового запиту,
   // скидання чіпа чи перемикання режиму) не застосовуються.
   const seqRef = useRef(0);
+  // Ключ останнього студійного прогону — щоб не перезапускати пошук при
+  // перемиканні табів і коректно пропускати відновлений ланцюгом стан.
+  const lastStudioRunRef = useRef("");
 
   function pushHistory(label: string, data: SimilarItem[], un: boolean) {
     setHistory((prev) => [{ label, items: data, unavailable: un }, ...prev].slice(0, 8));
@@ -53,7 +90,11 @@ export default function SimilarPage() {
     setError(false);
   }
 
-  async function runBySeeds(list: TitleCardType[], label: string) {
+  async function runBySeedsEx(
+    list: TitleCardType[],
+    label: string,
+    filters: SimilarSeedsFilters = {},
+  ) {
     // by-seeds приймає лише tmdbId — тайтли без нього (аніме/манга з імпорту) відкидаємо.
     const seedIds = list
       .map((s) => s.tmdbId)
@@ -67,10 +108,11 @@ export default function SimilarPage() {
     setError(false);
     setUnavailable(false);
     try {
-      const r = await guardedBySeeds(seedIds, lang);
+      const r = await guardedBySeedsEx(seedIds, lang, filters);
       if (seq !== seqRef.current) return;
       setItems(r.data);
       setUnavailable(r.unavailable);
+      setCurrentLabel(label);
       pushHistory(label, r.data, r.unavailable);
     } catch {
       if (seq !== seqRef.current) return;
@@ -84,13 +126,13 @@ export default function SimilarPage() {
   // Режим «Еталони»: мультисід-пошук за кнопкою.
   async function find() {
     if (!seeds.length) return;
-    await runBySeeds(seeds, seeds.map((s) => s.title).join(" + "));
+    await runBySeedsEx(seeds, seeds.map((s) => s.title).join(" + "));
   }
 
   // Режим «Швидко»: вибір тайтла в дропдауні = одразу пошук за одним сидом.
   function quickPick(x: TitleCardType) {
     setPicked(x);
-    void runBySeeds([x], x.title);
+    void runBySeedsEx([x], x.title);
   }
 
   function quickClear() {
@@ -106,6 +148,8 @@ export default function SimilarPage() {
     setBusy(false);
     setTextBusy(false);
     setMode(next);
+    // Студія без референсів — показуємо її порожній стан, а не чужі результати.
+    if (next === "studio" && studioSeeds.length === 0) clearResults();
   }
 
   async function findByText() {
@@ -117,9 +161,11 @@ export default function SimilarPage() {
     try {
       const r = await guardedByText(text, lang);
       if (seq !== seqRef.current) return;
+      const label = `✍️ ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`;
       setItems(r.data);
       setUnavailable(r.unavailable);
-      pushHistory(`✍️ ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`, r.data, r.unavailable);
+      setCurrentLabel(label);
+      pushHistory(label, r.data, r.unavailable);
     } catch {
       if (seq !== seqRef.current) return;
       setTextError(true);
@@ -128,11 +174,99 @@ export default function SimilarPage() {
     }
   }
 
-  // Спільний блок результатів (грід карток) для обох режимів.
+  // ?seed={tmdbId} (FR-21.2): авто-прогін — розгортаємо швидкий режим.
+  // Сам резолв чіпа й запуск пошуку робить QuickSimilar (useSearchParams).
+  useEffect(() => {
+    if (seedParam) setMode("quick");
+  }, [seedParam]);
+
+  // Студія: живе оновлення з дебаунсом 500 мс, без кнопки (FR-21.3).
+  useEffect(() => {
+    const ids = studioSeeds.map((s) => s.tmdbId).filter((x): x is number => x != null);
+    if (!ids.length) return;
+    const f = studioFilters;
+    const key = `${ids.join(",")}|${f.yearFrom ?? ""}|${f.yearTo ?? ""}|${f.type ?? ""}|${(f.genres ?? []).join(",")}|${lang}`;
+    if (key === lastStudioRunRef.current) return; // стан уже відпрацьований
+    const timer = setTimeout(() => {
+      lastStudioRunRef.current = key;
+      void runBySeedsEx(
+        studioSeeds,
+        studioSeeds.map((s) => s.title).join(" + "),
+        f,
+      );
+    }, STUDIO_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studioSeeds, studioFilters, lang]);
+
+  // --- Ланцюг (FR-21.5) ---
+  function makeSnapshot(): ChainEntry {
+    return {
+      mode,
+      label: currentLabel,
+      items: items ?? [],
+      unavailable,
+      picked,
+      seeds,
+      studioSeeds,
+      studioFilters,
+    };
+  }
+
+  function chainFrom(item: TitleCardType) {
+    if (item.tmdbId == null) return;
+    setChainStack((prev) => [makeSnapshot(), ...prev].slice(0, CHAIN_LIMIT));
+    if (mode === "studio") {
+      // підміняємо еталони — живий ефект перезапустить пошук (дебаунс 500 мс)
+      setStudioSeeds([item]);
+      return;
+    }
+    if (mode === "seeds") {
+      setSeeds([item]);
+      void runBySeedsEx([item], item.title);
+      return;
+    }
+    // «Швидко» і «Збірники» → швидкий режим з одним сидом
+    if (mode !== "quick") setMode("quick");
+    quickPick(item);
+  }
+
+  function chainBack() {
+    const head = chainStack[0];
+    if (!head) return;
+    setChainStack(chainStack.slice(1));
+    seqRef.current += 1; // відповідь, що летить, не перекриє відновлений стан
+    setBusy(false);
+    setTextBusy(false);
+    setMode(head.mode);
+    setPicked(head.picked);
+    setSeeds(head.seeds);
+    setStudioSeeds(head.studioSeeds);
+    setStudioFilters(head.studioFilters);
+    setItems(head.items.length ? head.items : null);
+    setUnavailable(head.unavailable);
+    setError(false);
+    setCurrentLabel(head.label);
+  }
+
+  const chainBar =
+    chainStack.length > 0 ? (
+      <button
+        type="button"
+        onClick={chainBack}
+        className="mb-3 inline-flex items-center gap-1.5 rounded-xl border border-line bg-panel px-3 py-1.5 text-xs font-semibold text-mute transition-colors hover:border-accent/60 hover:text-ink"
+      >
+        <span aria-hidden>←</span>
+        {t("similar.chainBack")}
+      </button>
+    ) : null;
+
+  // Спільний блок результатів (грід карток з ланцюгом) для режимів пошуку.
   function resultsBlock(loading: boolean, emptyTitle: string) {
     return (
       <div className="min-w-0">
         {unavailable && <ApiBanner />}
+        {chainBar}
         {error ? (
           <div
             role="alert"
@@ -153,7 +287,7 @@ export default function SimilarPage() {
                   key={`${item.id}-${item.tmdbId}`}
                   item={item}
                   score={item.score}
-                  reasonsLabel={t("title.why")}
+                  onSimilar={chainFrom}
                 />
               ))}
             </div>
@@ -165,6 +299,29 @@ export default function SimilarPage() {
     );
   }
 
+  const subtitle =
+    mode === "quick"
+      ? t("similar.quickHint")
+      : mode === "seeds"
+        ? t("similar.seedsHint")
+        : mode === "studio"
+          ? t("studio.hint")
+          : t("collections.subtitle");
+
+  const emptyTitle =
+    mode === "quick"
+      ? t("similar.quickHint")
+      : mode === "studio"
+        ? t("studio.hint")
+        : t("similar.seedsHint");
+
+  const tabs: { id: Mode; label: string }[] = [
+    { id: "quick", label: t("similar.quickMode") },
+    { id: "seeds", label: t("similar.seedsMode") },
+    { id: "studio", label: t("similar.studioMode") },
+    { id: "collections", label: t("similar.collectionsMode") },
+  ];
+
   const tabCls = (active: boolean) =>
     `rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
       active ? "bg-accent text-white" : "text-mute hover:text-ink"
@@ -175,38 +332,35 @@ export default function SimilarPage() {
       <h1 className="mb-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
         {t("similar.seedsTitle")}
       </h1>
-      <p className="mb-5 max-w-2xl text-sm text-mute">
-        {mode === "quick" ? t("similar.quickHint") : t("similar.seedsHint")}
-      </p>
+      <p className="mb-5 max-w-2xl text-sm text-mute">{subtitle}</p>
 
-      {/* Перемикач режимів: «Швидко» (дефолт) | «Еталони» */}
-      <div className="mb-5 inline-flex rounded-xl border border-line bg-panel p-1" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "quick"}
-          onClick={() => switchMode("quick")}
-          className={tabCls(mode === "quick")}
-        >
-          {t("similar.quickMode")}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "seeds"}
-          onClick={() => switchMode("seeds")}
-          className={tabCls(mode === "seeds")}
-        >
-          {t("similar.seedsMode")}
-        </button>
+      {/* Перемикач режимів: Швидко | Еталони | Студія | Збірники (FR-21.6) */}
+      <div
+        className="mb-5 inline-flex flex-wrap rounded-xl border border-line bg-panel p-1"
+        role="tablist"
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={mode === tab.id}
+            onClick={() => switchMode(tab.id)}
+            className={tabCls(mode === tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {mode === "quick" ? (
+      {mode === "quick" && (
         <div className="space-y-5">
           <QuickSimilar picked={picked} onPick={quickPick} onClear={quickClear} />
-          {resultsBlock(busy, t("similar.quickHint"))}
+          {resultsBlock(busy, emptyTitle)}
         </div>
-      ) : (
+      )}
+
+      {mode === "seeds" && (
         <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
           <div className="space-y-4">
             <SeedsBuilder
@@ -266,9 +420,34 @@ export default function SimilarPage() {
             )}
           </div>
 
-          {resultsBlock(busy || textBusy, t("similar.seedsHint"))}
+          {resultsBlock(busy || textBusy, emptyTitle)}
         </div>
       )}
+
+      {mode === "studio" && (
+        <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
+          <StudioPanel
+            seeds={studioSeeds}
+            filters={studioFilters}
+            onAdd={(x) => setStudioSeeds((prev) => [...prev, x])}
+            onRemove={(id) => setStudioSeeds((prev) => prev.filter((s) => s.id !== id))}
+            onClear={() => setStudioSeeds([])}
+            onFilters={setStudioFilters}
+          />
+          {resultsBlock(busy, emptyTitle)}
+        </div>
+      )}
+
+      {mode === "collections" && <CollectionsPanel onChain={chainFrom} />}
     </div>
+  );
+}
+
+// useSearchParams вимагає Suspense-межі для статичного prerender (Next 15).
+export default function SimilarPage() {
+  return (
+    <Suspense fallback={<div className="py-10 text-center text-sm text-mute">…</div>}>
+      <SimilarInner />
+    </Suspense>
   );
 }

@@ -18,6 +18,7 @@ import {
   rateListItem,
   searchTitles,
   similarBySeeds,
+  similarBySeedsEx,
   similarByText,
 } from "./api";
 import {
@@ -41,6 +42,7 @@ import type {
   Paged,
   SearchParams,
   SimilarItem,
+  SimilarSeedsFilters,
   TitleCard,
   TitleDetail,
 } from "./types";
@@ -125,6 +127,24 @@ export async function guardedBySeeds(
 ): Promise<Gate<SimilarItem[]>> {
   try {
     const r = await similarBySeeds(tmdbIds, lang, limit);
+    return { data: r.items ?? [], unavailable: false };
+  } catch (e) {
+    if (isUnavailable(e)) {
+      return { data: demoSimilar(tmdbIds, lang, limit), unavailable: true };
+    }
+    throw e;
+  }
+}
+
+// FR-21: by-seeds з фільтрами студії (GET-форма з фолбеком на POST усередині api).
+export async function guardedBySeedsEx(
+  tmdbIds: number[],
+  lang: Lang,
+  filters: SimilarSeedsFilters = {},
+  limit = 20,
+): Promise<Gate<SimilarItem[]>> {
+  try {
+    const r = await similarBySeedsEx(tmdbIds, lang, filters, limit);
     return { data: r.items ?? [], unavailable: false };
   } catch (e) {
     if (isUnavailable(e)) {

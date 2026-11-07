@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { addToList, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { getWatch } from "@/lib/api";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
@@ -23,6 +23,7 @@ import ProviderBadge from "@/components/ProviderBadge";
 
 export default function TitleDetailPage() {
   const { t, lang } = useI18n();
+  const router = useRouter();
   const routeParams = useParams<{ id: string }>();
   const id = Number(routeParams?.id);
 
@@ -314,6 +315,17 @@ export default function TitleDetailPage() {
           {added === "watchlist" ? `✓ ${t("title.added")}` : `＋ ${t("title.watchlist")}`}
         </button>
 
+        {/* FR-21: «Схожі» зі сторінки тайтла → /similar?seed={tmdbId} (авто-прогін). */}
+        {detail.tmdbId != null && (
+          <button
+            type="button"
+            onClick={() => router.push(`/similar?seed=${detail.tmdbId}`)}
+            className="rounded-xl border border-accent/50 bg-accent/10 px-4 py-2.5 text-sm font-bold text-accent-2 transition-colors hover:bg-accent/20"
+          >
+            ✦ {t("similar.cardBtn")}
+          </button>
+        )}
+
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -507,12 +519,7 @@ export default function TitleDetailPage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {similar.map((item) => (
-              <TitleCard
-                key={item.id}
-                item={item}
-                score={item.score}
-                reasonsLabel={t("title.why")}
-              />
+              <TitleCard key={item.id} item={item} score={item.score} />
             ))}
           </div>
         )}

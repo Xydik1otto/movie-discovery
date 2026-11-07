@@ -308,6 +308,43 @@ export const uk = {
   "migrate.button": "Перенести",
   "migrate.done": "Гостьові списки перенесено в акаунт ✓",
   "migrate.error": "Не вдалося перенести — спробуй ще раз",
+
+  // --- FR-21: «Схоже на...» — студія, збірники, ланцюг, reasons ---
+  "similar.studioMode": "Студія",
+  "similar.collectionsMode": "Збірники",
+  "similar.cardBtn": "Схожі",
+  "similar.cardAria": "Знайти схоже для: {title}",
+  "similar.seedFallback": "Тайтл TMDB #{n}",
+  "similar.chainBack": "Назад до попередніх еталонів",
+  "similar.reason.genre": "спільний жанр: {value}",
+  "similar.reason.actor": "спільний актор: {value}",
+  "similar.reason.decade": "та сама декада: {decade}",
+
+  "studio.title": "Студія підборів",
+  "studio.hint": "Додай 1–10 еталонів і звуж рамки: роки, тип, жанровий акцент — результати оновлюються наживо.",
+  "studio.yearFrom": "Рік від",
+  "studio.yearTo": "Рік до",
+  "studio.genres": "Жанровий акцент",
+  "studio.genresHint": "до 3 жанрів",
+
+  "collections.title": "Збірники",
+  "collections.subtitle": "Готові пресети й власні добірки — збереження в акаунті.",
+  "collections.presets": "Пресети",
+  "collections.preset.mood": "Настрій",
+  "collections.preset.evening": "Вечір",
+  "collections.preset.duration": "Тривання",
+  "collections.presetEmpty": "Пресети поки недоступні",
+  "collections.generator": "Генератор добірок",
+  "collections.chipsHint": "Додай 1–3 тайтли — з них зберемо добірку.",
+  "collections.nameLabel": "Назва добірки",
+  "collections.namePlaceholder": "Наприклад: Похмурий вечір п'ятниці",
+  "collections.create": "Створити добірку",
+  "collections.created": "Добірку збережено ✓",
+  "collections.preview": "Перегляд добірки",
+  "collections.mine": "Мої добірки",
+  "collections.mineEmpty": "Ти ще не зберігав добірок",
+  "collections.loginHint": "Увійди, щоб зберігати добірки",
+  "collections.itemsCount": "{n} тайтлів",
 } as const;
 
 export type Dict = Record<keyof typeof uk, string>;

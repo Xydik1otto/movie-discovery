@@ -1,30 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { WATCH_KIND_BADGE_STYLE, formatLabel, posterUrlFull } from "../lib/constants";
 import { dedupeWatchKinds, freeOnly, watchBadgeLabelKey, watchKindLabelKey } from "../lib/watch";
 import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
 import RatingBadge from "./RatingBadge";
-import ReasonsList from "./ReasonsList";
+import ReasonBadges from "./ReasonBadges";
 
 // Картка тайтла (форма TitleCard за PLAN). Форма використовується всюди.
 // eager=true — постери першого екрана БЕЗ loading=lazy (пітфолл lazy після ре-рендера);
 // lazy — лише для глибоких елементів.
+// FR-21: onSimilar — ланцюг на сторінці /similar (кнопка «Схожі» на картках
+// результатів підміняє еталони, не виходячи зі сторінки); без onSimilar кнопка
+// веде на /similar?seed={tmdbId} (авто-прогін). Кнопка з'являється при hover
+// у кутку постера й не змінює лейаут картки.
 export default function TitleCard({
   item,
   eager = false,
   score,
-  reasonsLabel,
+  onSimilar,
   footer,
 }: {
   item: TitleCardType;
   eager?: boolean;
   score?: number | null;
-  reasonsLabel?: string;
+  onSimilar?: (item: TitleCardType) => void;
   footer?: React.ReactNode;
 }) {
   const { t, lang } = useI18n();
+  const router = useRouter();
   const similar = item as SimilarItem;
   const url = posterUrlFull(item.posterUrl);
   const isAnime = item.type === "anime";
@@ -44,6 +50,18 @@ export default function TitleCard({
   // FR-14: маленькі бейджі доступності перегляду у верхньому правому куті —
   // разом із % схожості (одна колонка, лейаут картки не змінюється).
   const watchBadges = dedupeWatchKinds(freeOnly(item.watchProviders ?? [])).slice(0, 3);
+
+  // FR-21: кнопка «Схожі» всередині Link-картки — preventDefault гасить
+  // навігацію на /title/{id}, кнопка абсолютна (лейаут не змінюється).
+  function openSimilar(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onSimilar) {
+      onSimilar(item);
+      return;
+    }
+    if (item.tmdbId != null) router.push(`/similar?seed=${item.tmdbId}`);
+  }
 
   return (
     <div className="group">
@@ -147,6 +165,18 @@ export default function TitleCard({
               )}
             </div>
           </div>
+
+          {/* FR-21: кнопка «Схожі» — у кутку постера, видно при hover/фокусі. */}
+          {item.tmdbId != null && (
+            <button
+              type="button"
+              onClick={openSimilar}
+              aria-label={t("similar.cardAria", { title: item.title })}
+              className="absolute bottom-2 right-2 z-10 rounded-lg border border-white/25 bg-black/70 px-2 py-1 text-[11px] font-bold text-white opacity-0 shadow-md backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              ✦ {t("similar.cardBtn")}
+            </button>
+          )}
         </div>
       </Link>
 
@@ -156,9 +186,10 @@ export default function TitleCard({
         </div>
       )}
 
-      {score != null && (similar.reasons?.length ?? 0) > 0 && (
+      {/* FR-21: бейджі-пояснення (коди shared_genres/shared_actor/decade → i18n). */}
+      {(similar.reasons?.length ?? 0) > 0 && (
         <div className="px-0.5">
-          <ReasonsList reasons={similar.reasons} label={reasonsLabel ?? t("title.why")} />
+          <ReasonBadges reasons={similar.reasons} />
         </div>
       )}
       {footer}

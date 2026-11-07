@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "../i18n/I18nContext";
-import { searchTitles } from "../lib/api";
+import { getTitle, searchTitles } from "../lib/api";
 import { posterUrlFull } from "../lib/constants";
 import type { TitleCard as TitleCardType } from "../lib/types";
 
@@ -56,6 +57,41 @@ export default function QuickSimilar({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  // FR-21: ?seed={tmdbId} — авто-прогін зі сторінки тайтла/картки. Резолвимо
+  // тайтл через detail-endpoint (перевірка tmdbId — /api/title/{id} живе за
+  // внутрішнім id), додаємо чіп і запускаємо пошук через onPick. Без резолву —
+  // чіп-заглушка «Тайтл TMDB #N»: пошук усе одно йде по tmdbId (graceful).
+  const searchParams = useSearchParams();
+  const seedNum = Number(searchParams.get("seed"));
+  const appliedSeedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!Number.isFinite(seedNum) || seedNum <= 0) return;
+    if (appliedSeedRef.current === seedNum) return;
+    appliedSeedRef.current = seedNum;
+    let alive = true;
+    void (async () => {
+      let card: TitleCardType | null = null;
+      try {
+        const d = await getTitle(seedNum, lang);
+        if (d && d.tmdbId === seedNum) card = d;
+      } catch {
+        // нема резолву — чіп-заглушка, пошук не блокуємо
+      }
+      if (!alive) return;
+      onPick(
+        card ?? {
+          id: -seedNum,
+          tmdbId: seedNum,
+          type: "movie",
+          title: t("similar.seedFallback", { n: seedNum }),
+        },
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [seedNum, lang, onPick, t]);
 
   // Debounced автокомпліт (400 мс).
   useEffect(() => {

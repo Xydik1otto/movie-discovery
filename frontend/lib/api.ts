@@ -7,6 +7,7 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 import type {
   AuthUser,
+  CollectionSummary,
   DiscoverAction,
   DiscoverResponse,
   HealthResponse,
@@ -20,8 +21,10 @@ import type {
   OnboardingAnswers,
   OnboardingQuestion,
   Paged,
+  PresetCollection,
   SearchParams,
   SimilarItem,
+  SimilarSeedsFilters,
   TitleCard,
   TitleDetail,
   WatchProvider,
@@ -189,6 +192,35 @@ export async function similarByText(
     method: "POST",
     body: JSON.stringify({ text, limit, lang }),
   });
+}
+
+// FR-21: GET-форма by-seeds з опційними фільтрами студії
+// (/api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=).
+// Бекенд може ще не мати GET-маршруту (лише POST) — тоді 404/405 → м'який
+// фолбек на POST без фільтрів: результати є, студійні рамки просто не
+// застосувались (graceful до паралельного розгортання бекенду).
+export async function similarBySeedsEx(
+  tmdbIds: number[],
+  lang: Lang,
+  filters: SimilarSeedsFilters = {},
+  limit = 20,
+): Promise<{ items: SimilarItem[] }> {
+  const sp = new URLSearchParams();
+  sp.set("ids", tmdbIds.join(","));
+  if (filters.yearFrom != null) sp.set("yearFrom", String(filters.yearFrom));
+  if (filters.yearTo != null) sp.set("yearTo", String(filters.yearTo));
+  if (filters.type) sp.set("types", filters.type);
+  if (filters.genres?.length) sp.set("genres", filters.genres.join(","));
+  sp.set("limit", String(limit));
+  sp.set("lang", lang);
+  try {
+    return await request<{ items: SimilarItem[] }>(`/api/similar/by-seeds?${sp.toString()}`);
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
+      return similarBySeeds(tmdbIds, lang, limit);
+    }
+    throw e;
+  }
 }
 
 // Повна форма провайдерів перегляду (FR-14):
@@ -375,4 +407,38 @@ export async function migrateGuestLists(
     body: JSON.stringify({ items }),
   });
   return r ?? {};
+}
+
+// --- FR-21: збірники (collections). Без логіну — 401, панель показує підказку. ---
+
+// Серверні пресети: [{key: 'mood'|'evening'|'duration', items: [...12 карток]}].
+export async function getCollectionPresets(lang: Lang): Promise<PresetCollection[]> {
+  const r = await request<{ items?: PresetCollection[] } | PresetCollection[]>(
+    `/api/collections/presets${qs({ lang })}`,
+  );
+  return (Array.isArray(r) ? r : (r.items ?? [])) as PresetCollection[];
+}
+
+// Свої збірки (auth): [{id, name, itemCount?, items?}].
+export async function getCollections(): Promise<CollectionSummary[]> {
+  const r = await request<{ items?: CollectionSummary[] } | CollectionSummary[]>(
+    "/api/collections",
+  );
+  return (Array.isArray(r) ? r : (r.items ?? [])) as CollectionSummary[];
+}
+
+// POST /api/collections {name, items:[titleId...]} — items = внутрішні id тайтлів.
+export async function createCollection(
+  name: string,
+  titleIds: number[],
+): Promise<CollectionSummary | null> {
+  const r = await request<CollectionSummary | null>("/api/collections", {
+    method: "POST",
+    body: JSON.stringify({ name, items: titleIds }),
+  });
+  return r ?? null;
+}
+
+export async function deleteCollection(id: number): Promise<void> {
+  await request<void>(`/api/collections/${id}`, { method: "DELETE" });
 }
