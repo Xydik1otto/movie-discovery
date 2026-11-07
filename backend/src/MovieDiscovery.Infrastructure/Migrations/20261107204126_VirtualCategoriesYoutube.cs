@@ -17,6 +17,30 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 maxLength: 4000,
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "country",
+                table: "titles",
+                type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "audio_lang",
+                table: "watch_links",
+                type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<int>(
+                name: "quality",
+                table: "watch_links",
+                type: "integer",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "dub",
+                table: "watch_links",
+                type: "text",
+                nullable: true);
+
             // FR-19/20: staging-таблиці IMDb bulk-синків (керуються ImdbAkasService/ImdbCrewService;
             // UNLOGGED ставить сервіс перед COPY, після злиття чиститься TRUNCATE). Не EF-сутності.
             migrationBuilder.Sql(
@@ -50,6 +74,22 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 DROP TABLE IF EXISTS imdb_principals_raw;
                 DROP TABLE IF EXISTS imdb_names_raw;
                 """);
+
+            migrationBuilder.DropColumn(
+                name: "dub",
+                table: "watch_links");
+
+            migrationBuilder.DropColumn(
+                name: "quality",
+                table: "watch_links");
+
+            migrationBuilder.DropColumn(
+                name: "audio_lang",
+                table: "watch_links");
+
+            migrationBuilder.DropColumn(
+                name: "country",
+                table: "titles");
 
             migrationBuilder.DropColumn(
                 name: "directors",
