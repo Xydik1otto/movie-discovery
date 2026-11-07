@@ -38,8 +38,8 @@ public static class TmdbGenres
         [10768] = ("Війна та Політика", "War & Politics"),
     };
 
-    /// <summary>Англійська канонічна назва жанру за id (null — невідомий id).</summary>
-    public static string? EnName(int id) => byId.TryGetValue(id, out var v) ? v.En : null;
+    /// <summary>Англійська канонічна назва жанру за id (null — невідомий id). Зберігаємо в БД у lowercase.</summary>
+    public static string? EnName(int id) => byId.TryGetValue(id, out var v) ? v.En.ToLowerInvariant() : null;
 
     /// <summary>Uk-назва за id.</summary>
     public static string? UkName(int id) => byId.TryGetValue(id, out var v) ? v.Uk : null;
@@ -52,14 +52,29 @@ public static class TmdbGenres
         return en;
     }
 
-    /// <summary>Нормалізація фільтра: uk або en назва → канонічна en (null — невідома).</summary>
+    // Побутові написання → канонічне en (lowercase). Регістр не важливий.
+    private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["sci-fi"] = "science fiction",
+        ["sci_fi"] = "science fiction",
+        ["scifi"] = "science fiction",
+        ["science-fiction"] = "science fiction",
+        ["tv-movie"] = "tv movie",
+        ["тв-фільм"] = "tv movie",
+        ["романтика"] = "romance",
+    };
+
+    /// <summary>Нормалізація фільтра: uk/en назва або аліас → канонічне en у lowercase (null — невідомо).</summary>
     public static string? NormalizeToEn(string name)
     {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var trimmed = name.Trim();
+        if (Aliases.TryGetValue(trimmed, out var alias)) return alias;
         foreach (var (_, (uk, en)) in byId)
         {
-            if (string.Equals(en, name, StringComparison.OrdinalIgnoreCase)) return en;
-            if (string.Equals(uk, name, StringComparison.OrdinalIgnoreCase)) return en;
+            if (string.Equals(en, trimmed, StringComparison.OrdinalIgnoreCase)) return en.ToLowerInvariant();
+            if (string.Equals(uk, trimmed, StringComparison.OrdinalIgnoreCase)) return en.ToLowerInvariant();
         }
-        return null;
+        return Aliases.TryGetValue(trimmed.ToLowerInvariant().Replace("ё", "е"), out var a2) ? a2 : null;
     }
 }

@@ -62,9 +62,19 @@ public class CacheKeysAndI18nTests
     [Fact]
     public void Genre_Normalization_Uk_To_En()
     {
-        Assert.Equal("Drama", TmdbGenres.NormalizeToEn("драма"));
-        Assert.Equal("Drama", TmdbGenres.NormalizeToEn("Drama"));
-        Assert.Equal("Comedy", TmdbGenres.NormalizeToEn("комедія"));
+        // канонічні значення зберігаються/порівнюються у lowercase
+        Assert.Equal("drama", TmdbGenres.NormalizeToEn("драма"));
+        Assert.Equal("drama", TmdbGenres.NormalizeToEn("Drama"));
+        Assert.Equal("comedy", TmdbGenres.NormalizeToEn("комедія"));
         Assert.Null(TmdbGenres.NormalizeToEn("неіснуючий жанр"));
+    }
+
+    [Fact]
+    public void Genre_Aliases_Normalize()
+    {
+        Assert.Equal("science fiction", TmdbGenres.NormalizeToEn("sci-fi"));
+        Assert.Equal("science fiction", TmdbGenres.NormalizeToEn("Sci_Fi"));
+        Assert.Equal("science fiction", TmdbGenres.NormalizeToEn("science-fiction"));
+        Assert.Equal("tv movie", TmdbGenres.NormalizeToEn("ТВ-фільм"));
     }
 }

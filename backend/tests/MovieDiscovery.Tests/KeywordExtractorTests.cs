@@ -9,8 +9,8 @@ public class KeywordExtractorTests
     {
         var signals = KeywordExtractor.Extract("щось легке, як ситком, але з детективним сюжетом");
 
-        Assert.Contains("Comedy", signals.Genres);
-        Assert.Contains("Mystery", signals.Genres);
+        Assert.Contains("comedy", signals.Genres);
+        Assert.Contains("mystery", signals.Genres);
         Assert.Contains("sitcom", signals.Keywords);
         Assert.Contains("feel-good", signals.Keywords);
     }
@@ -20,8 +20,8 @@ public class KeywordExtractorTests
     {
         var signals = KeywordExtractor.Extract("a dark and gritty crime thriller with a mind-bending twist");
 
-        Assert.Contains("Thriller", signals.Genres);
-        Assert.Contains("Crime", signals.Genres);
+        Assert.Contains("thriller", signals.Genres);
+        Assert.Contains("crime", signals.Genres);
         Assert.Contains("dark", signals.Keywords);
         Assert.Contains("mind-bending", signals.Keywords);
     }
@@ -37,7 +37,7 @@ public class KeywordExtractorTests
     public void Extract_No_Duplicates()
     {
         var signals = KeywordExtractor.Extract("комедія і ще раз комедія, comedy comedy");
-        Assert.Equal(1, signals.Genres.Count(g => g == "Comedy"));
+        Assert.Equal(1, signals.Genres.Count(g => g == "comedy"));
     }
 
     [Fact]

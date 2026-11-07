@@ -5,6 +5,7 @@ using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
+using MovieDiscovery.Infrastructure.Tmdb;
 
 namespace MovieDiscovery.Api.Controllers;
 
@@ -42,19 +43,22 @@ public sealed class SimilarController(
             .Where(t => distinct.Contains(t.TmdbId))
             .ToListAsync(ct);
 
+        // незнайдені id → 404 ДО побудови seeds (інакше First() на порожній послідовності падає в 500)
+        var missing = distinct.Where(id => !found.Any(t => t.TmdbId == id)).ToList();
+        if (missing.Count > 0)
+            return NotFound(new { error = "titles_not_found", message = "Деякі тайтли не знайдено", missing });
+
         // один tmdb id теоретично може відповідати і фільму, і серіалу — беремо перший (movie пріоритетніше)
         var seeds = distinct
             .Select(id => found.Where(t => t.TmdbId == id).OrderBy(t => t.Type == "movie" ? 0 : 1).First())
             .ToList();
-        var missing = distinct.Where(id => !found.Any(t => t.TmdbId == id)).ToList();
-        if (missing.Count > 0)
-            return NotFound(new { error = "titles_not_found", message = "Деякі тайтли не знайдено", missing });
 
         var scored = await similarity.SimilarBySeedsAsync(seeds, req.Limit, langSafe, ct);
         var items = scored.Select(s =>
         {
             var item = TitlesController.ToSimilarItem(s, langSafe);
-            item.Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, seeds.Count, langSafe);
+            item.Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, seeds.Count, langSafe,
+                g => langSafe == "en" ? g : TmdbGenres.ToUk(g));
             return item;
         }).ToList();
 
@@ -84,7 +88,8 @@ public sealed class SimilarController(
         var items = results.Select(s =>
         {
             var item = TitlesController.ToSimilarItem(s, langSafe);
-            item.Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, 1, langSafe);
+            item.Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, 1, langSafe,
+                g => langSafe == "en" ? g : TmdbGenres.ToUk(g));
             return item;
         }).ToList();
 

@@ -4,6 +4,8 @@ import type { Dict } from "./uk";
 export const en: Dict = {
   "brand.name": "Movie Navigator",
   "brand.tagline": "Find what to watch — by parameters or “similar to…”",
+  "home.tabFilters": "By parameters",
+  "home.tabSimilar": "Similar to...",
 
   "nav.home": "Home",
   "nav.similar": "Similar to...",

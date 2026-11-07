@@ -2,6 +2,8 @@
 export const uk = {
   "brand.name": "КіноНавігатор",
   "brand.tagline": "Знайди, що дивитись — за параметрами чи «схоже на…»",
+  "home.tabFilters": "За параметрами",
+  "home.tabSimilar": "Схоже на...",
 
   "nav.home": "Головна",
   "nav.similar": "Схоже на...",

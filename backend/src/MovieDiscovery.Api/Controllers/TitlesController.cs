@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.Services;
+using MovieDiscovery.Infrastructure.Tmdb;
 
 namespace MovieDiscovery.Api.Controllers;
 
@@ -83,7 +84,8 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             Seasons = card.Seasons,
             Overview = card.Overview,
             Score = Math.Round(s.Score.Value, 4),
-            Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, 1, lang),
+            Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, 1, lang,
+                g => lang == "en" ? g : TmdbGenres.ToUk(g)),
         };
         return item;
     }

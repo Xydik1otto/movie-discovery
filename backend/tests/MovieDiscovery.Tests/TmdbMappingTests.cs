@@ -152,9 +152,9 @@ public class TmdbMappingTests
         Assert.Equal("ukTrailerKey", title.TrailerYtId); // uk перший
         Assert.Equal(7.8, title.RatingTmdb ?? 0, 6);
         Assert.Equal(55.5, title.Popularity, 6);
-        // жанри з genre_ids → канонічні en назви
-        Assert.Contains("Action", title.Genres);
-        Assert.Contains("Thriller", title.Genres);
+        // жанри з genre_ids → канонічні en назви у lowercase (конвенція зберігання в БД)
+        Assert.Contains("action", title.Genres);
+        Assert.Contains("thriller", title.Genres);
     }
 
     [Fact]
@@ -226,7 +226,7 @@ public class TmdbMappingTests
         Assert.Equal("Movie A", title.TitleEn);
         Assert.Equal("Фільм А", title.TitleUk);
         Assert.Equal(2020, title.Year);
-        Assert.Equal(["Action"], title.Genres);
+        Assert.Equal(["action"], title.Genres);
 
         // тайтл без голосів і дати: rating null, year не встановлюється
         var en2 = page.Results[1];

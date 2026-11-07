@@ -72,7 +72,8 @@ public static partial class KeywordExtractor
         foreach (var (pattern, genre, extra) in Rules)
         {
             if (!pattern.IsMatch(text)) continue;
-            if (!genres.Contains(genre, StringComparer.OrdinalIgnoreCase)) genres.Add(genre);
+            var g = genre.ToLowerInvariant();
+            if (!genres.Contains(g, StringComparer.OrdinalIgnoreCase)) genres.Add(g);
             foreach (var k in extra)
                 if (!keywords.Contains(k, StringComparer.OrdinalIgnoreCase)) keywords.Add(k);
         }

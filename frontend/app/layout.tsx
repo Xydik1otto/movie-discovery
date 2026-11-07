@@ -21,7 +21,7 @@ export default function RootLayout({
       <body className="flex min-h-screen flex-col bg-bg text-ink antialiased">
         <I18nProvider>
           <Header />
-          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">{children}</main>
           <Footer />
         </I18nProvider>
       </body>

@@ -7,7 +7,8 @@ namespace MovieDiscovery.Core.Similarity;
 public static class SimilarityTexts
 {
     public static List<string> BuildReasons(
-        IReadOnlyList<SignalContribution> contributions, int seedCount, string lang)
+        IReadOnlyList<SignalContribution> contributions, int seedCount, string lang,
+        Func<string, string>? genreLabel = null)
     {
         var uk = IsUk(lang);
         var reasons = new List<string>();
@@ -31,7 +32,8 @@ public static class SimilarityTexts
                     break;
                 case "genres":
                     if (c.Items.Count > 0)
-                        reasons.Add((uk ? "Спільні жанри: " : "Shared genres: ") + Join(c.Items) + suffix);
+                        reasons.Add((uk ? "Спільні жанри: " : "Shared genres: ")
+                            + Join(c.Items.Select(i => genreLabel?.Invoke(i) ?? i).ToList()) + suffix);
                     break;
                 case "keywords":
                     if (c.Items.Count > 0)

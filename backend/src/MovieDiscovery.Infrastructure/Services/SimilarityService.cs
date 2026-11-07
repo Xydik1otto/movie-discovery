@@ -140,9 +140,9 @@ public sealed class SimilarityService(
             .Select(t => t.Id)
             .ToListAsync(ct);
 
-        var genres = seed.Genres.Select(g => g.Value).ToArray();
-        var keywords = seed.Keywords.Select(k => k.Value).ToArray();
-        var actors = seed.Actors.Select(a => a.Value).ToArray();
+        var genres = seed.Genres.Select(g => g.Value.ToLowerInvariant()).ToArray();
+        var keywords = seed.Keywords.Select(k => k.Value.ToLowerInvariant()).ToArray();
+        var actors = seed.Actors.Select(a => a.Value.ToLowerInvariant()).ToArray();
         var anyMeta = genres.Length > 0 || keywords.Length > 0 || actors.Length > 0;
 
         var pool = db.Titles.AsNoTracking();
@@ -150,9 +150,9 @@ public sealed class SimilarityService(
             pool = pool.Where(t => !seedLocalIds.Contains(t.Id));
         if (anyMeta)
             pool = pool.Where(t =>
-                t.Genres.Any(g => genres.Contains(g)) ||
-                t.Keywords.Any(k => keywords.Contains(k)) ||
-                t.Actors.Any(a => actors.Contains(a)));
+                t.Genres.Any(g => genres.Contains(g.ToLower())) ||
+                t.Keywords.Any(k => keywords.Contains(k.ToLower())) ||
+                t.Actors.Any(a => actors.Contains(a.ToLower())));
 
         return await pool
             .OrderByDescending(t => t.Popularity)
@@ -166,7 +166,7 @@ public sealed class SimilarityService(
         var pools = new List<List<Title>>();
 
         // мета-пул: жанри (overlap) або keywords ILIKE по токенах
-        var genres = signals.Genres.ToArray();
+        var genres = signals.Genres.Select(g => g.ToLowerInvariant()).ToArray();
         var tokens = signals.Keywords.Where(k => !k.Contains(' ', StringComparison.Ordinal)).ToArray();
         var phrases = signals.Keywords.Where(k => k.Contains(' ', StringComparison.Ordinal)).ToArray();
         var patterns = tokens.Select(t => "%" + SearchService.EscapeLike(t) + "%")
