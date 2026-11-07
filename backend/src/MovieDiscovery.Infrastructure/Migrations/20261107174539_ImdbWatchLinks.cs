@@ -81,8 +81,13 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 name: "ix_titles_type_popularity",
                 table: "titles",
                 columns: new[] { "type", "popularity" },
-                descending: new[] { false, true },
-                filter: "type IN ('movie', 'series')");
+                descending: new[] { false, true });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_titles_genres_gin",
+                table: "titles",
+                column: "genres",
+                method: "gin");
 
             migrationBuilder.CreateIndex(
                 name: "ix_watch_links_provider_is_available",
