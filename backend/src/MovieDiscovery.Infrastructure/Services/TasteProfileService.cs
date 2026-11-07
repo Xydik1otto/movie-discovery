@@ -27,12 +27,14 @@ public sealed class TasteProfileService(MovieDiscoveryDbContext db, IOptions<Pro
             .FirstOrDefaultAsync(x => x.UserId == userId, ct);
         if (up is not null) return up;
 
-        var defaultProfile = await db.Profiles.AsNoTracking()
-            .OrderBy(p => p.IsDefault ? 0 : 1).ThenBy(p => p.Id)
-            .FirstOrDefaultAsync(ct)
-            ?? db.Profiles.Add(new Profile { Name = "Головний", IsDefault = true }).Entity;
-
-        up = new UserProfile { UserId = userId, ProfileId = defaultProfile.Id };
+        // КОЖЕН залогінений юзер отримує ВЛАСНИЙ профіль (ізоляція даних між користувачами).
+        // Дефолтний профіль (id=1) — лише для анонімного гостьового режиму, юзерам НЕ приріплюється.
+        var ownProfile = db.Profiles.Add(new Profile
+        {
+            Name = $"Профіль {(userId.Length <= 8 ? userId : userId[..8])}",
+            IsDefault = false,
+        }).Entity;
+        up = new UserProfile { UserId = userId, Profile = ownProfile };
         db.UserProfiles.Add(up);
         try
         {
