@@ -61,6 +61,9 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     nconst text NOT NULL,
                     primary_name text NOT NULL
                 );
+                CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                CREATE INDEX IF NOT EXISTS ix_titles_title_en_trgm
+                    ON titles USING gin (title_en gin_trgm_ops);
                 """);
         }
 
