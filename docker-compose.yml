@@ -49,7 +49,9 @@ services:
     container_name: moviediscovery-web
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-5200}
+      # Порожній NEXT_PUBLIC_API_URL → браузер фетчить relative /api/* (same-origin),
+      # Next проксіює на бекенд (rewrites) — працює за будь-яким доменом/тунелем.
+      NEXT_PUBLIC_API_URL: ""
       API_SERVER_URL: http://api:5200
     ports:
       - "${WEB_PORT:-3001}:3000"

@@ -1,6 +1,10 @@
 // Клієнт до API за контрактом PLAN.md.
-// Базовий URL — NEXT_PUBLIC_API_URL, дефолт http://localhost:5200.
-
+// Базовий URL для fetch із браузера. Дефолт — "" (relative, same-origin):
+// Next.js проксіює /api/* на бекенд через rewrites (API_SERVER_URL), тож
+// cookie-автентифікація завжди same-origin і працює за будь-яким доменом
+// (локально, на сервері, за Cloudflare-тунелем — без CORS-пасток).
+// Явний NEXT_PUBLIC_API_URL (http://...) лишається для діагностики/особливих топологій.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 import type {
   AuthUser,
   DiscoverAction,
@@ -24,7 +28,6 @@ import type {
 } from "./types";
 import type { Lang } from "../i18n/I18nContext";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5200";
 export const DEFAULT_PROFILE_ID = 1;
 
 export class ApiUnavailableError extends Error {
