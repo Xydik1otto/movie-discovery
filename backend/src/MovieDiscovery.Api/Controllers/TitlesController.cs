@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Similarity;
+using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Tmdb;
 
@@ -8,7 +10,7 @@ namespace MovieDiscovery.Api.Controllers;
 
 [ApiController]
 [Route("api/title")]
-public sealed class TitlesController(TitleService titles, SimilarityService similarity) : ControllerBase
+public sealed class TitlesController(TitleService titles, SimilarityService similarity, MovieDiscoveryDbContext db) : ControllerBase
 {
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id, [FromQuery] string? lang, CancellationToken ct)
@@ -46,6 +48,11 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             Providers = detail.Providers
                 .Select(p => new ProviderInfo(p.ProviderName, p.Kind, p.Url, p.Source))
                 .ToList(),
+            // FR-14: компактні бейджі «де подивитись» (лише is_available=true)
+            WatchProviders = (await Infrastructure.Watchability.WatchLinkLoader.LoadAvailableAsync(db, [id], ct))
+                .TryGetValue(id, out var wp)
+                ? wp.Select(w => new CardWatchProvider(w.Provider, w.Kind, w.Url)).ToList()
+                : [],
             Status = t.Status,
             OriginalLanguage = t.OriginalLanguage,
             // аніме/манга (FR-12)

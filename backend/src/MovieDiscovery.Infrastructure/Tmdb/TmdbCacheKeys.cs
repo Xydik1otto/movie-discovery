@@ -18,6 +18,10 @@ public static class TmdbCacheKeys
     public static string Providers(string type, int tmdbId, string region) =>
         $"providers:{type}:{tmdbId}:{region}";
 
+    /// <summary>find за зовнішнім id (безстроковий кеш): "find:imdb:tt0123456".</summary>
+    public static string Find(string externalSource, string externalId) =>
+        $"find:{externalSource}:{externalId.Trim().ToLowerInvariant()}";
+
     /// <summary>OMDb за назвою+роком: "omdb:the office:2005".</summary>
     public static string Omdb(string title, int? year) =>
         $"omdb:{title.Trim().ToLowerInvariant()}:{year?.ToString() ?? "-"}";

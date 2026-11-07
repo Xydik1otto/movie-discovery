@@ -1,5 +1,7 @@
+using System.Text.Json;
 using MovieDiscovery.Core.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace MovieDiscovery.Infrastructure.Persistence;
 
@@ -16,6 +18,7 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<SyncState> SyncStates => Set<SyncState>();
     public DbSet<EmbeddingRow> Embeddings => Set<EmbeddingRow>();
     public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
+    public DbSet<WatchLink> WatchLinks => Set<WatchLink>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -40,6 +43,13 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.HasIndex(x => x.MalId).IsUnique().HasFilter("mal_id IS NOT NULL");
             e.HasIndex(x => x.AnilistId).IsUnique().HasFilter("anilist_id IS NOT NULL");
             e.HasIndex(x => x.ShikimoriId).IsUnique().HasFilter("shikimori_id IS NOT NULL");
+            // FR-15: IMDb bulk-каталог — унікальний tconst + часткові індекси популярності movie/series
+            e.Property(x => x.ImdbId).HasMaxLength(16);
+            e.HasIndex(x => x.ImdbId).IsUnique().HasFilter("imdb_id IS NOT NULL");
+            e.Property(x => x.IsAdult).HasDefaultValue(false);
+            e.HasIndex(x => new { x.Type, x.Popularity })
+                .HasFilter("type IN ('movie', 'series')")
+                .IsDescending(false, true);
         });
 
         mb.Entity<Provider>(e =>
@@ -120,12 +130,49 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
         {
             e.HasKey(x => x.TitleId);
             e.Property(x => x.Model).IsRequired();
-            e.Property(x => x.Vec).HasColumnType("vector(1024)").IsRequired();
+            // pgvector.Vector мапиться лише під Npgsql (в InMemory тестах — пропускається)
+            if (Database.ProviderName!.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase))
+                e.Property(x => x.Vec).HasColumnType("vector(1024)").IsRequired();
             e.Property(x => x.Dim).HasDefaultValue(1024);
             e.HasOne(x => x.Title)
                 .WithOne()
                 .HasForeignKey<EmbeddingRow>(x => x.TitleId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        // FR-14: «де подивитись» — watch_links
+        mb.Entity<WatchLink>(e =>
+        {
+            e.ToTable("watch_links");
+            e.Property(x => x.Provider).IsRequired();
+            e.Property(x => x.Kind).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Region).IsRequired().HasMaxLength(8);
+            e.HasOne(x => x.Title)
+                .WithMany()
+                .HasForeignKey(x => x.TitleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Ідемпотентність sync: повторний імпорт того самого (title, provider, kind, region) НЕ дублює
+            e.HasIndex(x => new { x.TitleId, x.Provider, x.Kind, x.Region }).IsUnique();
+            e.HasIndex(x => x.TitleId);
+            e.HasIndex(x => new { x.Provider, x.IsAvailable });
+        });
+
+        // Тестовий InMemory-провайдер не вміє jsonb/vector — наприкінці (після всіх конфігурацій),
+        // інакше конфігураційні блоки вище перекриють конвертери. Npgsql не чіпається.
+        // УВАГА: ProviderName для Npgsql = "Npgsql.EntityFrameworkCore.PostgreSQL" → перевіряємо саме InMemory.
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            var jsonToString = new ValueConverter<JsonDocument, string>(
+                d => d.RootElement.GetRawText(),
+                s => JsonDocument.Parse(s, default));
+            var nullableJsonToString = new ValueConverter<JsonDocument?, string>(
+                d => d == null ? "" : d.RootElement.GetRawText(),
+                s => string.IsNullOrEmpty(s) ? null : JsonDocument.Parse(s, default));
+            mb.Entity<ImportJob>().Property(x => x.Stats).HasConversion(nullableJsonToString);
+            mb.Entity<SourceCacheEntry>().Property(x => x.Payload).HasConversion(jsonToString);
+            mb.Entity<SavedQuery>().Property(x => x.Seeds).HasConversion(jsonToString);
+            mb.Entity<SavedQuery>().Property(x => x.Filters).HasConversion(nullableJsonToString);
+            mb.Entity<EmbeddingRow>().Ignore(x => x.Vec); // pgvector.Vector — не мапиться в InMemory
+        }
     }
 }

@@ -21,6 +21,7 @@ public class Title
     public int? Seasons { get; set; }
     public string? Status { get; set; } // released | returning | ended | canceled
     public string? OriginalLanguage { get; set; }
+    public string? ImdbId { get; set; } // tconst IMDb (tt1234567) — FR-15 bulk-каталог
     public double? RatingTmdb { get; set; }
     public double? RatingImdb { get; set; }
     public int? VotesImdb { get; set; }
@@ -42,6 +43,7 @@ public class Title
     public double? ScoreMal { get; set; }
     public double? ScoreAnilist { get; set; }
     public double? ScoreShikimori { get; set; }
+    public bool IsAdult { get; set; } // IMDb isAdult (FR-15)
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -50,6 +50,7 @@ export async function guardedSearch(
           maxRating: p.maxRating,
           minRuntime: p.minRuntime,
           maxRuntime: p.maxRuntime,
+          watchable: p.watchable,
         },
         lang,
         p.page ?? 1,

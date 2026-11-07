@@ -16,6 +16,7 @@ export const en: Dict = {
   "search.button": "Search",
   "search.results": "Found: {n}",
   "search.noResults": "Nothing found for these parameters",
+  "search.watchable": "Available to watch",
 
   "filters.type": "Type",
   "filters.genre": "Genres",
@@ -57,6 +58,7 @@ export const en: Dict = {
   "title.watched": "Watched",
   "title.watchedAdd": "Watched it",
   "title.providers": "Where to watch",
+  "title.watch.where": "Where to watch",
   "title.trailer": "Trailer",
   "title.director": "Director",
   "title.actors": "Cast",
@@ -112,6 +114,19 @@ export const en: Dict = {
   "providers.rent": "Rent",
   "providers.buy": "Buy",
   "providers.free": "Free",
+
+  "watch.free": "Free",
+  "watch.subscription": "Subscription",
+  "watch.rent": "Rent",
+  "watch.buy": "Buy",
+  "watch.badge.free": "Free",
+  "watch.badge.subscription": "Sub",
+  "watch.badge.rent": "Rent",
+  "watch.badge.buy": "Buy",
+
+  "provider.sweettv": "sweet.tv",
+  "provider.archive": "Internet Archive (free)",
+  "provider.tmdb-streaming": "Streaming",
 
   "settings.language": "Interface language",
   "settings.region": "Provider region",

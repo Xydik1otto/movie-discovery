@@ -5,11 +5,13 @@ using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Caching;
 using MovieDiscovery.Infrastructure.Embeddings;
+using MovieDiscovery.Infrastructure.Imdb;
 using MovieDiscovery.Infrastructure.Localization;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Api;
 
@@ -37,6 +39,8 @@ public class Program
         builder.Services.Configure<ShikimoriOptions>(builder.Configuration.GetSection("Shikimori"));
         builder.Services.Configure<MalOfficialOptions>(builder.Configuration.GetSection("MalOfficial"));
         builder.Services.Configure<JikanOptions>(builder.Configuration.GetSection("Jikan"));
+        builder.Services.Configure<ImdbOptions>(builder.Configuration.GetSection("Imdb"));
+        builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
 
         var cs = builder.Configuration.GetConnectionString("Default")
                  ?? throw new InvalidOperationException("ConnectionStrings:Default не задано");
@@ -91,17 +95,41 @@ public class Program
             if (!string.IsNullOrWhiteSpace(opt.ClientId))
                 c.DefaultRequestHeaders.TryAddWithoutValidation("X-MAL-CLIENT-ID", opt.ClientId);
         });
+        // FR-15: IMDb datasets — довге потокове завантаження .gz (до ~700 MB)
+        builder.Services.AddHttpClient<ImdbBulkService>(c =>
+        {
+            c.BaseAddress = new Uri("https://datasets.imdbws.com/");
+            c.Timeout = TimeSpan.FromMinutes(60);
+        });
+        // FR-14: Internet Archive advancedsearch
+        builder.Services.AddHttpClient<ArchiveWatchService>(c =>
+        {
+            c.BaseAddress = new Uri("https://archive.org/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
+        // FR-14: sweet.tv — чесний User-Agent, тротлінг 1 req/2 c у сервісі
+        builder.Services.AddHttpClient<SweetTvService>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SweetTvOptions>>().Value;
+            c.BaseAddress = new Uri(opt.BaseUrl.TrimEnd('/') + "/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+            if (!string.IsNullOrWhiteSpace(opt.UserAgent))
+                c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", opt.UserAgent);
+        });
         builder.Services.AddSingleton<IHttpClientFactoryAccessor, HttpClientFactoryAccessor>();
 
         builder.Services.AddSingleton<EmbeddingQueue>();
         builder.Services.AddSingleton<SyncQueue>();
         builder.Services.AddSingleton<AnimeSyncQueue>();
         builder.Services.AddSingleton<ImportQueue>();
+        builder.Services.AddSingleton<ImdbSyncQueue>();
+        builder.Services.AddSingleton<WatchSyncQueue>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
         builder.Services.AddSingleton<ShikimoriThrottle>();
         builder.Services.AddSingleton<AniListThrottle>();
         builder.Services.AddSingleton<MalOfficialThrottle>();
+        builder.Services.AddSingleton<SweetTvThrottle>();
         builder.Services.AddScoped<ICacheStore, SourceCacheStore>();
         builder.Services.AddSingleton<IEmbedder, OllamaEmbedder>();
         builder.Services.AddScoped<SimilarityEngine>(sp =>
@@ -113,11 +141,14 @@ public class Program
         builder.Services.AddScoped<AnimeCatalogService>();   // Jikan — dormant (EOL), лишається поза активним шляхом
         builder.Services.AddScoped<AniListCatalogService>(); // PRIMARY sync каталогу аніме/манги + MAL official-шар
         builder.Services.AddScoped<ImportService>();
+        builder.Services.AddScoped<TmdbProvidersService>();
 
         builder.Services.AddHostedService<EmbeddingBackgroundService>();
         builder.Services.AddHostedService<SyncBackgroundService>();
         builder.Services.AddHostedService<AnimeSyncBackgroundService>();
         builder.Services.AddHostedService<ImportBackgroundService>();
+        builder.Services.AddHostedService<ImdbSyncBackgroundService>();
+        builder.Services.AddHostedService<WatchSyncBackgroundService>();
 
         var app = builder.Build();
 

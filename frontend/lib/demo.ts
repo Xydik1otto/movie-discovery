@@ -4,6 +4,30 @@
 import type { ListItem, ListKind, SimilarItem, TitleCard, TitleDetail } from "./types";
 import type { Lang } from "../i18n/I18nContext";
 
+// FR-14: демо-провайдери перегляду (provider: sweettv|archive|tmdb-streaming).
+// Компактна форма → TitleCard.watchProviders; повна (+region/isAvailable) → detail.providers.
+type DemoWatch = { provider: string; kind: "free" | "subscription" | "rent" | "buy"; url: string };
+
+const DEMO_WATCH: Record<number, DemoWatch[]> = {
+  9001: [
+    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/" },
+    { provider: "archive", kind: "free", url: "https://archive.org/" },
+  ],
+  9002: [{ provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/" }],
+  9003: [{ provider: "archive", kind: "free", url: "https://archive.org/" }],
+  9004: [
+    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/" },
+    { provider: "tmdb-streaming", kind: "rent", url: "https://www.themoviedb.org/" },
+  ],
+  9005: [{ provider: "tmdb-streaming", kind: "buy", url: "https://www.themoviedb.org/" }],
+  9007: [{ provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/" }],
+  9008: [
+    { provider: "archive", kind: "free", url: "https://archive.org/" },
+    { provider: "sweettv", kind: "rent", url: "https://sweet.tv/" },
+  ],
+  // 9006 — свідомо без провайдерів: блок «Де подивитись» не рендериться.
+};
+
 interface DemoTitle {
   id: number;
   tmdbId: number;
@@ -198,6 +222,11 @@ function demoToCard(d: DemoTitle, lang: Lang): TitleCard {
     runtimeMin: d.runtimeMin,
     seasons: d.seasons,
     overview: loc.overview,
+    watchProviders: DEMO_WATCH[d.id]?.map((w) => ({
+      provider: w.provider,
+      kind: w.kind,
+      url: w.url,
+    })),
   };
 }
 
@@ -221,22 +250,14 @@ export function demoDetail(id: number, lang: Lang): TitleDetail | null {
 }
 
 function demoProviders(id: number): TitleDetail["providers"] {
-  if (id === 9001 || id === 9004 || id === 9008) {
-    return [
-      { provider: "Sweet.tv", kind: "stream", url: "#" },
-      { provider: "Megogo", kind: "rent", url: "#" },
-    ];
-  }
-  if (id === 9002 || id === 9007) {
-    return [
-      { provider: "Netflix", kind: "stream", url: "#" },
-      { provider: "Megogo", kind: "buy", url: "#" },
-    ];
-  }
-  return [
-    { provider: "Apple TV", kind: "rent", url: "#" },
-    { provider: "YouTube", kind: "free", url: "#" },
-  ];
+  // Повна форма за контрактом FR-14: {provider, kind, region, url, isAvailable}.
+  return (DEMO_WATCH[id] ?? []).map((w) => ({
+    provider: w.provider,
+    kind: w.kind,
+    url: w.url,
+    region: "UA",
+    isAvailable: true,
+  }));
 }
 
 // Демо-пошук: фільтрація пулу за текстом/жанрами/роком/рейтингом.
@@ -252,6 +273,7 @@ export function demoSearch(
     minRuntime?: number | null;
     maxRuntime?: number | null;
     country?: string | null;
+    watchable?: boolean | null;
   },
   lang: Lang,
   page = 1,
@@ -291,6 +313,8 @@ export function demoSearch(
     items = items.filter((i) => i.runtimeMin == null || i.runtimeMin <= opts.maxRuntime!);
   }
   if (opts.country) items = items.filter((i) => (i.countries ?? []).includes(opts.country!));
+  // FR-14: лише тайтли з доступними провайдерами перегляду.
+  if (opts.watchable) items = items.filter((i) => (i.watchProviders?.length ?? 0) > 0);
   const total = items.length;
   const start = (page - 1) * pageSize;
   return { items: items.slice(start, start + pageSize), total, page, pageSize };

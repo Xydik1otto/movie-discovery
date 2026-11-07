@@ -60,6 +60,27 @@ public sealed class TmdbClient(
             "&append_to_response=credits,keywords,videos,watch/providers,similar,recommendations",
             0, ct);
 
+    // ─── FR-14: watch/providers через imdb_id (dormant до TMDB_API_KEY) ───
+
+    /// <summary>find/{imdb_id}?external_source=imdb_id → id фільма/серіалу TMDB (безстроковий кеш).</summary>
+    public Task<TmdbFind?> FindByImdbAsync(string imdbId, CancellationToken ct = default) =>
+        FetchAsync<TmdbFind>(
+            TmdbCacheKeys.Find("imdb", imdbId),
+            $"find/{imdbId}?api_key={_opt.ApiKey}&external_source=imdb_id",
+            0, ct);
+
+    public Task<TmdbWatchProviders?> MovieWatchProvidersAsync(int id, CancellationToken ct = default) =>
+        FetchAsync<TmdbWatchProviders>(
+            TmdbCacheKeys.Providers("movie", id, "UA"),
+            $"movie/{id}/watch/providers?api_key={_opt.ApiKey}",
+            0, ct);
+
+    public Task<TmdbWatchProviders?> TvWatchProvidersAsync(int id, CancellationToken ct = default) =>
+        FetchAsync<TmdbWatchProviders>(
+            TmdbCacheKeys.Providers("series", id, "UA"),
+            $"tv/{id}/watch/providers?api_key={_opt.ApiKey}",
+            0, ct);
+
     // ─── Загальний механізм: кеш → HTTP з ретраями ───
 
     private async Task<T?> FetchAsync<T>(string cacheKey, string pathAndQuery, int ttlSeconds, CancellationToken ct) where T : class

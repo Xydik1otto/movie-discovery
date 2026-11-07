@@ -36,7 +36,7 @@ interface Applied {
   seasonsTo: number | null;
   excludeGenres: string[];
   hasTrailer: boolean | null;
-  hasProviders: boolean | null;
+  watchable: boolean | null;
   ratingSource: string | null;
   sort: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
 }
@@ -61,7 +61,7 @@ const EMPTY: Applied = {
   seasonsTo: null,
   excludeGenres: [],
   hasTrailer: null,
-  hasProviders: null,
+  watchable: null,
   ratingSource: null,
   sort: "popularity",
 };
@@ -97,7 +97,8 @@ export default function HomePage() {
   const [seasonsTo, setSeasonsTo] = useState("");
   const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
   const [hasTrailer, setHasTrailer] = useState(false);
-  const [hasProviders, setHasProviders] = useState(false);
+  // FR-14: «Можна подивитись» → ?watchable=true (лише тайтли з watch_links).
+  const [watchable, setWatchable] = useState(false);
   const [ratingSource, setRatingSource] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [applied, setApplied] = useState<Applied>(EMPTY);
@@ -129,7 +130,7 @@ export default function HomePage() {
       seasonsTo: numOrNull(seasonsTo),
       excludeGenres,
       hasTrailer: hasTrailer ? true : null,
-      hasProviders: hasProviders ? true : null,
+      watchable: watchable ? true : null,
       ratingSource: ratingSource || null,
       sort: q ? "relevance" : "popularity",
     });
@@ -156,7 +157,7 @@ export default function HomePage() {
     setSeasonsTo("");
     setExcludeGenres([]);
     setHasTrailer(false);
-    setHasProviders(false);
+    setWatchable(false);
     setRatingSource("");
     setApplied(EMPTY);
     setPage(1);
@@ -559,11 +560,11 @@ export default function HomePage() {
                   <label className="flex items-center gap-2 text-sm text-mute">
                     <input
                       type="checkbox"
-                      checked={hasProviders}
-                      onChange={(e) => setHasProviders(e.target.checked)}
+                      checked={watchable}
+                      onChange={(e) => setWatchable(e.target.checked)}
                       className="h-4 w-4 accent-[var(--color-accent)]"
                     />
-                    {t("filters.hasProviders")}
+                    {t("search.watchable")}
                   </label>
                 </div>
 

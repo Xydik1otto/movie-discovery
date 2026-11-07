@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { formatLabel, posterUrlFull } from "../lib/constants";
+import { WATCH_KIND_BADGE_STYLE, formatLabel, posterUrlFull } from "../lib/constants";
+import { dedupeWatchKinds, watchBadgeLabelKey, watchKindLabelKey } from "../lib/watch";
 import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
 import RatingBadge from "./RatingBadge";
@@ -39,6 +40,10 @@ export default function TitleCard({
           : isManga
             ? "filters.manga"
             : "filters.show";
+
+  // FR-14: маленькі бейджі доступності перегляду у верхньому правому куті —
+  // разом із % схожості (одна колонка, лейаут картки не змінюється).
+  const watchBadges = dedupeWatchKinds(item.watchProviders ?? []).slice(0, 3);
 
   return (
     <div className="group">
@@ -79,9 +84,28 @@ export default function TitleCard({
             />
           </div>
 
-          {score != null && (
-            <div className="absolute right-1.5 top-1.5 rounded-md border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
-              {Math.round(score * 100)}%
+          {(score != null || watchBadges.length > 0) && (
+            <div className="absolute right-1.5 top-1.5 flex flex-col items-end gap-1">
+              {score != null && (
+                <div className="rounded-md border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
+                  {Math.round(score * 100)}%
+                </div>
+              )}
+              {watchBadges.map((w) => {
+                const badgeKey = watchBadgeLabelKey(w.kind);
+                const fullKey = watchKindLabelKey(w.kind);
+                return (
+                  <span
+                    key={w.kind}
+                    title={fullKey ? t(fullKey) : w.kind}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide backdrop-blur-sm ${
+                      WATCH_KIND_BADGE_STYLE[w.kind] ?? "border-line bg-black/60 text-white/90"
+                    }`}
+                  >
+                    {badgeKey ? t(badgeKey) : w.kind}
+                  </span>
+                );
+              })}
             </div>
           )}
 

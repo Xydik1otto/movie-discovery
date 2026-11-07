@@ -59,3 +59,9 @@ docker-compose.yml, .env.example
 
 Дані про фільми — [TMDB](https://www.themoviedb.org), провайдери перегляду — JustWatch.
 Цей продукт використовує API TMDB, але не схвалений і не сертифікований TMDB.
+
+Інформація про фільми та серіали також надана [IMDb](https://www.imdb.com) через офіційні
+[IMDb datasets](https://datasets.imdbws.com) (умова використання — ця атрибуція).
+Безкоштовні фільми — [Internet Archive](https://archive.org) (public domain).
+Каталог аніме/манги — [AniList](https://anilist.co), [MyAnimeList](https://myanimelist.net), [Shikimori](https://shikimori.one).
+UA-провайдер — [sweet.tv](https://sweet.tv) (публічний каталог, robots.txt дозволяє).

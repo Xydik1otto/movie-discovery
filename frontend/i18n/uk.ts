@@ -14,6 +14,7 @@ export const uk = {
   "search.button": "Знайти",
   "search.results": "Знайдено: {n}",
   "search.noResults": "Нічого не знайдено за цими параметрами",
+  "search.watchable": "Можна подивитись",
 
   "filters.type": "Тип",
   "filters.genre": "Жанри",
@@ -55,6 +56,7 @@ export const uk = {
   "title.watched": "Переглянуте",
   "title.watchedAdd": "Переглянув",
   "title.providers": "Де подивитись",
+  "title.watch.where": "Де подивитись",
   "title.trailer": "Трейлер",
   "title.director": "Режисер",
   "title.actors": "Актори",
@@ -110,6 +112,19 @@ export const uk = {
   "providers.rent": "Оренда",
   "providers.buy": "Купити",
   "providers.free": "Безкоштовно",
+
+  "watch.free": "Безкоштовно",
+  "watch.subscription": "Передплата",
+  "watch.rent": "Оренда",
+  "watch.buy": "Купівля",
+  "watch.badge.free": "FREE",
+  "watch.badge.subscription": "Передплата",
+  "watch.badge.rent": "Оренда",
+  "watch.badge.buy": "Купівля",
+
+  "provider.sweettv": "sweet.tv",
+  "provider.archive": "Internet Archive (безкоштовно)",
+  "provider.tmdb-streaming": "Стримінг",
 
   "settings.language": "Мова інтерфейсу",
   "settings.region": "Регіон провайдерів",

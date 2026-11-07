@@ -5,6 +5,8 @@ using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Embeddings;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Sync;
+using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Api.Controllers;
 
@@ -15,8 +17,11 @@ public sealed class AdminController(
     SyncQueue syncQueue,
     EmbeddingQueue embeddingQueue,
     AnimeSyncQueue animeSyncQueue,
+    ImdbSyncQueue imdbSyncQueue,
+    WatchSyncQueue watchSyncQueue,
     Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
-    Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions) : ControllerBase
+    Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions,
+    Microsoft.Extensions.Options.IOptions<TmdbOptions> tmdbOptions) : ControllerBase
 {
     /// <summary>Перевірка X-Admin-Key. ADMIN_KEY не задано → 500 (конфіг-помилка), не збіг → 401.</summary>
     private IActionResult? CheckAdmin()
@@ -120,6 +125,97 @@ public sealed class AdminController(
         return Accepted(new { queued = true, source = "mal-official" });
     }
 
+    /// <summary>
+    /// FR-15: масивний імпорт IMDb datasets (title.basics + title.ratings) — 202 {queued:true, source:"imdb"}.
+    /// mediaTypes: movie|series (порожньо/відсутнє → обидва); maxRows — smoke-ліміт рядків після фільтру типів.
+    /// </summary>
+    [HttpPost("sync/imdb")]
+    public IActionResult SyncImdb([FromBody] ImdbSyncRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var types = new List<string>();
+        foreach (var t in req?.MediaTypes ?? [])
+        {
+            var v = t.Trim().ToLowerInvariant();
+            if (v is not ("movie" or "series"))
+                return BadRequest(new { error = "invalid_request", message = "mediaTypes мають бути movie | series" });
+            if (!types.Contains(v)) types.Add(v);
+        }
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && mr is < 1 or > 10_000_000)
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–10 000 000" });
+
+        if (!imdbSyncQueue.TryEnqueue(new ImdbSyncJob(types, maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "imdb" });
+    }
+
+    /// <summary>FR-14: Internet Archive feature_films → watch_links (free): 202 {queued:true, source:"archive"}.</summary>
+    [HttpPost("sync/archive-films")]
+    public IActionResult SyncArchiveFilms([FromBody] SyncPagesRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var pages = req?.Pages ?? 1;
+        if (pages is < 1 or > 100)
+            return BadRequest(new { error = "invalid_request", message = "pages має бути 1–100" });
+
+        if (!watchSyncQueue.TryEnqueue(new WatchSyncJob("archive-films", pages, 0)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "archive" });
+    }
+
+    /// <summary>FR-14: sweet.tv каталог+картки → titles (uk) + watch_links (UA): 202 {queued:true, source:"sweettv"}.</summary>
+    [HttpPost("sync/sweettv")]
+    public IActionResult SyncSweetTv([FromBody] SyncPagesRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var pages = req?.Pages ?? 1;
+        if (pages is < 1 or > 20)
+            return BadRequest(new { error = "invalid_request", message = "pages має бути 1–20" });
+
+        if (!watchSyncQueue.TryEnqueue(new WatchSyncJob("sweettv", pages, 0)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "sweettv" });
+    }
+
+    /// <summary>
+    /// FR-14: TMDB watch/providers (JustWatch через TMDB, region UA) → watch_links(tmdb-streaming).
+    /// Без TMDB_API_KEY → 400 з підказкою зареєструвати безкоштовний ключ (dormant, нічого не ламається).
+    /// З ключем → 202 {queued:true, source:"tmdb-providers"}; опційний body {limit} — скільки тайтлів обробити.
+    /// </summary>
+    [HttpPost("sync/tmdb-providers")]
+    public IActionResult SyncTmdbProviders([FromBody] TmdbProvidersRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        if (string.IsNullOrWhiteSpace(tmdbOptions.Value.ApiKey))
+            return BadRequest(new
+            {
+                error = "tmdb_not_configured",
+                message = "TMDB_API_KEY не задано: зареєструй безкоштовний ключ на themoviedb.org (Settings → API) і пропиши TMDB_API_KEY у .env",
+            });
+
+        var limit = req?.Limit ?? TmdbProvidersService.DefaultLimit;
+        if (limit is < 1 or > 10_000)
+            return BadRequest(new { error = "invalid_request", message = "limit має бути 1–10 000" });
+
+        if (!watchSyncQueue.TryEnqueue(new WatchSyncJob("tmdb-providers", 0, limit)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "tmdb-providers" });
+    }
+
     [HttpGet("sync/status")]
     public async Task<IActionResult> SyncStatus(CancellationToken ct)
     {
@@ -164,5 +260,16 @@ public sealed class AdminController(
         public int? Year { get; set; }     // null → поточний рік
         public string? Season { get; set; } // null → поточний сезон (winter|spring|summer|fall)
         public int Pages { get; set; } = 1;
+    }
+
+    public sealed class ImdbSyncRequest
+    {
+        public List<string>? MediaTypes { get; set; } // movie | series; порожньо → обидва
+        public int? MaxRows { get; set; }             // smoke-ліміт рядків після фільтру типів
+    }
+
+    public sealed class TmdbProvidersRequest
+    {
+        public int? Limit { get; set; } // скільки тайтлів з imdb_id обробити (default 500)
     }
 }

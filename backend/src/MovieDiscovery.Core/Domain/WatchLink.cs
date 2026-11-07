@@ -1,0 +1,20 @@
+namespace MovieDiscovery.Core.Domain;
+
+/// <summary>
+/// Посилання «де подивитись» (FR-14) — таблиця watch_links.
+/// Провайдери: sweettv | archive | tmdb-streaming | ...
+/// kind: free | subscription | rent | buy; region: UA | US | *.
+/// UNIQUE(title_id, provider, kind, region) — повторний sync НЕ дублює.
+/// </summary>
+public class WatchLink
+{
+    public int Id { get; set; }
+    public int TitleId { get; set; }
+    public Title Title { get; set; } = null!;
+    public string Provider { get; set; } = "";
+    public string Kind { get; set; } = "free";
+    public string Region { get; set; } = "UA";
+    public string? Url { get; set; }
+    public bool IsAvailable { get; set; } = true;
+    public DateTime CheckedAt { get; set; } = DateTime.UtcNow;
+}

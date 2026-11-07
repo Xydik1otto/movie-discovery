@@ -396,6 +396,17 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("genres");
 
+                    b.Property<string>("ImdbId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("imdb_id");
+
+                    b.Property<bool>("IsAdult")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_adult");
+
                     b.Property<string[]>("Keywords")
                         .IsRequired()
                         .HasColumnType("text[]")
@@ -522,6 +533,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Genres"), "gin");
 
+                    b.HasIndex("ImdbId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_titles_imdb_id")
+                        .HasFilter("imdb_id IS NOT NULL");
+
                     b.HasIndex("Keywords")
                         .HasDatabaseName("ix_titles_keywords");
 
@@ -553,7 +569,70 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_titles_tmdb_id_type");
 
+                    b.HasIndex("Type", "Popularity")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_titles_type_popularity")
+                        .HasFilter("type IN ('movie', 'series')");
+
                     b.ToTable("titles", (string)null);
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.WatchLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<bool>("IsAvailable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_available");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("region");
+
+                    b.Property<int>("TitleId")
+                        .HasColumnType("integer")
+                        .HasColumnName("title_id");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_watch_links");
+
+                    b.HasIndex("TitleId")
+                        .HasDatabaseName("ix_watch_links_title_id");
+
+                    b.HasIndex("Provider", "IsAvailable")
+                        .HasDatabaseName("ix_watch_links_provider_is_available");
+
+                    b.HasIndex("TitleId", "Provider", "Kind", "Region")
+                        .IsUnique()
+                        .HasDatabaseName("ix_watch_links_title_id_provider_kind_region");
+
+                    b.ToTable("watch_links", (string)null);
                 });
 
             modelBuilder.Entity("MovieDiscovery.Infrastructure.Persistence.EmbeddingRow", b =>
@@ -641,6 +720,18 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasConstraintName("fk_queries_profiles_profile_id");
 
                     b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.WatchLink", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.Title", "Title")
+                        .WithMany()
+                        .HasForeignKey("TitleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_watch_links_titles_title_id");
+
+                    b.Navigation("Title");
                 });
 
             modelBuilder.Entity("MovieDiscovery.Infrastructure.Persistence.EmbeddingRow", b =>

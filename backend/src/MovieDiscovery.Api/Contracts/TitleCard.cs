@@ -31,6 +31,9 @@ public class TitleCard
     public double? ScoreMal { get; set; }
     public double? ScoreAnilist { get; set; }
     public double? ScoreShikimori { get; set; }
+
+    // ── «Де подивитись» (FR-14): компактні бейджі, лише is_available=true ──
+    public List<CardWatchProvider> WatchProviders { get; set; } = [];
 }
 
 /// <summary>Елемент відповіді схожості: TitleCard + score + reasons (1–3 локалізовані рядки).</summary>

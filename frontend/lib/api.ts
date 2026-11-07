@@ -9,11 +9,11 @@ import type {
   ListItem,
   ListResponse,
   Paged,
-  ProviderRef,
   SearchParams,
   SimilarItem,
   TitleCard,
   TitleDetail,
+  WatchProvider,
 } from "./types";
 import type { Lang } from "../i18n/I18nContext";
 
@@ -116,7 +116,7 @@ export async function searchTitles(
       seasonsTo: p.seasonsTo ?? undefined,
       excludeGenres: p.excludeGenres?.length ? p.excludeGenres.join(",") : undefined,
       hasTrailer: p.hasTrailer == null ? undefined : p.hasTrailer ? "true" : "false",
-      hasProviders: p.hasProviders == null ? undefined : p.hasProviders ? "true" : "false",
+      watchable: p.watchable == null ? undefined : p.watchable ? "true" : "false",
       ratingSource: p.ratingSource,
       sort: p.sort,
       page: p.page ?? 1,
@@ -159,11 +159,12 @@ export async function similarByText(
   });
 }
 
-export async function getProviders(
+// Повна форма провайдерів перегляду (FR-14):
+// {providers: [{provider, kind, region, url, isAvailable}]}.
+export async function getWatch(
   id: number | string,
-  region = "UA",
-): Promise<{ providers: ProviderRef[] }> {
-  return request<{ providers: ProviderRef[] }>(`/api/title/${id}/providers${qs({ region })}`);
+): Promise<{ providers: WatchProvider[] }> {
+  return request<{ providers: WatchProvider[] }>(`/api/titles/${id}/watch`);
 }
 
 export async function getLists(

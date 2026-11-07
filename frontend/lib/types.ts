@@ -1,7 +1,7 @@
 // Форми даних за контрактом PLAN.md (camelCase, як у API).
 
 export type TitleType = "movie" | "series" | "show" | "anime" | "manga";
-export type ProviderKind = "stream" | "rent" | "buy" | "free";
+export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free";
 export type ListKind = "watchlist" | "watched" | "read";
 
 export interface TitleCard {
@@ -30,12 +30,19 @@ export interface TitleCard {
   scoreMal?: number | null;
   scoreAnilist?: number | null;
   scoreShikimori?: number | null;
+  // FR-14: компактні провайдери перегляду (лише is_available=true;
+  // provider: sweettv|archive|tmdb-streaming).
+  watchProviders?: WatchProvider[];
 }
 
-export interface ProviderRef {
+// Провайдер перегляду (FR-14, watch_links). Компактна форма — у TitleCard
+// (provider/kind/url); повна — GET /api/titles/{id}/watch (region, isAvailable).
+export interface WatchProvider {
   provider: string;
   kind: ProviderKind;
   url?: string | null;
+  region?: string | null;
+  isAvailable?: boolean | null;
 }
 
 export interface TitleDetail extends TitleCard {
@@ -45,7 +52,7 @@ export interface TitleDetail extends TitleCard {
   overviewFull?: string | null;
   backdropUrl?: string | null;
   trailerYtId?: string | null;
-  providers?: ProviderRef[];
+  providers?: WatchProvider[];
   status?: string | null;
   originalLanguage?: string | null;
 }
@@ -102,7 +109,8 @@ export interface SearchParams {
   seasonsTo?: number | null;
   excludeGenres?: string[];
   hasTrailer?: boolean | null;
-  hasProviders?: boolean | null;
+  // FR-14: лише тайтли з доступними watch_links (?watchable=true).
+  watchable?: boolean | null;
   ratingSource?: string | null;
   sort?: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   page?: number;

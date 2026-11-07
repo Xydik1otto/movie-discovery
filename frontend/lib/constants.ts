@@ -76,17 +76,29 @@ export const SORTS: {
 
 export const PROVIDER_KINDS: { value: ProviderKind; key: string }[] = [
   { value: "stream", key: "providers.stream" },
+  { value: "subscription", key: "watch.subscription" },
   { value: "rent", key: "providers.rent" },
   { value: "buy", key: "providers.buy" },
   { value: "free", key: "providers.free" },
 ];
 
-// Кольори бейджів провайдерів за kind.
+// Кольори бейджів провайдерів за kind (сторінка тайтла).
 export const PROVIDER_KIND_STYLE: Record<ProviderKind, string> = {
   stream: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  subscription: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   rent: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   buy: "bg-violet-500/15 text-violet-300 border-violet-500/30",
   free: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+};
+
+// Кольори маленьких бейджів watchProviders у кутку картки (FR-14):
+// темна підкладка + яскравий текст — читабельно поверх постера.
+export const WATCH_KIND_BADGE_STYLE: Record<ProviderKind, string> = {
+  stream: "border-line bg-black/60 text-white/90",
+  subscription: "border-emerald-400/40 bg-black/60 text-emerald-200",
+  rent: "border-amber-400/40 bg-black/60 text-amber-200",
+  buy: "border-violet-400/40 bg-black/60 text-violet-200",
+  free: "border-sky-400/40 bg-black/60 text-sky-200",
 };
 
 // Формати аніме (tv/movie/ova/ona/special) та манги (manga/manhwa/one_shot/novel)

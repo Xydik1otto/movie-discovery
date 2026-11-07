@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { addToList, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
-import { getProviders } from "@/lib/api";
+import { getWatch } from "@/lib/api";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
-import type { ListKind, ProviderRef, SimilarItem, TitleDetail } from "@/lib/types";
+import type { ListKind, SimilarItem, TitleDetail, WatchProvider } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
@@ -29,7 +29,9 @@ export default function TitleDetailPage() {
   const [similarUnavailable, setSimilarUnavailable] = useState(false);
 
   const [region, setRegion] = useState("UA");
-  const [regionProviders, setRegionProviders] = useState<ProviderRef[] | null>(null);
+  // Повна форма провайдерів з GET /api/titles/{id}/watch (FR-14).
+  // null = ендпоінт недоступний → fallback на компактні detail.providers.
+  const [watchList, setWatchList] = useState<WatchProvider[] | null>(null);
 
   const [added, setAdded] = useState<ListKind | null>(null);
   const [busyKind, setBusyKind] = useState<ListKind | null>(null);
@@ -89,20 +91,25 @@ export default function TitleDetailPage() {
     };
   }, [id, lang]);
 
-  // Регіон ≠ UA → перезапит провайдерів окремим ендпоінтом.
+  // Повні провайдери перегляду (FR-14): /watch повертає рядки з region/isAvailable —
+  // фільтруємо за вибраним регіоном на клієнті ("*" = усі регіони).
   useEffect(() => {
-    if (!detail || unavailable || region === "UA") {
-      setRegionProviders(null);
-      return;
-    }
+    setWatchList(null);
+    if (!detail || unavailable || !Number.isFinite(id)) return;
     let alive = true;
-    getProviders(id, region)
-      .then((r) => alive && setRegionProviders(r.providers ?? []))
-      .catch(() => alive && setRegionProviders(null));
+    getWatch(id)
+      .then((r) => {
+        if (alive) {
+          setWatchList((r.providers ?? []).filter((p) => p.isAvailable !== false));
+        }
+      })
+      .catch(() => {
+        // ендпоінт недоступний/немає даних → лишається fallback з detail.providers
+      });
     return () => {
       alive = false;
     };
-  }, [detail, unavailable, region, id]);
+  }, [id, detail, unavailable]);
 
   useEffect(() => {
     if (detail) document.title = `${detail.title} · КіноНавігатор`;
@@ -152,7 +159,12 @@ export default function TitleDetailPage() {
     );
   }
 
-  const providers = regionProviders ?? detail.providers ?? [];
+  // FR-14: спершу повні провайдери з /watch, інакше компактні з detail
+  // (легасі/демо); регіон фільтруємо на клієнті.
+  const watchPool: WatchProvider[] = watchList ?? detail.providers ?? [];
+  const providers = watchPool.filter(
+    (p) => !p.region || p.region === "*" || p.region === region,
+  );
   const isAnime = detail.type === "anime";
   const isManga = detail.type === "manga";
   const doneKind: ListKind = isManga ? "read" : "watched";
@@ -410,37 +422,37 @@ export default function TitleDetailPage() {
           )}
         </div>
 
-        {/* Де подивитись */}
-        <aside className="space-y-5">
-          <section className="rounded-2xl border border-line bg-panel p-4">
-            <h2 className="mb-3 text-base font-bold">{t("title.providers")}</h2>
-            {providers.length === 0 ? (
-              <p className="text-sm text-mute">{t("providers.none")}</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {providers.map((p, i) => (
-                  <ProviderBadge key={`${p.provider}-${p.kind}-${i}`} provider={p} />
-                ))}
-              </div>
+        {/* Де подивитись (FR-14) — рендеримо лише коли є доступні провайдери */}
+        {(providers.length > 0 || !!detail.keywords?.length) && (
+          <aside className="space-y-5">
+            {providers.length > 0 && (
+              <section className="rounded-2xl border border-line bg-panel p-4">
+                <h2 className="mb-3 text-base font-bold">{t("title.watch.where")}</h2>
+                <div className="flex flex-wrap gap-2">
+                  {providers.map((p, i) => (
+                    <ProviderBadge key={`${p.provider}-${p.kind}-${i}`} watch={p} />
+                  ))}
+                </div>
+              </section>
             )}
-          </section>
 
-          {!!detail.keywords?.length && (
-            <section className="rounded-2xl border border-line bg-panel p-4">
-              <h2 className="mb-2 text-base font-bold">{t("title.keywords")}</h2>
-              <div className="flex flex-wrap gap-1.5">
-                {detail.keywords.map((k) => (
-                  <span
-                    key={k}
-                    className="rounded-md bg-panel-2 px-2 py-1 text-xs text-mute"
-                  >
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
-        </aside>
+            {!!detail.keywords?.length && (
+              <section className="rounded-2xl border border-line bg-panel p-4">
+                <h2 className="mb-2 text-base font-bold">{t("title.keywords")}</h2>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.keywords.map((k) => (
+                    <span
+                      key={k}
+                      className="rounded-md bg-panel-2 px-2 py-1 text-xs text-mute"
+                    >
+                      {k}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
+          </aside>
+        )}
       </div>
 
       {/* Схожі */}

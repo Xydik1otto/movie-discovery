@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using MovieDiscovery.Api.Contracts;
+using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Tmdb;
 
@@ -7,7 +8,7 @@ namespace MovieDiscovery.Api.Controllers;
 
 [ApiController]
 [Route("api/search")]
-public sealed class SearchController(SearchService search) : ControllerBase
+public sealed class SearchController(SearchService search, MovieDiscoveryDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Get(
@@ -39,6 +40,7 @@ public sealed class SearchController(SearchService search) : ControllerBase
         [FromQuery] bool? hasProviders = null,
         [FromQuery] string? ratingSource = null,
         [FromQuery] string? providerRegion = null,
+        [FromQuery] bool? watchable = null,
         CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show" or "anime" or "manga"))
@@ -68,11 +70,23 @@ public sealed class SearchController(SearchService search) : ControllerBase
             SeasonsFrom: seasonsFrom, SeasonsTo: seasonsTo,
             ExcludeGenres: excludeList,
             HasTrailer: hasTrailer, HasProviders: hasProviders,
-            RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA"), ct);
+            RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA",
+            Watchable: watchable), ct);
+
+        // FR-14: компактні бейджі «де подивитись» на картках (лише is_available=true)
+        var watchLinks = await Infrastructure.Watchability.WatchLinkLoader.LoadAvailableAsync(
+            db, result.Items.Select(t => t.Id), ct);
 
         return Ok(new
         {
-            items = result.Items.Select(t => TitleMapper.ToCard(t, langSafe)).ToList(),
+            items = result.Items.Select(t =>
+            {
+                var card = TitleMapper.ToCard(t, langSafe);
+                if (watchLinks.TryGetValue(t.Id, out var links))
+                    card.WatchProviders = links.Select(w =>
+                        new CardWatchProvider(w.Provider, w.Kind, w.Url)).ToList();
+                return card;
+            }).ToList(),
             total = result.Total,
             page = result.Page,
             pageSize = result.PageSize,

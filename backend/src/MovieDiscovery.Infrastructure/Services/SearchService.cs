@@ -31,7 +31,8 @@ public sealed record SearchQuery(
     bool? HasTrailer = null,
     bool? HasProviders = null,
     string? RatingSource = null,
-    string ProviderRegion = "UA");
+    string ProviderRegion = "UA",
+    bool? Watchable = null);
 
 public sealed record SearchResult(IReadOnlyList<Title> Items, int Total, int Page, int PageSize);
 
@@ -47,6 +48,22 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         var page = Math.Max(1, q.Page);
         var pageSize = Math.Clamp(q.PageSize, 1, 50);
 
+        var query = BuildQuery(q);
+        var total = await query.CountAsync(ct);
+
+        query = Sort(query, q.Sort);
+
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new SearchResult(items, total, page, pageSize);
+    }
+
+    /// <summary>Побудова запиту з усіма фільтрами (public — тест трансляції без БД, як NpgsqlTranslationTests).</summary>
+    public IQueryable<Title> BuildQuery(SearchQuery q)
+    {
         IQueryable<Title> query;
         if (!string.IsNullOrWhiteSpace(q.Q))
         {
@@ -134,16 +151,11 @@ WHERE title_uk ILIKE {pat}
             query = query.Where(t => db.Providers.Any(p => p.TitleId == t.Id && p.Region == region));
         }
 
-        var total = await query.CountAsync(ct);
+        // FR-14: «лише те, що можна подивитись» — EXISTS watch_links is_available
+        if (q.Watchable == true)
+            query = query.Where(t => db.WatchLinks.Any(w => w.TitleId == t.Id && w.IsAvailable));
 
-        query = Sort(query, q.Sort);
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(ct);
-
-        return new SearchResult(items, total, page, pageSize);
+        return query;
     }
 
     /// <summary>Рейтинг: ratingSource обирає, до якого джерела застосувати мінімум/максимум.</summary>
