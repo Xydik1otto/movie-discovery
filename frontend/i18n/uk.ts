@@ -115,6 +115,62 @@ export const uk = {
   "settings.region": "Регіон провайдерів",
   "settings.regionHint": "Впливає на блок «Де подивитись» на картці тайтла",
 
+  "nav.anime": "Аніме",
+  "nav.manga": "Манга",
+  "nav.import": "Імпорт",
+
+  "anime.title": "Аніме",
+  "anime.subtitle": "Аніме-каталог: ТВ, фільми, OVA/ONA — фільтри за форматом, роком і статусом.",
+  "anime.empty": "Каталог аніме ще не синхронізовано — запусти імпорт/синхронізацію.",
+  "anime.format": "Формат",
+  "anime.studios": "Студії",
+  "anime.episodes": "Епізоди",
+  "anime.airing": "Виходить",
+  "anime.finished": "Завершено",
+
+  "manga.title": "Манга",
+  "manga.subtitle": "Каталог манги: томи, розділи, автори — фільтри за форматом, роком і статусом.",
+  "manga.empty": "Каталог манги ще не синхронізовано — запусти імпорт/синхронізацію.",
+  "manga.authors": "Автори",
+  "manga.chapters": "Розділи",
+  "manga.volumes": "Томи",
+
+  "import.title": "Імпорт переглянутого",
+  "import.subtitle": "Перенеси списки з трекерів — потрібен лише публічний нікнейм.",
+  "import.source": "Джерело",
+  "import.username": "Нікнейм",
+  "import.usernamePlaceholder": "Введи нікнейм або ID",
+  "import.start": "Імпортувати",
+  "import.progress": "Прогрес",
+  "import.statusQueued": "У черзі",
+  "import.statusRunning": "Виконується",
+  "import.statusDone": "Готово",
+  "import.statusFailed": "Помилка",
+  "import.summary": "Імпорт завершено",
+  "import.notFound": "Профіль не знайдено — перевір нікнейм або ID.",
+  "import.private": "Список приватний — відкрий його в налаштуваннях трекера і спробуй ще раз.",
+  "import.goToLists": "Мої списки",
+  "import.explain": "Що імпортується: переглянуте аніме → «Переглянуте», прочитана манга → «Прочитане», те, що дивишся/читаєш зараз → «Хочу подивитись». Оцінки 1–10 переносяться як є.",
+  "import.hint.mal": "нікнейм MAL",
+  "import.hint.anilist": "нікнейм AniList",
+  "import.hint.shikimori": "нікнейм або ID Shikimori",
+  "import.stats.found": "Знайдено",
+  "import.stats.created": "Створено",
+  "import.stats.watched": "Переглянуте",
+  "import.stats.read": "Прочитане",
+
+  "lists.read": "Прочитане",
+
+  "filters.format": "Формат",
+  "filters.anime": "Аніме",
+  "filters.manga": "Манга",
+
+  "badges.mal": "Оцінка MyAnimeList",
+  "badges.al": "Оцінка AniList",
+  "badges.shiki": "Оцінка Shikimori",
+
+  "title.readAdd": "Прочитав",
+
   "footer.attribution": "Дані про фільми надає TMDB. Інформація про доступність — JustWatch.",
 } as const;
 

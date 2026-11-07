@@ -15,6 +15,7 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<SourceCacheEntry> SourceCache => Set<SourceCacheEntry>();
     public DbSet<SyncState> SyncStates => Set<SyncState>();
     public DbSet<EmbeddingRow> Embeddings => Set<EmbeddingRow>();
+    public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -24,14 +25,21 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
         {
             e.Property(x => x.Type).IsRequired().HasMaxLength(16);
             e.Property(x => x.TitleEn).IsRequired();
+            e.Property(x => x.Format).HasMaxLength(16);
             // Унікальність (tmdb_id, type): TMDB id фільмів і серіалів — різні простори і почислів,
             // тому саме складений ключ, а не унікальність одного tmdb_id.
+            // Для аніме/манги tmdb_id NULL — у PostgreSQL NULL-и не конфліктують в unique-індексі.
             e.HasIndex(x => new { x.TmdbId, x.Type }).IsUnique();
             e.HasIndex(x => x.Year);
             e.HasIndex(x => x.Popularity).IsDescending();
             e.HasIndex(x => x.Genres).HasMethod("gin");
             e.HasIndex(x => x.Keywords).HasMethod("gin");
             e.HasIndex(x => x.Actors).HasMethod("gin");
+            // Аніме/манга: пошук студій + часткова унікальність зовнішніх id (NULL не конфліктують).
+            e.HasIndex(x => x.Studios).HasMethod("gin");
+            e.HasIndex(x => x.MalId).IsUnique().HasFilter("mal_id IS NOT NULL");
+            e.HasIndex(x => x.AnilistId).IsUnique().HasFilter("anilist_id IS NOT NULL");
+            e.HasIndex(x => x.ShikimoriId).IsUnique().HasFilter("shikimori_id IS NOT NULL");
         });
 
         mb.Entity<Provider>(e =>
@@ -92,6 +100,20 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.Property(x => x.Source).IsRequired();
             e.Property(x => x.Kind).IsRequired();
             e.HasIndex(x => new { x.Source, x.Kind }).IsUnique();
+        });
+
+        mb.Entity<ImportJob>(e =>
+        {
+            e.ToTable("import_jobs");
+            e.Property(x => x.Source).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Username).IsRequired();
+            e.Property(x => x.Status).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Stats).HasColumnType("jsonb");
+            e.HasOne(x => x.Profile)
+                .WithMany()
+                .HasForeignKey(x => x.ProfileId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.Status);
         });
 
         mb.Entity<EmbeddingRow>(e =>

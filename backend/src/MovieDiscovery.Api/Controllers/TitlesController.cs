@@ -48,6 +48,16 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
                 .ToList(),
             Status = t.Status,
             OriginalLanguage = t.OriginalLanguage,
+            // аніме/манга (FR-12)
+            Format = card.Format,
+            Episodes = card.Episodes,
+            Chapters = card.Chapters,
+            Volumes = card.Volumes,
+            Studios = card.Studios,
+            Authors = card.Authors,
+            ScoreMal = card.ScoreMal,
+            ScoreAnilist = card.ScoreAnilist,
+            ScoreShikimori = card.ScoreShikimori,
         });
     }
 

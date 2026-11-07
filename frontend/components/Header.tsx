@@ -7,8 +7,11 @@ import LangSwitcher from "./LangSwitcher";
 
 const NAV = [
   { href: "/", key: "nav.home" },
+  { href: "/anime", key: "nav.anime" },
+  { href: "/manga", key: "nav.manga" },
   { href: "/similar", key: "nav.similar" },
   { href: "/lists", key: "nav.lists" },
+  { href: "/import", key: "nav.import" },
   { href: "/settings", key: "nav.settings" },
 ];
 

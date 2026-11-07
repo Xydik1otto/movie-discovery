@@ -1,12 +1,13 @@
 // Форми даних за контрактом PLAN.md (camelCase, як у API).
 
-export type TitleType = "movie" | "series" | "show";
+export type TitleType = "movie" | "series" | "show" | "anime" | "manga";
 export type ProviderKind = "stream" | "rent" | "buy" | "free";
-export type ListKind = "watchlist" | "watched";
+export type ListKind = "watchlist" | "watched" | "read";
 
 export interface TitleCard {
   id: number;
-  tmdbId: number;
+  // Для аніме/манги з зовнішніх джерел tmdb_id може бути NULL.
+  tmdbId?: number | null;
   type: TitleType;
   title: string;
   originalTitle?: string | null;
@@ -19,6 +20,16 @@ export interface TitleCard {
   runtimeMin?: number | null;
   seasons?: number | null;
   overview?: string | null;
+  // Аніме/манга-специфіка (PLAN §Аніме і манга; null для звичайних тайтлів).
+  format?: string | null;
+  episodes?: number | null;
+  chapters?: number | null;
+  volumes?: number | null;
+  studios?: string[] | null;
+  authors?: string[] | null;
+  scoreMal?: number | null;
+  scoreAnilist?: number | null;
+  scoreShikimori?: number | null;
 }
 
 export interface ProviderRef {
@@ -71,6 +82,7 @@ export interface HealthResponse {
 export interface SearchParams {
   q?: string;
   type?: string | null;
+  format?: string | null;
   genres?: string[];
   yearFrom?: number | null;
   yearTo?: number | null;
@@ -95,4 +107,36 @@ export interface SearchParams {
   sort?: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   page?: number;
   pageSize?: number;
+}
+
+// --- Імпорт списків (PLAN §Аніме і манга: «Імпорт списків») ---
+
+export type ImportSourceId = "mal" | "anilist" | "shikimori";
+export type ImportJobStatus = "queued" | "running" | "done" | "failed";
+
+export interface ImportSource {
+  id: string;
+  name: string;
+  hint: string;
+}
+
+// Форма import_jobs.stats jsonb (PLAN) — усі поля опціональні.
+export interface ImportJobStats {
+  animeTotal?: number | null;
+  mangaTotal?: number | null;
+  matched?: number | null;
+  created?: number | null;
+  animeWatched?: number | null;
+  mangaRead?: number | null;
+  watchlistAdded?: number | null;
+  errors?: string[] | null;
+}
+
+export interface ImportJob {
+  id: number;
+  source: string;
+  username?: string | null;
+  status: ImportJobStatus;
+  stats?: ImportJobStats | null;
+  error?: string | null;
 }

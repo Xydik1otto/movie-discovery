@@ -69,16 +69,16 @@ public sealed class TitleService(
     public async Task<List<Provider>> GetProvidersAsync(Title title, string region, CancellationToken ct = default)
     {
         var list = await LoadProvidersAsync(title.Id, region, ct);
-        if (list.Count > 0 || !tmdb.IsConfigured) return list;
+        if (list.Count > 0 || !tmdb.IsConfigured || title.TmdbId is not int tmdbId) return list;
 
         // on-demand: перший запит тягне watch/providers (через кеш), зберігає назавжди
         try
         {
             var isMovie = title.Type == "movie";
             var en = isMovie
-                ? await tmdb.MovieDetailsAsync(title.TmdbId, "en-US", ct)
+                ? await tmdb.MovieDetailsAsync(tmdbId, "en-US", ct)
                 : null;
-            var tv = !isMovie ? await tmdb.TvDetailsAsync(title.TmdbId, "en-US", ct) : null;
+            var tv = !isMovie ? await tmdb.TvDetailsAsync(tmdbId, "en-US", ct) : null;
             var wp = en?.WatchProviders ?? tv?.WatchProviders;
             if (wp is null) return list;
 
@@ -104,10 +104,12 @@ public sealed class TitleService(
             .ToListAsync(ct);
 
     private static bool NeedsEnrichment(Title t) =>
-        t.Actors.Length == 0 || t.Keywords.Length == 0 || t.TrailerYtId is null;
+        t.TmdbId is not null && // аніме/манга (без tmdb_id) не збагачуються з TMDB
+        (t.Actors.Length == 0 || t.Keywords.Length == 0 || t.TrailerYtId is null);
 
     private async Task EnrichAsync(Title title, CancellationToken ct)
     {
+        if (title.TmdbId is not int tmdbId) return;
         try
         {
             var tracked = await db.Titles.FirstAsync(t => t.Id == title.Id, ct);
@@ -118,16 +120,16 @@ public sealed class TitleService(
             List<Provider> freshProviders = [];
             if (isMovie)
             {
-                var enD = await tmdb.MovieDetailsAsync(title.TmdbId, en, ct);
-                var ukD = await tmdb.MovieDetailsAsync(title.TmdbId, uk, ct);
+                var enD = await tmdb.MovieDetailsAsync(tmdbId, en, ct);
+                var ukD = await tmdb.MovieDetailsAsync(tmdbId, uk, ct);
                 if (enD is null) return;
                 TmdbMapper.ApplyMovieDetails(tracked, enD, ukD);
                 freshProviders = TmdbMapper.ExtractProviders(title.Id, enD.WatchProviders, "UA");
             }
             else
             {
-                var enD = await tmdb.TvDetailsAsync(title.TmdbId, en, ct);
-                var ukD = await tmdb.TvDetailsAsync(title.TmdbId, uk, ct);
+                var enD = await tmdb.TvDetailsAsync(tmdbId, en, ct);
+                var ukD = await tmdb.TvDetailsAsync(tmdbId, uk, ct);
                 if (enD is null) return;
                 TmdbMapper.ApplyTvDetails(tracked, enD, ukD);
                 freshProviders = TmdbMapper.ExtractProviders(title.Id, enD.WatchProviders, "UA");

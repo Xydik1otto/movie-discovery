@@ -192,13 +192,18 @@ export default function HomePage() {
 
   async function findSimilar() {
     if (!seeds.length) return;
+    // by-seeds приймає лише tmdbId — тайтли без нього (аніме/манга з імпорту) відкидаємо.
+    const seedIds = seeds
+      .map((s) => s.tmdbId)
+      .filter((x): x is number => x != null);
+    if (!seedIds.length) {
+      setSimilarError(true);
+      return;
+    }
     setSimilarBusy(true);
     setSimilarError(false);
     try {
-      const r = await guardedBySeeds(
-        seeds.map((s) => s.tmdbId),
-        lang,
-      );
+      const r = await guardedBySeeds(seedIds, lang);
       setSimilarItems(r.data);
       setSimilarUnavailable(r.unavailable);
     } catch {

@@ -153,8 +153,8 @@ public sealed class SyncBackgroundService(
         if (baseSummaries.Count == 0) return (0, []);
         var tmdbIds = baseSummaries.Keys.ToList();
         var existing = await db.Titles
-            .Where(t => tmdbIds.Contains(t.TmdbId) && t.Type == "movie")
-            .ToDictionaryAsync(t => t.TmdbId, ct);
+            .Where(t => tmdbIds.Contains(t.TmdbId!.Value) && t.Type == "movie")
+            .ToDictionaryAsync(t => t.TmdbId!.Value, ct);
 
         var touched = new List<Title>();
         foreach (var (tmdbId, summary) in baseSummaries)
@@ -183,8 +183,8 @@ public sealed class SyncBackgroundService(
         if (baseSummaries.Count == 0) return (0, []);
         var tmdbIds = baseSummaries.Keys.ToList();
         var existing = await db.Titles
-            .Where(t => tmdbIds.Contains(t.TmdbId) && t.Type == "series")
-            .ToDictionaryAsync(t => t.TmdbId, ct);
+            .Where(t => tmdbIds.Contains(t.TmdbId!.Value) && t.Type == "series")
+            .ToDictionaryAsync(t => t.TmdbId!.Value, ct);
 
         var touched = new List<Title>();
         foreach (var (tmdbId, summary) in baseSummaries)

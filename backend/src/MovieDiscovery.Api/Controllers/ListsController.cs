@@ -17,8 +17,8 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
         [FromQuery] string? lang = null,
         CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(kind) && kind is not ("watchlist" or "watched"))
-            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched" });
+        if (!string.IsNullOrWhiteSpace(kind) && !Core.Domain.ListKinds.IsValid(kind))
+            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read" });
 
         var langSafe = SearchController.Lang(lang);
         var profile = await ResolveProfileAsync(profileId, ct);
@@ -62,17 +62,27 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
                     rating = l.Rating,
                     createdAt = l.CreatedAt,
                     watchedAt = l.WatchedAt,
+                    format = card.Format,
+                    episodes = card.Episodes,
+                    chapters = card.Chapters,
+                    volumes = card.Volumes,
+                    studios = card.Studios,
+                    authors = card.Authors,
+                    scoreMal = card.ScoreMal,
+                    scoreAnilist = card.ScoreAnilist,
+                    scoreShikimori = card.ScoreShikimori,
                 };
             }).ToList(),
         });
     }
 
-    /// <summary>Додати тайтл у список. Неіснуючий tmdbId → 404; дублікат → 409.</summary>
+    /// <summary>Додати тайтл у список. Неіснуючий tmdbId/titleId → 404; дублікат → 409;
+    /// kind=read на не-мангу → 400 (аніме/манга мають NULL tmdb_id — використовуйте titleId).</summary>
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] AddListItemRequest req, CancellationToken ct)
     {
-        if (req.Kind is not ("watchlist" or "watched"))
-            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched" });
+        if (!Core.Domain.ListKinds.IsValid(req.Kind))
+            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read" });
         if (req.Rating is < 1 or > 10)
             return BadRequest(new { error = "invalid_request", message = "rating має бути 1–10" });
 
@@ -80,9 +90,21 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
         if (profile is null)
             return NotFound(new { error = "not_found", message = "Профіль не знайдено" });
 
-        var title = await db.Titles.AsNoTracking().FirstOrDefaultAsync(t => t.TmdbId == req.TmdbId, ct);
+        Core.Domain.Title? title;
+        if (req.TitleId is int titleId)
+            title = await db.Titles.AsNoTracking().FirstOrDefaultAsync(t => t.Id == titleId, ct);
+        else if (req.TmdbId != 0)
+            title = await db.Titles.AsNoTracking().FirstOrDefaultAsync(t => t.TmdbId == req.TmdbId, ct);
+        else
+            return BadRequest(new { error = "invalid_request", message = "Потрібен tmdbId або titleId" });
+
         if (title is null)
-            return NotFound(new { error = "title_not_found", message = $"Тайтл з tmdbId={req.TmdbId} не знайдено" });
+            return NotFound(new { error = "title_not_found", message = req.TitleId is int
+                ? $"Тайтл з id={req.TitleId} не знайдено"
+                : $"Тайтл з tmdbId={req.TmdbId} не знайдено" });
+
+        if (!Core.Domain.ListKinds.AllowedForType(req.Kind, title.Type))
+            return BadRequest(new { error = "invalid_request", message = "kind=read допустимий лише для манги (type=manga)" });
 
         var exists = await db.ListEntries
             .AnyAsync(l => l.ProfileId == profile.Id && l.Kind == req.Kind && l.TitleId == title.Id, ct);
@@ -96,7 +118,7 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
             TitleId = title.Id,
             Rating = req.Rating,
             CreatedAt = DateTime.UtcNow,
-            WatchedAt = req.Kind == "watched" ? DateTime.UtcNow : null,
+            WatchedAt = req.Kind is "watched" or "read" ? DateTime.UtcNow : null,
         };
         db.ListEntries.Add(entry);
         await db.SaveChangesAsync(ct);
@@ -106,6 +128,7 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
             id = entry.Id,
             profileId = entry.ProfileId,
             kind = entry.Kind,
+            titleId = title.Id,
             tmdbId = title.TmdbId,
             rating = entry.Rating,
             createdAt = entry.CreatedAt,
@@ -159,6 +182,8 @@ public sealed class ListsController(MovieDiscoveryDbContext db) : ControllerBase
         public int ProfileId { get; set; }
         public string Kind { get; set; } = "watchlist";
         public int TmdbId { get; set; }
+        /// <summary>Локальний id тайтла — для аніме/манги (tmdb_id NULL).</summary>
+        public int? TitleId { get; set; }
         public int? Rating { get; set; }
     }
 

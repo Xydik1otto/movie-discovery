@@ -89,6 +89,39 @@ export const PROVIDER_KIND_STYLE: Record<ProviderKind, string> = {
   free: "bg-sky-500/15 text-sky-300 border-sky-500/30",
 };
 
+// Формати аніме (tv/movie/ova/ona/special) та манги (manga/manhwa/one_shot/novel)
+// — значення зі схеми БД (titles.format), локалізовані підписи uk/en.
+export const ANIME_FORMATS: { value: string; uk: string; en: string }[] = [
+  { value: "tv", uk: "ТВ-серіал", en: "TV series" },
+  { value: "movie", uk: "Фільм", en: "Movie" },
+  { value: "ova", uk: "OVA", en: "OVA" },
+  { value: "ona", uk: "ONA", en: "ONA" },
+  { value: "special", uk: "Спешиал", en: "Special" },
+  { value: "manga", uk: "Манга", en: "Manga" },
+  { value: "manhwa", uk: "Манхва", en: "Manhwa" },
+  { value: "one_shot", uk: "Ван-шот", en: "One-shot" },
+  { value: "novel", uk: "Ранобе", en: "Novel" },
+];
+
+// Підмножина для чіпів фільтра формату на сторінці /manga.
+export const ANIME_MEDIA_FORMATS = ANIME_FORMATS.filter((f) =>
+  ["tv", "movie", "ova", "ona", "special"].includes(f.value),
+);
+
+export const MANGA_FORMATS = ANIME_FORMATS.filter((f) =>
+  ["manga", "manhwa", "one_shot", "novel"].includes(f.value),
+);
+
+// Локалізований підпис формату; невідоме значення показуємо «як є».
+export function formatLabel(
+  value: string | null | undefined,
+  lang: "uk" | "en",
+): string | null {
+  if (!value) return null;
+  const f = ANIME_FORMATS.find((x) => x.value === value);
+  return f ? (lang === "uk" ? f.uk : f.en) : value;
+}
+
 const TMDB_IMG = "https://image.tmdb.org";
 
 // posterUrl з API може прийти повним URL або TMDB-шляхом /xxx.jpg.

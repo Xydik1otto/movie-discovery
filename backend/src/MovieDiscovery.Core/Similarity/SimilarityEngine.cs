@@ -115,9 +115,10 @@ public sealed class SimilarityEngine
         if (numericParts.Count > 0)
             signals.Add(new SignalContribution("numeric", _opt.Numeric, numericParts.Average(), []));
 
-        // --- tmdbSimilarBoost: кандидат є у TMDB similar/recommended еталонів ---
+        // --- tmdbSimilarBoost: кандидат є у TMDB similar/recommended еталонів (аніме/манга — без tmdb_id) ---
         if (seed.TmdbSimilarWeights.Count > 0
-            && seed.TmdbSimilarWeights.TryGetValue(candidate.TmdbId, out var w))
+            && candidate.TmdbId is { } candidateTmdbId
+            && seed.TmdbSimilarWeights.TryGetValue(candidateTmdbId, out var w))
             signals.Add(new SignalContribution("tmdb", _opt.TmdbSimilarBoost, Math.Clamp(w, 0.0, 1.0), []));
 
         // --- нормалізація ваг на доступні сигнали ---

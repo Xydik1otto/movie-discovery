@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { posterUrlFull } from "../lib/constants";
+import { formatLabel, posterUrlFull } from "../lib/constants";
 import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
 import RatingBadge from "./RatingBadge";
@@ -23,15 +23,22 @@ export default function TitleCard({
   reasonsLabel?: string;
   footer?: React.ReactNode;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const similar = item as SimilarItem;
   const url = posterUrlFull(item.posterUrl);
+  const isAnime = item.type === "anime";
+  const isManga = item.type === "manga";
+  const fmt = formatLabel(item.format, lang);
   const typeKey =
     item.type === "movie"
       ? "filters.movie"
       : item.type === "series"
         ? "filters.series"
-        : "filters.show";
+        : isAnime
+          ? "filters.anime"
+          : isManga
+            ? "filters.manga"
+            : "filters.show";
 
   return (
     <div className="group">
@@ -62,6 +69,14 @@ export default function TitleCard({
           <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
             <RatingBadge source="TMDB" value={item.ratingTmdb} />
             <RatingBadge source="IMDb" value={item.ratingImdb} />
+            {/* MAL/AL/Shiki замінюють TMDB/IMDb, коли тих нема (аніме/манга). */}
+            <RatingBadge source="MAL" value={item.scoreMal} title={t("badges.mal")} />
+            <RatingBadge source="AL" value={item.scoreAnilist} title={t("badges.al")} />
+            <RatingBadge
+              source="Shiki"
+              value={item.scoreShikimori}
+              title={t("badges.shiki")}
+            />
           </div>
 
           {score != null && (
@@ -74,13 +89,34 @@ export default function TitleCard({
             <div className="line-clamp-2 text-sm font-semibold leading-tight text-white">
               {item.title}
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/60">
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/60">
               <span>{t(typeKey)}</span>
               {item.year != null && <span>· {item.year}</span>}
-              {item.runtimeMin != null && item.runtimeMin > 0 && (
+              {isAnime && (
+                <>
+                  {fmt && <span>· {fmt}</span>}
+                  {item.episodes != null && (
+                    <span>
+                      · {t("anime.episodes")}: {item.episodes}
+                    </span>
+                  )}
+                </>
+              )}
+              {isManga && (item.volumes != null || item.chapters != null) && (
+                <span>
+                  ·{" "}
+                  {[
+                    item.volumes != null && `${t("manga.volumes")}: ${item.volumes}`,
+                    item.chapters != null && `${t("manga.chapters")}: ${item.chapters}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+              {!isAnime && !isManga && item.runtimeMin != null && item.runtimeMin > 0 && (
                 <span>· {t("title.runtimeMin", { n: item.runtimeMin })}</span>
               )}
-              {item.runtimeMin == null && item.seasons != null && (
+              {!isAnime && !isManga && item.runtimeMin == null && item.seasons != null && (
                 <span>
                   · {t("title.seasons")}: {item.seasons}
                 </span>

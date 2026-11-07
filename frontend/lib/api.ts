@@ -3,6 +3,8 @@
 
 import type {
   HealthResponse,
+  ImportJob,
+  ImportSource,
   ListKind,
   ListItem,
   ListResponse,
@@ -95,6 +97,7 @@ export async function searchTitles(
     `/api/search${qs({
       q: p.q,
       type: p.type,
+      format: p.format,
       genres: p.genres?.length ? p.genres.join(",") : undefined,
       yearFrom: p.yearFrom ?? undefined,
       yearTo: p.yearTo ?? undefined,
@@ -171,12 +174,17 @@ export async function getLists(
 }
 
 export async function addToList(
-  tmdbId: number,
+  ref: { tmdbId?: number | null; id: number },
   kind: ListKind,
   rating?: number | null,
   profileId = DEFAULT_PROFILE_ID,
 ): Promise<ListItem | null> {
-  const body: Record<string, unknown> = { profileId, kind, tmdbId };
+  // Аніме/манга з імпорту не мають tmdbId — тоді посилаємось на внутрішній
+  // id тайтла (titleId); бекенд розрізняє поля tmdbId/titleId.
+  const body: Record<string, unknown> =
+    ref.tmdbId != null
+      ? { profileId, kind, tmdbId: ref.tmdbId }
+      : { profileId, kind, titleId: ref.id };
   if (rating != null) body.rating = rating;
   return request<ListItem | null>("/api/lists", {
     method: "POST",
@@ -196,4 +204,28 @@ export async function patchListItem(
 
 export async function deleteListItem(itemId: number): Promise<void> {
   await request<void>(`/api/lists/${itemId}`, { method: "DELETE" });
+}
+
+// --- Імпорт списків (PLAN: POST /api/import/jobs → 202 {jobId}) ---
+
+export async function getImportSources(): Promise<ImportSource[]> {
+  const r = await request<{ items?: ImportSource[] } | ImportSource[]>(
+    "/api/import/sources",
+  );
+  if (Array.isArray(r)) return r;
+  return r.items ?? [];
+}
+
+export async function startImportJob(
+  source: string,
+  username: string,
+): Promise<{ jobId: number }> {
+  return request<{ jobId: number }>("/api/import/jobs", {
+    method: "POST",
+    body: JSON.stringify({ source, username }),
+  });
+}
+
+export async function getImportJob(id: number): Promise<ImportJob> {
+  return request<ImportJob>(`/api/import/jobs/${id}`);
 }

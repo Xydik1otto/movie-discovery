@@ -101,8 +101,9 @@ public sealed class SimilarityService(
         var result = new Dictionary<int, HashSet<int>>();
         foreach (var s in seeds)
         {
+            if (s.TmdbId is not int seedTmdb) continue; // аніме/манга — TMDB-сигнал недоступний
             var payload = await cache.GetAsync(
-                TmdbCacheKeys.Source, TmdbCacheKeys.Details(s.Type, s.TmdbId, "en-US"), ct);
+                TmdbCacheKeys.Source, TmdbCacheKeys.Details(s.Type, seedTmdb, "en-US"), ct);
             if (payload is null) continue;
             try
             {
@@ -136,7 +137,7 @@ public sealed class SimilarityService(
     private async Task<List<Title>> LoadCandidatesAsync(SeedAggregate seed, CancellationToken ct)
     {
         var seedLocalIds = await db.Titles.AsNoTracking()
-            .Where(t => seed.SeedTmdbIds.Contains(t.TmdbId))
+            .Where(t => t.TmdbId != null && seed.SeedTmdbIds.Contains(t.TmdbId.Value))
             .Select(t => t.Id)
             .ToListAsync(ct);
 

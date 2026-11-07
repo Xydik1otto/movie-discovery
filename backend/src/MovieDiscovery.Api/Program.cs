@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Similarity;
+using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Caching;
 using MovieDiscovery.Infrastructure.Embeddings;
 using MovieDiscovery.Infrastructure.Localization;
@@ -33,6 +34,7 @@ public class Program
         builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
         builder.Services.Configure<OmdbOptions>(builder.Configuration.GetSection("Omdb"));
         builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
+        builder.Services.Configure<ShikimoriOptions>(builder.Configuration.GetSection("Shikimori"));
 
         var cs = builder.Configuration.GetConnectionString("Default")
                  ?? throw new InvalidOperationException("ConnectionStrings:Default не задано");
@@ -55,10 +57,37 @@ public class Program
             c.BaseAddress = new Uri(url.TrimEnd('/') + "/");
             c.Timeout = TimeSpan.FromSeconds(60);
         });
+        builder.Services.AddHttpClient<JikanClient>(c =>
+        {
+            c.BaseAddress = new Uri("https://api.jikan.moe/v4/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
+        builder.Services.AddHttpClient<ShikimoriClient>((sp, c) =>
+        {
+            c.BaseAddress = new Uri("https://shikimori.one/api/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+            // ОБОВ'ЯЗКОВІ заголовки Shikimori: User-Agent завжди; X-Application-Name — після реєстрації застосунку.
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ShikimoriOptions>>().Value;
+            if (!string.IsNullOrWhiteSpace(opt.UserAgent))
+                c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", opt.UserAgent);
+            if (!string.IsNullOrWhiteSpace(opt.ApplicationName))
+                c.DefaultRequestHeaders.TryAddWithoutValidation("X-Application-Name", opt.ApplicationName);
+        });
+        builder.Services.AddHttpClient<AniListClient>(c =>
+        {
+            c.BaseAddress = new Uri("https://graphql.anilist.co");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
         builder.Services.AddSingleton<IHttpClientFactoryAccessor, HttpClientFactoryAccessor>();
 
         builder.Services.AddSingleton<EmbeddingQueue>();
         builder.Services.AddSingleton<SyncQueue>();
+        builder.Services.AddSingleton<AnimeSyncQueue>();
+        builder.Services.AddSingleton<ImportQueue>();
+        // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
+        builder.Services.AddSingleton<JikanThrottle>();
+        builder.Services.AddSingleton<ShikimoriThrottle>();
+        builder.Services.AddSingleton<AniListThrottle>();
         builder.Services.AddScoped<ICacheStore, SourceCacheStore>();
         builder.Services.AddSingleton<IEmbedder, OllamaEmbedder>();
         builder.Services.AddScoped<SimilarityEngine>(sp =>
@@ -66,9 +95,14 @@ public class Program
         builder.Services.AddScoped<SearchService>();
         builder.Services.AddScoped<SimilarityService>();
         builder.Services.AddScoped<TitleService>();
+        builder.Services.AddScoped<AnimeTitleUpsert>();
+        builder.Services.AddScoped<AnimeCatalogService>();
+        builder.Services.AddScoped<ImportService>();
 
         builder.Services.AddHostedService<EmbeddingBackgroundService>();
         builder.Services.AddHostedService<SyncBackgroundService>();
+        builder.Services.AddHostedService<AnimeSyncBackgroundService>();
+        builder.Services.AddHostedService<ImportBackgroundService>();
 
         var app = builder.Build();
 

@@ -40,7 +40,7 @@ public sealed class SimilarController(
         var langSafe = SearchController.Lang(req.Lang);
         var distinct = req.TmdbIds.Distinct().ToList();
         var found = await db.Titles.AsNoTracking()
-            .Where(t => distinct.Contains(t.TmdbId))
+            .Where(t => t.TmdbId != null && distinct.Contains(t.TmdbId.Value))
             .ToListAsync(ct);
 
         // незнайдені id → 404 ДО побудови seeds (інакше First() на порожній послідовності падає в 500)

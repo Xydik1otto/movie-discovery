@@ -41,8 +41,8 @@ public sealed class SearchController(SearchService search) : ControllerBase
         [FromQuery] string? providerRegion = null,
         CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show"))
-            return BadRequest(new { error = "invalid_request", message = "type має бути movie | series | show" });
+        if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show" or "anime" or "manga"))
+            return BadRequest(new { error = "invalid_request", message = "type має бути movie | series | show | anime | manga" });
 
         var langSafe = Lang(lang);
         var genreList = ParseGenres(genres);
@@ -86,7 +86,8 @@ public sealed class SearchController(SearchService search) : ControllerBase
         var list = new List<string>();
         foreach (var raw in genres.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var en = TmdbGenres.NormalizeToEn(raw);
+            // канонічні жанри TMDB + жанри аніме/манги (school, mecha, slice of life...)
+            var en = TmdbGenres.NormalizeToEn(raw) ?? Infrastructure.AnimeManga.AnimeGenres.NormalizeToEn(raw);
             if (en is null) return null;
             if (!list.Contains(en, StringComparer.OrdinalIgnoreCase)) list.Add(en);
         }

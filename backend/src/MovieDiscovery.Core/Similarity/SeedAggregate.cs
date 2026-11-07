@@ -6,8 +6,8 @@ public sealed record WeightedFeature(string Value, double Weight);
 /// <summary>Плоскі ознаки тайтла для движка схожості (чисті дані, без I/O).</summary>
 public sealed record TitleFeatures
 {
-    public required int TmdbId { get; init; }
-    public required string Type { get; init; } // movie | series | show
+    public required int? TmdbId { get; init; } // null для аніме/манги з зовнішніх джерел
+    public required string Type { get; init; } // movie | series | show | anime | manga
     public string[] Genres { get; init; } = [];
     public string[] Keywords { get; init; } = [];
     public string[] Actors { get; init; } = [];
@@ -101,7 +101,7 @@ public sealed class SeedAggregate
 
         return new SeedAggregate
         {
-            SeedTmdbIds = seeds.Select(s => s.TmdbId).ToList(),
+            SeedTmdbIds = seeds.Select(s => s.TmdbId).Where(v => v.HasValue).Select(v => v!.Value).ToList(),
             Type = type,
             Genres = genres,
             Keywords = keywords,

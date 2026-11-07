@@ -36,13 +36,18 @@ export default function SimilarPage() {
 
   async function find() {
     if (!seeds.length) return;
+    // by-seeds приймає лише tmdbId — тайтли без нього (аніме/манга з імпорту) відкидаємо.
+    const seedIds = seeds
+      .map((s) => s.tmdbId)
+      .filter((x): x is number => x != null);
+    if (!seedIds.length) {
+      setError(true);
+      return;
+    }
     setBusy(true);
     setError(false);
     try {
-      const r = await guardedBySeeds(
-        seeds.map((s) => s.tmdbId),
-        lang,
-      );
+      const r = await guardedBySeeds(seedIds, lang);
       setItems(r.data);
       setUnavailable(r.unavailable);
       pushHistory(

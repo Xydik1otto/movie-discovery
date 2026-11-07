@@ -25,6 +25,64 @@ namespace MovieDiscovery.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.ImportJob", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text")
+                        .HasColumnName("error");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int?>("ProfileId")
+                        .HasColumnType("integer")
+                        .HasColumnName("profile_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("source");
+
+                    b.Property<JsonDocument>("Stats")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("stats");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("username");
+
+                    b.HasKey("Id")
+                        .HasName("pk_import_jobs");
+
+                    b.HasIndex("ProfileId")
+                        .HasDatabaseName("ix_import_jobs_profile_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_import_jobs_status");
+
+                    b.ToTable("import_jobs", (string)null);
+                });
+
             modelBuilder.Entity("MovieDiscovery.Core.Domain.ListEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -291,9 +349,21 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("actors");
 
+                    b.Property<int?>("AnilistId")
+                        .HasColumnType("integer")
+                        .HasColumnName("anilist_id");
+
+                    b.Property<string[]>("Authors")
+                        .HasColumnType("text[]")
+                        .HasColumnName("authors");
+
                     b.Property<string>("BackdropPath")
                         .HasColumnType("text")
                         .HasColumnName("backdrop_path");
+
+                    b.Property<int?>("Chapters")
+                        .HasColumnType("integer")
+                        .HasColumnName("chapters");
 
                     b.Property<string[]>("Countries")
                         .IsRequired()
@@ -312,6 +382,15 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("episode_runtime_min");
 
+                    b.Property<int?>("Episodes")
+                        .HasColumnType("integer")
+                        .HasColumnName("episodes");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("format");
+
                     b.Property<string[]>("Genres")
                         .IsRequired()
                         .HasColumnType("text[]")
@@ -321,6 +400,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text[]")
                         .HasColumnName("keywords");
+
+                    b.Property<int?>("MalId")
+                        .HasColumnType("integer")
+                        .HasColumnName("mal_id");
 
                     b.Property<string>("OriginalLanguage")
                         .HasColumnType("text")
@@ -354,13 +437,33 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("runtime_min");
 
+                    b.Property<double?>("ScoreAnilist")
+                        .HasColumnType("double precision")
+                        .HasColumnName("score_anilist");
+
+                    b.Property<double?>("ScoreMal")
+                        .HasColumnType("double precision")
+                        .HasColumnName("score_mal");
+
+                    b.Property<double?>("ScoreShikimori")
+                        .HasColumnType("double precision")
+                        .HasColumnName("score_shikimori");
+
                     b.Property<int?>("Seasons")
                         .HasColumnType("integer")
                         .HasColumnName("seasons");
 
+                    b.Property<int?>("ShikimoriId")
+                        .HasColumnType("integer")
+                        .HasColumnName("shikimori_id");
+
                     b.Property<string>("Status")
                         .HasColumnType("text")
                         .HasColumnName("status");
+
+                    b.Property<string[]>("Studios")
+                        .HasColumnType("text[]")
+                        .HasColumnName("studios");
 
                     b.Property<string>("TitleEn")
                         .IsRequired()
@@ -371,7 +474,7 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("title_uk");
 
-                    b.Property<int>("TmdbId")
+                    b.Property<int?>("TmdbId")
                         .HasColumnType("integer")
                         .HasColumnName("tmdb_id");
 
@@ -389,6 +492,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<int?>("Volumes")
+                        .HasColumnType("integer")
+                        .HasColumnName("volumes");
+
                     b.Property<int?>("VotesImdb")
                         .HasColumnType("integer")
                         .HasColumnName("votes_imdb");
@@ -405,6 +512,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Actors"), "gin");
 
+                    b.HasIndex("AnilistId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_titles_anilist_id")
+                        .HasFilter("anilist_id IS NOT NULL");
+
                     b.HasIndex("Genres")
                         .HasDatabaseName("ix_titles_genres");
 
@@ -415,9 +527,24 @@ namespace MovieDiscovery.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Keywords"), "gin");
 
+                    b.HasIndex("MalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_titles_mal_id")
+                        .HasFilter("mal_id IS NOT NULL");
+
                     b.HasIndex("Popularity")
                         .IsDescending()
                         .HasDatabaseName("ix_titles_popularity");
+
+                    b.HasIndex("ShikimoriId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_titles_shikimori_id")
+                        .HasFilter("shikimori_id IS NOT NULL");
+
+                    b.HasIndex("Studios")
+                        .HasDatabaseName("ix_titles_studios");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Studios"), "gin");
 
                     b.HasIndex("Year")
                         .HasDatabaseName("ix_titles_year");
@@ -459,6 +586,17 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasName("pk_embeddings");
 
                     b.ToTable("embeddings", (string)null);
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.ImportJob", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_import_jobs_profiles_profile_id");
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("MovieDiscovery.Core.Domain.ListEntry", b =>

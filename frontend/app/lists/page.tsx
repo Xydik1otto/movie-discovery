@@ -93,6 +93,7 @@ export default function ListsPage() {
       <div role="tablist" className="mb-4 flex gap-2">
         {tabBtn("watchlist", t("lists.watchlist"))}
         {tabBtn("watched", t("lists.watched"))}
+        {tabBtn("read", t("lists.read"))}
       </div>
 
       {unavailable && <ApiBanner />}
@@ -115,7 +116,7 @@ export default function ListsPage() {
               eager={kind === "watchlist"}
               footer={
                 <div className="mt-2 flex items-center gap-1.5">
-                  {kind === "watched" && (
+                  {kind !== "watchlist" && (
                     <select
                       value={item.rating ?? ""}
                       onChange={(e) =>
@@ -132,7 +133,7 @@ export default function ListsPage() {
                       ))}
                     </select>
                   )}
-                  {kind === "watched" && item.rating != null && (
+                  {kind !== "watchlist" && item.rating != null && (
                     <span className="rounded-md border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[11px] font-bold text-amber-300">
                       ★ {item.rating}
                     </span>

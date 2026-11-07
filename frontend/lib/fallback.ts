@@ -86,7 +86,7 @@ export async function guardedTitleSimilar(
   } catch (e) {
     if (isUnavailable(e)) {
       const d = demoDetail(id, lang);
-      const seedTmdb = d ? [d.tmdbId] : [];
+      const seedTmdb = d?.tmdbId != null ? [d.tmdbId] : [];
       return { data: demoSimilar(seedTmdb, lang, limit), unavailable: true };
     }
     throw e;

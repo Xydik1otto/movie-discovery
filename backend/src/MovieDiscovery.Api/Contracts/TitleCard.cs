@@ -7,7 +7,7 @@ namespace MovieDiscovery.Api.Contracts;
 public class TitleCard
 {
     public int Id { get; set; }
-    public int TmdbId { get; set; }
+    public int? TmdbId { get; set; } // null для аніме/манги з зовнішніх джерел
     public string Type { get; set; } = "movie";
     public string Title { get; set; } = "";
     public string? OriginalTitle { get; set; }
@@ -20,6 +20,17 @@ public class TitleCard
     public int? RuntimeMin { get; set; }
     public int? Seasons { get; set; }
     public string? Overview { get; set; }
+
+    // ── Аніме/манга-специфіка (null для звичайних тайтлів; FR-12) ──
+    public string? Format { get; set; }
+    public int? Episodes { get; set; }
+    public int? Chapters { get; set; }
+    public int? Volumes { get; set; }
+    public List<string>? Studios { get; set; }
+    public List<string>? Authors { get; set; }
+    public double? ScoreMal { get; set; }
+    public double? ScoreAnilist { get; set; }
+    public double? ScoreShikimori { get; set; }
 }
 
 /// <summary>Елемент відповіді схожості: TitleCard + score + reasons (1–3 локалізовані рядки).</summary>
@@ -51,6 +62,7 @@ public static class TitleMapper
     public static TitleCard ToCard(Core.Domain.Title t, string lang)
     {
         var uk = Core.Similarity.SimilarityTexts.IsUk(lang);
+        var isAnimeOrManga = t.Type is "anime" or "manga";
         return new TitleCard
         {
             Id = t.Id,
@@ -67,11 +79,23 @@ public static class TitleMapper
             RuntimeMin = t.RuntimeMin,
             Seasons = t.Seasons,
             Overview = uk ? (FirstNonEmpty(t.OverviewUk) ?? t.OverviewEn) : t.OverviewEn,
+            Format = isAnimeOrManga ? t.Format : null,
+            Episodes = isAnimeOrManga ? t.Episodes : null,
+            Chapters = isAnimeOrManga ? t.Chapters : null,
+            Volumes = isAnimeOrManga ? t.Volumes : null,
+            Studios = isAnimeOrManga && t.Studios is { Length: > 0 } ? [.. t.Studios] : null,
+            Authors = isAnimeOrManga && t.Authors is { Length: > 0 } ? [.. t.Authors] : null,
+            ScoreMal = isAnimeOrManga ? t.ScoreMal : null,
+            ScoreAnilist = isAnimeOrManga ? t.ScoreAnilist : null,
+            ScoreShikimori = isAnimeOrManga ? t.ScoreShikimori : null,
         };
     }
 
+    /// <summary>Шлях постера TMDB → URL; абсолютні URL (Jikan/AniList/Shikimori CDN) — як є.</summary>
     public static string? ImgUrl(string? path, string size) =>
-        string.IsNullOrWhiteSpace(path) ? null : $"https://image.tmdb.org/t/p/{size}{path}";
+        string.IsNullOrWhiteSpace(path) ? null
+        : path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path
+        : $"https://image.tmdb.org/t/p/{size}{path}";
 
     private static string? FirstNonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

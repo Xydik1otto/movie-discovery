@@ -1,7 +1,7 @@
 // Демо-дані: 8 фіктивних тайтлів з плейсхолдер-постерами.
 // Використовуються, коли API недоступний — щоб UI жив без бекенду.
 
-import type { ListItem, SimilarItem, TitleCard, TitleDetail } from "./types";
+import type { ListItem, ListKind, SimilarItem, TitleCard, TitleDetail } from "./types";
 import type { Lang } from "../i18n/I18nContext";
 
 interface DemoTitle {
@@ -320,10 +320,12 @@ export function demoSimilar(seedIds: number[], lang: Lang, limit = 20): SimilarI
 }
 
 // Демо-списки, щоб сторінка /lists жила без бекенду.
-export function demoLists(kind: "watchlist" | "watched", lang: Lang): ListItem[] {
+// «read» — манга; демо-пул манги не має, тому порожньо (без підмінки).
+export function demoLists(kind: ListKind, lang: Lang): ListItem[] {
   if (kind === "watchlist") {
     return [9003, 9005, 9006].map((id) => ({ ...demoDetail(id, lang)!, rating: null }));
   }
+  if (kind === "read") return [];
   return [
     { ...demoDetail(9001, lang)!, rating: 9 },
     { ...demoDetail(9002, lang)!, rating: 8 },

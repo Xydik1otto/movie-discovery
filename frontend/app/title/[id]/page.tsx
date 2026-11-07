@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { addToList, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { getProviders } from "@/lib/api";
-import { posterUrlFull } from "@/lib/constants";
+import { formatLabel, posterUrlFull } from "@/lib/constants";
 import type { ListKind, ProviderRef, SimilarItem, TitleDetail } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
 import TitleCard from "@/components/TitleCard";
@@ -114,8 +114,10 @@ export default function TitleDetailPage() {
     setActionError(false);
     try {
       const rating =
-        kind === "watched" && watchedRating ? Number(watchedRating) : undefined;
-      await addToList(detail.tmdbId, kind, rating ?? null);
+        kind !== "watchlist" && watchedRating ? Number(watchedRating) : undefined;
+      // Для аніме/манги з імпорту tmdbId може бути null — тоді addToList
+      // сам надсилає внутрішній id тайтла як titleId.
+      await addToList(detail, kind, rating ?? null);
       setAdded(kind);
     } catch (e) {
       void e;
@@ -151,6 +153,9 @@ export default function TitleDetailPage() {
   }
 
   const providers = regionProviders ?? detail.providers ?? [];
+  const isAnime = detail.type === "anime";
+  const isManga = detail.type === "manga";
+  const doneKind: ListKind = isManga ? "read" : "watched";
   const poster = posterUrlFull(detail.posterUrl);
   const backdrop = detail.backdropUrl
     ? posterUrlFull(detail.backdropUrl, "w1280")
@@ -164,7 +169,11 @@ export default function TitleDetailPage() {
           ? "title.status.ended"
           : detail.status === "canceled"
             ? "title.status.canceled"
-            : null;
+            : detail.status === "airing"
+              ? "anime.airing"
+              : detail.status === "finished"
+                ? "anime.finished"
+                : null;
 
   const metaRow = (label: string, value?: React.ReactNode) =>
     value ? (
@@ -233,6 +242,24 @@ export default function TitleDetailPage() {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <RatingBadge source="TMDB" value={detail.ratingTmdb} size="lg" />
               <RatingBadge source="IMDb" value={detail.ratingImdb} size="lg" />
+              <RatingBadge
+                source="MAL"
+                value={detail.scoreMal}
+                size="lg"
+                title={t("badges.mal")}
+              />
+              <RatingBadge
+                source="AL"
+                value={detail.scoreAnilist}
+                size="lg"
+                title={t("badges.al")}
+              />
+              <RatingBadge
+                source="Shiki"
+                value={detail.scoreShikimori}
+                size="lg"
+                title={t("badges.shiki")}
+              />
               <span className="rounded-md border border-line bg-panel px-2.5 py-1 text-sm text-mute">
                 {detail.year ?? "—"}
               </span>
@@ -241,7 +268,11 @@ export default function TitleDetailPage() {
                   ? t("filters.movie")
                   : detail.type === "series"
                     ? t("filters.series")
-                    : t("filters.show")}
+                    : detail.type === "anime"
+                      ? t("filters.anime")
+                      : detail.type === "manga"
+                        ? t("filters.manga")
+                        : t("filters.show")}
               </span>
             </div>
           </div>
@@ -267,14 +298,16 @@ export default function TitleDetailPage() {
           <button
             type="button"
             disabled={busyKind != null || added != null}
-            onClick={() => add("watched")}
+            onClick={() => add(doneKind)}
             className={`rounded-xl border px-4 py-2.5 text-sm font-bold transition-all enabled:active:scale-95 disabled:opacity-60 ${
-              added === "watched"
+              added === doneKind
                 ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
                 : "border-line bg-panel text-ink enabled:hover:border-accent"
             }`}
           >
-            {added === "watched" ? `✓ ${t("title.added")}` : `✓ ${t("title.watchedAdd")}`}
+            {added === doneKind
+              ? `✓ ${t("title.added")}`
+              : `✓ ${isManga ? t("title.readAdd") : t("title.watchedAdd")}`}
           </button>
           <select
             value={watchedRating}
@@ -339,6 +372,20 @@ export default function TitleDetailPage() {
                   ? String(detail.seasons)
                   : null,
             )}
+            {isAnime && metaRow(t("anime.format"), formatLabel(detail.format, lang))}
+            {isAnime && metaRow(t("anime.episodes"), detail.episodes ?? null)}
+            {isAnime &&
+              metaRow(
+                t("anime.studios"),
+                detail.studios?.length ? detail.studios.join(", ") : null,
+              )}
+            {isManga && metaRow(t("manga.volumes"), detail.volumes ?? null)}
+            {isManga && metaRow(t("manga.chapters"), detail.chapters ?? null)}
+            {isManga &&
+              metaRow(
+                t("manga.authors"),
+                detail.authors?.length ? detail.authors.join(", ") : null,
+              )}
             {metaRow(t("title.status"), statusKey ? t(statusKey) : null)}
             {metaRow(t("title.year"), detail.year ?? null)}
           </section>
