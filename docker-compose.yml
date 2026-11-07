@@ -2,6 +2,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: moviediscovery-db
+    # Масові завантаження (IMDb ~2.5 млн рядків): більший WAL-бюджет і рідші чекпоінти
+    # — інакше на WSL2/Docker COPY інколи падає з "could not write to pg_wal".
+    command: ["postgres", "-c", "max_wal_size=4GB", "-c", "checkpoint_timeout=15min", "-c", "checkpoint_completion_target=0.9"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-movie}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_pg}

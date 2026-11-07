@@ -58,6 +58,16 @@ public sealed class ImdbBulkService(
         var ratings = await LoadRatingsAsync(ratingsPath, ct);
         log.LogInformation("IMDb ratings: {Count} записів", ratings.Count);
 
+        if (db.Database.IsRelational() && db.Database.ProviderName!.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase))
+        {
+            // Стейджинг — відновлювані проміжні дані: UNLOGGED різко зменшує тиск на WAL під час COPY
+            // (на WSL2/Docker WAL-записи інколи падають з "Interrupted system call").
+            await using var ac = new NpgsqlConnection(db.Database.GetConnectionString());
+            await ac.OpenAsync(ct);
+            await using var alter = new NpgsqlCommand("ALTER TABLE IF EXISTS imdb_raw SET UNLOGGED", ac);
+            await alter.ExecuteNonQueryAsync(ct);
+        }
+
         var movies = 0;
         var series = 0;
 
@@ -87,7 +97,25 @@ public sealed class ImdbBulkService(
             var batchSize = Math.Max(1000, _opt.BatchSize);
             var total = 0;
             foreach (var chunk in list.Chunk(batchSize))
-                total += await StageAndMergeAsync(chunk.Select(ToStagingRow).ToList(), ct);
+            {
+                // Ретрай транзитних збоїв PG (WSL2/Docker I/O: 57P03, 08006, XX000 EINTR).
+                // Весь StageAndMerge ідемпотентний: TRUNCATE на вході чистить сміття попередньої спроби.
+                var rows = chunk.Select(ToStagingRow).ToList();
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        total += await StageAndMergeAsync(rows, ct);
+                        break;
+                    }
+                    catch (Npgsql.PostgresException ex) when (attempt < 3 && IsTransient(ex))
+                    {
+                        log.LogWarning("Транзитна помилка PG (спроба {Attempt}/3, {SqlState}): {Msg} — ретрай",
+                            attempt, ex.SqlState, ex.MessageText);
+                        await Task.Delay(TimeSpan.FromSeconds(attempt * 5), ct);
+                    }
+                }
+            }
             return total;
         }
 
@@ -226,6 +254,11 @@ public sealed class ImdbBulkService(
 
     // ─── Staging + MERGE (PostgreSQL) ───
 
+    /// <summary>Транзитні збої PG/інфраструктури, що заслуговують ретраю.</summary>
+    private static bool IsTransient(Npgsql.PostgresException ex) =>
+        ex.SqlState is "57P03" or "08006" or "53300" or "53400"
+        || ex.MessageText.Contains("Interrupted system call", StringComparison.OrdinalIgnoreCase);
+
     private async Task<int> StageAndMergeAsync(List<ImdbStagingRow> rows, CancellationToken ct)
     {
         // Окреме з'єднання з пулу: спільне EF-з'єднання контексту не чіпаємо і не диспозимо
@@ -234,6 +267,10 @@ public sealed class ImdbBulkService(
         await conn.OpenAsync(ct);
         try
         {
+            // Масове завантаження відновлюваних даних: синхронний fsync не потрібен.
+            await using (var sc = new NpgsqlCommand("SET synchronous_commit TO OFF", conn))
+                await sc.ExecuteNonQueryAsync(ct);
+
             await using (var truncate = new NpgsqlCommand(ImdbStaging.TruncateSql, conn))
                 await truncate.ExecuteNonQueryAsync(ct);
 
