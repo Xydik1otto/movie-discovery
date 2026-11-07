@@ -16,24 +16,41 @@ import { GENRES } from "./constants";
 
 // FR-14: демо-провайдери перегляду (provider: sweettv|archive|tmdb-streaming).
 // Компактна форма → TitleCard.watchProviders; повна (+region/isAvailable) → detail.providers.
-type DemoWatch = { provider: string; kind: "free" | "subscription" | "rent" | "buy"; url: string };
+// FR-19/20: частина демо-посилань несе озвучку/якість — щоб watch-блок
+// показував групування й без бекенду; 9006 свідомо «сліпий» (показ як зараз).
+type DemoWatch = {
+  provider: string;
+  kind: "free" | "subscription" | "rent" | "buy";
+  url: string;
+  dub?: string;
+  audioLang?: string;
+  quality?: number;
+};
 
 const DEMO_WATCH: Record<number, DemoWatch[]> = {
   9001: [
-    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/" },
-    { provider: "archive", kind: "free", url: "https://archive.org/" },
+    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/", dub: "ukr", audioLang: "ukr", quality: 1080 },
+    { provider: "archive", kind: "free", url: "https://archive.org/", dub: "original", audioLang: "eng", quality: 480 },
   ],
-  9002: [{ provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/" }],
-  9003: [{ provider: "archive", kind: "free", url: "https://archive.org/" }],
+  9002: [
+    { provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/", dub: "multi", audioLang: "multi", quality: 2160 },
+  ],
+  9003: [
+    { provider: "archive", kind: "free", url: "https://archive.org/", dub: "original", audioLang: "original", quality: 720 },
+  ],
   9004: [
-    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/" },
-    { provider: "tmdb-streaming", kind: "rent", url: "https://www.themoviedb.org/" },
+    { provider: "sweettv", kind: "subscription", url: "https://sweet.tv/", dub: "ukr", audioLang: "ukr", quality: 1080 },
+    { provider: "tmdb-streaming", kind: "rent", url: "https://www.themoviedb.org/", dub: "original", audioLang: "original", quality: 720 },
   ],
-  9005: [{ provider: "tmdb-streaming", kind: "buy", url: "https://www.themoviedb.org/" }],
-  9007: [{ provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/" }],
+  9005: [
+    { provider: "tmdb-streaming", kind: "buy", url: "https://www.themoviedb.org/", dub: "multi", audioLang: "multi", quality: 2160 },
+  ],
+  9007: [
+    { provider: "tmdb-streaming", kind: "subscription", url: "https://www.themoviedb.org/", audioLang: "eng", quality: 1080 },
+  ],
   9008: [
-    { provider: "archive", kind: "free", url: "https://archive.org/" },
-    { provider: "sweettv", kind: "rent", url: "https://sweet.tv/" },
+    { provider: "archive", kind: "free", url: "https://archive.org/", dub: "original", audioLang: "original", quality: 480 },
+    { provider: "sweettv", kind: "rent", url: "https://sweet.tv/", dub: "ukr", audioLang: "ukr", quality: 720 },
   ],
   // 9006 — свідомо без провайдерів: блок «Де подивитись» не рендериться.
 };
@@ -236,6 +253,9 @@ function demoToCard(d: DemoTitle, lang: Lang): TitleCard {
       provider: w.provider,
       kind: w.kind,
       url: w.url,
+      audioLang: w.audioLang ?? null,
+      quality: w.quality ?? null,
+      dub: w.dub ?? null,
     })),
   };
 }
@@ -260,17 +280,22 @@ export function demoDetail(id: number, lang: Lang): TitleDetail | null {
 }
 
 function demoProviders(id: number): TitleDetail["providers"] {
-  // Повна форма за контрактом FR-14: {provider, kind, region, url, isAvailable}.
+  // Повна форма за контрактом FR-14: {provider, kind, region, url, isAvailable}
+  // + FR-19: audioLang/quality/dub, коли демо-джерело їх «знає».
   return (DEMO_WATCH[id] ?? []).map((w) => ({
     provider: w.provider,
     kind: w.kind,
     url: w.url,
     region: "UA",
     isAvailable: true,
+    audioLang: w.audioLang ?? null,
+    quality: w.quality ?? null,
+    dub: w.dub ?? null,
   }));
 }
 
-// Демо-пошук: фільтрація пулу за текстом/жанрами/роком/рейтингом.
+// Демо-пошук: фільтрація пулу за текстом/жанрами/роком/рейтингом (+FR-19:
+// категорія/озвучка/якість — демо-фолбек поводиться як справжній пошук).
 export function demoSearch(
   opts: {
     q?: string;
@@ -284,6 +309,9 @@ export function demoSearch(
     maxRuntime?: number | null;
     country?: string | null;
     watchable?: boolean | null;
+    category?: string | null;
+    audioLang?: string | null;
+    minQuality?: number | null;
   },
   lang: Lang,
   page = 1,
@@ -325,6 +353,29 @@ export function demoSearch(
   if (opts.country) items = items.filter((i) => (i.countries ?? []).includes(opts.country!));
   // FR-14: лише тайтли з доступними провайдерами перегляду.
   if (opts.watchable) items = items.filter((i) => (i.watchProviders?.length ?? 0) > 0);
+  // FR-19: категорія (демо-пул знає лише movie/series — інші категорії чесно
+  // дають порожньо), озвучка й мінімальна якість — по watchProviders.
+  if (opts.category) {
+    items = items.filter((i) =>
+      opts.category === "movie"
+        ? i.type === "movie"
+        : opts.category === "series"
+          ? i.type === "series"
+          : false,
+    );
+  }
+  if (opts.audioLang) {
+    items = items.filter((i) =>
+      (i.watchProviders ?? []).some(
+        (p) => p.audioLang === opts.audioLang || p.dub === opts.audioLang,
+      ),
+    );
+  }
+  if (opts.minQuality != null) {
+    items = items.filter((i) =>
+      (i.watchProviders ?? []).some((p) => (p.quality ?? 0) >= opts.minQuality!),
+    );
+  }
   const total = items.length;
   const start = (page - 1) * pageSize;
   return { items: items.slice(start, start + pageSize), total, page, pageSize };

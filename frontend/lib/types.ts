@@ -1,6 +1,28 @@
 // Форми даних за контрактом PLAN.md (camelCase, як у API).
 
 export type TitleType = "movie" | "series" | "show" | "anime" | "manga";
+
+// FR-19: бекенд-коди віртуальних категорій та озвучок (/api/search?category=,
+// watch_links.dub). Невідомі бекенд-коди толеруємо як string у полях даних —
+// ці юніони типізують лише довідники опцій у constants.ts.
+export type CategoryCode =
+  | "movie"
+  | "series"
+  | "anime"
+  | "manga"
+  | "tvshow"
+  | "cartoon"
+  | "dorama";
+export type AudioLangCode =
+  | "ukr"
+  | "russ"
+  | "eng"
+  | "jpn"
+  | "kor"
+  | "zho"
+  | "original"
+  | "multi";
+export type DubCode = "ukr" | "russ" | "eng" | "original" | "multi";
 export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free";
 // FR-17: liked/disliked розширюють системні списки.
 export type ListKind = "watchlist" | "watched" | "read" | "liked" | "disliked";
@@ -44,6 +66,11 @@ export interface WatchProvider {
   url?: string | null;
   region?: string | null;
   isAvailable?: boolean | null;
+  // FR-19/20: озвучка і якість конкретного посилання (опційні — бекенд
+  // повертає audio_lang/quality/dub, коли вони відомі; інакше null).
+  audioLang?: string | null;
+  quality?: number | null;
+  dub?: string | null;
 }
 
 export interface TitleDetail extends TitleCard {
@@ -113,6 +140,11 @@ export interface SearchParams {
   // FR-14: лише тайтли з доступними watch_links (?watchable=true).
   watchable?: boolean | null;
   ratingSource?: string | null;
+  // FR-19: віртуальна категорія, країна виробника (ISO-2), мова озвучки
+  // в наявних провайдерах і мінімальна якість watch_links — усі опційні.
+  category?: string | null;
+  audioLang?: string | null;
+  minQuality?: number | null;
   sort?: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   page?: number;
   pageSize?: number;

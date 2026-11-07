@@ -41,6 +41,10 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         [FromQuery] string? ratingSource = null,
         [FromQuery] string? providerRegion = null,
         [FromQuery] bool? watchable = null,
+        // ── Віртуальні категорії та озвучки (FR-19) ──
+        [FromQuery] string? category = null,
+        [FromQuery] string? audioLang = null,
+        [FromQuery] int? minQuality = null,
         CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show" or "anime" or "manga"))
@@ -61,6 +65,17 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         if (!string.IsNullOrWhiteSpace(ratingSource) && ratingSource is not ("tmdb" or "imdb"))
             return BadRequest(new { error = "invalid_request", message = "ratingSource має бути tmdb | imdb" });
 
+        // FR-19: валідація віртуальних категорій/озвучок/якості (усі опційні)
+        if (!Core.Search.VirtualCategories.IsValid(category))
+            return BadRequest(new { error = "invalid_request", message = "category має бути movie | series | anime | manga | tvshow | cartoon | dorama" });
+
+        var audioLangSafe = audioLang?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(audioLangSafe) && !Core.Search.VirtualCategories.AudioLangs.Contains(audioLangSafe))
+            return BadRequest(new { error = "invalid_request", message = "audioLang має бути ukr | russ | eng | jpn | kor | zho | original | multi" });
+
+        if (minQuality is { } mq && !Core.Search.VirtualCategories.Qualities.Contains(mq))
+            return BadRequest(new { error = "invalid_request", message = "minQuality має бути 480 | 720 | 1080 | 2160" });
+
         var result = await search.SearchAsync(new SearchQuery(
             q, type, genreList, yearFrom, yearTo, country,
             minRating, maxRating, minRuntime, maxRuntime, status,
@@ -71,7 +86,8 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             ExcludeGenres: excludeList,
             HasTrailer: hasTrailer, HasProviders: hasProviders,
             RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA",
-            Watchable: watchable), ct);
+            Watchable: watchable,
+            Category: category, AudioLang: audioLangSafe, MinQuality: minQuality), ct);
 
         // FR-14: компактні бейджі «де подивитись» на картках (лише is_available=true)
         var watchLinks = await Infrastructure.Watchability.WatchLinkLoader.LoadAvailableAsync(

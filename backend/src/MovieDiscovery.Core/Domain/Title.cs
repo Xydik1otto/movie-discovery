@@ -12,9 +12,11 @@ public class Title
     public string? OverviewEn { get; set; }
     public int? Year { get; set; }
     public string[] Countries { get; set; } = [];
+    public string? Country { get; set; } // країна виробника ISO-2 з IMDb akas (FR-19), NULL до першого sync
     public string[] Genres { get; set; } = [];
     public string[] Keywords { get; set; } = [];
     public string[] Actors { get; set; } = [];
+    public string[]? Directors { get; set; } // режисери-масив з IMDb crew (FR-20 розширення); director (рядок) лишається
     public string? Director { get; set; }
     public int? RuntimeMin { get; set; }
     public int? EpisodeRuntimeMin { get; set; }

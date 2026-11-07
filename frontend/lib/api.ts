@@ -144,6 +144,10 @@ export async function searchTitles(
       hasTrailer: p.hasTrailer == null ? undefined : p.hasTrailer ? "true" : "false",
       watchable: p.watchable == null ? undefined : p.watchable ? "true" : "false",
       ratingSource: p.ratingSource,
+      // FR-19: категорія/країна/озвучка/якість — усі опційні, порожні не летять.
+      category: p.category,
+      audioLang: p.audioLang,
+      minQuality: p.minQuality ?? undefined,
       sort: p.sort,
       page: p.page ?? 1,
       pageSize: p.pageSize ?? 24,

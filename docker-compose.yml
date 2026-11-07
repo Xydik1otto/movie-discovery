@@ -34,6 +34,9 @@ services:
       ADMIN_KEY: ${ADMIN_KEY:-changeme_admin}
       # Аніме/манга-каталог: AniList (primary) + офіційний MAL API v2; Jikan — dormant
       MAL_CLIENT_ID: ${MAL_CLIENT_ID:-}
+      MAL_CLIENT_SECRET: ${MAL_CLIENT_SECRET:-}
+      # YouTube (FR-20): пошук легальних повних викладок
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       JIKAN_URL: ${JIKAN_URL:-https://api.jikan.moe/v4}
     ports:
       - "${API_PORT:-5200}:5200"

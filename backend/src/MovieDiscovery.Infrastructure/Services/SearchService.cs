@@ -1,5 +1,7 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Core.Domain;
+using MovieDiscovery.Core.Search;
 using MovieDiscovery.Infrastructure.Persistence;
 
 namespace MovieDiscovery.Infrastructure.Services;
@@ -32,7 +34,11 @@ public sealed record SearchQuery(
     bool? HasProviders = null,
     string? RatingSource = null,
     string ProviderRegion = "UA",
-    bool? Watchable = null);
+    bool? Watchable = null,
+    // ── Віртуальні категорії та озвучки (FR-19) ──
+    string? Category = null,
+    string? AudioLang = null,
+    int? MinQuality = null);
 
 public sealed record SearchResult(IReadOnlyList<Title> Items, int Total, int Page, int PageSize);
 
@@ -94,16 +100,6 @@ WHERE title_uk ILIKE {pat}
         if (q.YearTo is { } yTo)
             query = query.Where(t => t.Year <= yTo);
 
-        // country: одна або кілька кодів через кому — збіг з будь-яким
-        if (!string.IsNullOrWhiteSpace(q.Country))
-        {
-            var countries = q.Country.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (countries.Length == 1)
-                query = query.Where(t => t.Countries.Contains(countries[0]));
-            else if (countries.Length > 1)
-                query = query.Where(t => t.Countries.Any(c => countries.Contains(c)));
-        }
-
         query = ApplyRatingFilter(query, q);
 
         query = ApplyRuntimeFilter(query, q);
@@ -155,6 +151,61 @@ WHERE title_uk ILIKE {pat}
         if (q.Watchable == true)
             query = query.Where(t => db.WatchLinks.Any(w => w.TitleId == t.Id && w.IsAvailable));
 
+        // ── FR-19: віртуальні категорії, країна-виробник, озвучки, якість ──
+
+        // country: кома-список кодів — збіг з будь-яким; title.country (IMDb akas, FR-19)
+        // або countries[] (TMDB) — працює до і після akas-синку
+        if (!string.IsNullOrWhiteSpace(q.Country))
+        {
+            var countryCodes = q.Country.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (countryCodes.Length > 0)
+                query = query.Where(CountryAnyPredicate(countryCodes));
+        }
+
+        // category: movie|series|anime|manga → type; tvshow/cartoon/dorama → SQL-умови
+        // по genres/country (GENRE_SETS у Core — контрактна константа)
+        if (!string.IsNullOrWhiteSpace(q.Category))
+        {
+            var category = q.Category.Trim().ToLowerInvariant();
+            switch (category)
+            {
+                case "movie" or "series" or "anime" or "manga":
+                    query = query.Where(t => t.Type == category);
+                    break;
+                case "tvshow":
+                    // genres && ARRAY['reality-tv','talk-show','game-show','variety']
+                    query = query.Where(GenresAnyPredicate(VirtualCategories.GenreSets["tvshow"]));
+                    break;
+                case "cartoon":
+                    // genres @> ARRAY['animation'] AND type IN ('movie','series'); аніме НЕ дублюється
+                    query = query.Where(t =>
+                        (t.Type == "movie" || t.Type == "series"))
+                        .Where(GenresAnyPredicate(VirtualCategories.GenreSets["cartoon"]));
+                    break;
+                case "dorama":
+                    // country IN ('KR','CN','JP') AND genres @> ARRAY['drama'] (both type)
+                    var doramaCountries = VirtualCategories.DoramaCountries;
+                    query = query.Where(t =>
+                            t.Country != null &&
+                            doramaCountries.Contains(t.Country))
+                        .Where(GenresAnyPredicate([VirtualCategories.DoramaGenre]));
+                    break;
+            }
+        }
+
+        // audioLang: EXISTS watch_links (is_available, audio_lang == X)
+        if (!string.IsNullOrWhiteSpace(q.AudioLang))
+        {
+            var audioLang = q.AudioLang.Trim().ToLowerInvariant();
+            query = query.Where(t => db.WatchLinks
+                .Any(w => w.TitleId == t.Id && w.IsAvailable && w.AudioLang == audioLang));
+        }
+
+        // minQuality: EXISTS watch_links (is_available, quality >= X)
+        if (q.MinQuality is { } minQuality)
+            query = query.Where(t => db.WatchLinks
+                .Any(w => w.TitleId == t.Id && w.IsAvailable && w.Quality >= minQuality));
+
         return query;
     }
 
@@ -197,6 +248,52 @@ WHERE title_uk ILIKE {pat}
                 ((min == null || t.RuntimeMin >= min) && (max == null || t.RuntimeMin <= max)) ||
                 ((min == null || t.EpisodeRuntimeMin >= min) && (max == null || t.EpisodeRuntimeMin <= max))),
         };
+    }
+
+    /// <summary>
+    /// country: title.country == X АБО countries[] містить X — для кожного коду (OR-ланцюг).
+    /// Явні equality/Contains-вирази: перекладаються і Npgsql (country = X / countries @> ...),
+    /// і тестовим InMemory (parameter-list.Contains всередині Any над масивною колонкою він не перекладає).
+    /// </summary>
+    internal static Expression<Func<Title, bool>> CountryAnyPredicate(IReadOnlyList<string> codes)
+    {
+        var t = Expression.Parameter(typeof(Title), "t");
+        Expression? body = null;
+        foreach (var code in codes)
+        {
+            var eqCountry = Expression.Equal(
+                Expression.Property(t, nameof(Title.Country)),
+                Expression.Constant(code, typeof(string)));
+            var inArray = Expression.Call(
+                typeof(Enumerable), nameof(Enumerable.Contains), [typeof(string)],
+                Expression.Property(t, nameof(Title.Countries)),
+                Expression.Constant(code, typeof(string)));
+            var perCode = Expression.OrElse(eqCountry, inArray);
+            body = body is null ? perCode : Expression.OrElse(body, perCode);
+        }
+        return Expression.Lambda<Func<Title, bool>>(body!, t);
+    }
+
+    /// <summary>
+    /// Жанрова overlap-умова: OR-ланцюг Any(g == g_i) — семантика && (перетин), побудована
+    /// з GENRE_SETS-константи. Форма OR-of-single-Any — єдина, яку перекладають І Npgsql
+    /// (EXISTS unnest), І тестовий InMemory (мульти-OR усередині одного Any InMemory не їсть).
+    /// </summary>
+    internal static Expression<Func<Title, bool>> GenresAnyPredicate(IReadOnlyList<string> genres)
+    {
+        var t = Expression.Parameter(typeof(Title), "t");
+        Expression? body = null;
+        foreach (var genre in genres)
+        {
+            var g = Expression.Parameter(typeof(string), "g");
+            var any = Expression.Call(
+                typeof(Enumerable), nameof(Enumerable.Any), [typeof(string)],
+                Expression.Property(t, nameof(Title.Genres)),
+                Expression.Lambda<Func<string, bool>>(
+                    Expression.Equal(g, Expression.Constant(genre, typeof(string))), g));
+            body = body is null ? any : Expression.OrElse(body, any);
+        }
+        return Expression.Lambda<Func<Title, bool>>(body!, t);
     }
 
     private static IQueryable<Title> Sort(IQueryable<Title> query, string sort) => sort switch

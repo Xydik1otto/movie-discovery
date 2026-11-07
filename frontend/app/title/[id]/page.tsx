@@ -5,6 +5,12 @@ import { useParams } from "next/navigation";
 import { addToList, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { getWatch } from "@/lib/api";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
+import {
+  dubGroupLabelKey,
+  groupWatchByDub,
+  hasDubMetadata,
+  qualityLabel,
+} from "@/lib/watch";
 import type { ListKind, SimilarItem, TitleDetail, WatchProvider } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
 import TitleCard from "@/components/TitleCard";
@@ -422,17 +428,50 @@ export default function TitleDetailPage() {
           )}
         </div>
 
-        {/* Де подивитись (FR-14) — рендеримо лише коли є доступні провайдери */}
+        {/* Де подивитись (FR-14) — рендеримо лише коли є доступні провайдери.
+            FR-19: якщо є метадані озвучки/якості — групуємо за dub+audioLang
+            з бейджем якості; інакше — плоский список «як зараз». */}
         {(providers.length > 0 || !!detail.keywords?.length) && (
           <aside className="space-y-5">
             {providers.length > 0 && (
               <section className="rounded-2xl border border-line bg-panel p-4">
                 <h2 className="mb-3 text-base font-bold">{t("title.watch.where")}</h2>
-                <div className="flex flex-wrap gap-2">
-                  {providers.map((p, i) => (
-                    <ProviderBadge key={`${p.provider}-${p.kind}-${i}`} watch={p} />
-                  ))}
-                </div>
+                {hasDubMetadata(providers) ? (
+                  <div className="space-y-3">
+                    {groupWatchByDub(providers).map((g) => {
+                      const labelKey = dubGroupLabelKey(g);
+                      const q = qualityLabel(g.maxQuality);
+                      return (
+                        <div key={g.key}>
+                          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-mute">
+                              {labelKey ? t(labelKey) : t("watch.defaultGroup")}
+                            </span>
+                            {q && (
+                              <span className="rounded-md border border-sky-400/40 bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-200">
+                                {q}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {g.items.map((p, i) => (
+                              <ProviderBadge
+                                key={`${g.key}-${p.provider}-${p.kind}-${i}`}
+                                watch={p}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {providers.map((p, i) => (
+                      <ProviderBadge key={`${p.provider}-${p.kind}-${i}`} watch={p} />
+                    ))}
+                  </div>
+                )}
               </section>
             )}
 

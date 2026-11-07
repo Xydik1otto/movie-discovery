@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nContext";
 import { guardedBySeeds, guardedSearch } from "@/lib/fallback";
-import { COUNTRIES, GENRES, LANGUAGES, SORTS, TITLE_TYPES } from "@/lib/constants";
+import {
+  AUDIO_LANG_OPTIONS,
+  CATEGORY_OPTIONS,
+  COUNTRY_OPTIONS,
+  GENRES,
+  LANGUAGES,
+  QUALITY_OPTIONS,
+  SORTS,
+  TITLE_TYPES,
+} from "@/lib/constants";
 import type { Paged, SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
@@ -38,6 +47,10 @@ interface Applied {
   hasTrailer: boolean | null;
   watchable: boolean | null;
   ratingSource: string | null;
+  // FR-19: категорія/країна/озвучка/якість — усі опційні (null = не фільтр).
+  category: string | null;
+  audioLang: string | null;
+  minQuality: number | null;
   sort: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
 }
 
@@ -63,6 +76,9 @@ const EMPTY: Applied = {
   hasTrailer: null,
   watchable: null,
   ratingSource: null,
+  category: null,
+  audioLang: null,
+  minQuality: null,
   sort: "popularity",
 };
 
@@ -100,6 +116,10 @@ export default function HomePage() {
   // FR-14: «Можна подивитись» → ?watchable=true (лише тайтли з watch_links).
   const [watchable, setWatchable] = useState(false);
   const [ratingSource, setRatingSource] = useState("");
+  // FR-19: категорія/країна/озвучка/якість — dropdown'и, порожнє = не фільтр.
+  const [category, setCategory] = useState("");
+  const [audioLang, setAudioLang] = useState("");
+  const [minQuality, setMinQuality] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [applied, setApplied] = useState<Applied>(EMPTY);
   const [page, setPage] = useState(1);
@@ -132,6 +152,9 @@ export default function HomePage() {
       hasTrailer: hasTrailer ? true : null,
       watchable: watchable ? true : null,
       ratingSource: ratingSource || null,
+      category: category || null,
+      audioLang: audioLang || null,
+      minQuality: numOrNull(minQuality),
       sort: q ? "relevance" : "popularity",
     });
     setPage(1);
@@ -159,6 +182,9 @@ export default function HomePage() {
     setHasTrailer(false);
     setWatchable(false);
     setRatingSource("");
+    setCategory("");
+    setAudioLang("");
+    setMinQuality("");
     setApplied(EMPTY);
     setPage(1);
   }
@@ -309,7 +335,7 @@ export default function HomePage() {
               </ChipGroup>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <label className="block">
                 <span className="mb-1 block text-xs text-mute">{t("filters.year")}</span>
                 <div className="flex items-center gap-1.5">
@@ -333,22 +359,6 @@ export default function HomePage() {
                     className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
                   />
                 </div>
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-xs text-mute">{t("filters.country")}</span>
-                <select
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                >
-                  <option value="">{t("filters.any")}</option>
-                  {COUNTRIES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {lang === "uk" ? c.uk : c.en}
-                    </option>
-                  ))}
-                </select>
               </label>
 
               <label className="block">
@@ -443,6 +453,70 @@ export default function HomePage() {
 
             {advancedOpen && (
               <div className="space-y-3 rounded-xl border border-line/60 bg-panel-2/40 p-3">
+                {/* FR-19: категорія / країна / озвучка / якість — усе опційне. */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.category")}</span>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.any")}</option>
+                      {CATEGORY_OPTIONS.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {t(c.key)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.country")}</span>
+                    <select
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.any")}</option>
+                      {COUNTRY_OPTIONS.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {lang === "uk" ? c.uk : c.en}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.audioLang")}</span>
+                    <select
+                      value={audioLang}
+                      onChange={(e) => setAudioLang(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.any")}</option>
+                      {AUDIO_LANG_OPTIONS.map((a) => (
+                        <option key={a.value} value={a.value}>
+                          {t(a.key)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.minQuality")}</span>
+                    <select
+                      value={minQuality}
+                      onChange={(e) => setMinQuality(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.any")}</option>
+                      {QUALITY_OPTIONS.map((q) => (
+                        <option key={q.value} value={q.value}>
+                          {t(q.key)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <label className="block">
                     <span className="mb-1 block text-xs text-mute">{t("filters.actor")}</span>

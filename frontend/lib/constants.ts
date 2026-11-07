@@ -1,5 +1,5 @@
 // Статичні довідники для фільтрів та бейджів. Локалізовані пари uk/en.
-import type { ProviderKind } from "./types";
+import type { AudioLangCode, CategoryCode, ProviderKind } from "./types";
 
 export const GENRES: { value: string; uk: string; en: string }[] = [
   { value: "драма", uk: "драма", en: "drama" },
@@ -20,22 +20,21 @@ export const GENRES: { value: string; uk: string; en: string }[] = [
   { value: "військовий", uk: "військовий", en: "war" },
 ];
 
-export const COUNTRIES: { value: string; uk: string; en: string }[] = [
-  { value: "UA", uk: "Україна", en: "Ukraine" },
+// FR-19: країна виробника (ISO-2) — основні варіанти для /api/search?country=.
+export const COUNTRY_OPTIONS: { value: string; uk: string; en: string }[] = [
   { value: "US", uk: "США", en: "USA" },
   { value: "GB", uk: "Велика Британія", en: "United Kingdom" },
-  { value: "FR", uk: "Франція", en: "France" },
-  { value: "DE", uk: "Німеччина", en: "Germany" },
-  { value: "ES", uk: "Іспанія", en: "Spain" },
-  { value: "IT", uk: "Італія", en: "Italy" },
-  { value: "PL", uk: "Польща", en: "Poland" },
-  { value: "SE", uk: "Швеція", en: "Sweden" },
-  { value: "DK", uk: "Данія", en: "Denmark" },
-  { value: "IS", uk: "Ісландія", en: "Iceland" },
   { value: "JP", uk: "Японія", en: "Japan" },
   { value: "KR", uk: "Південна Корея", en: "South Korea" },
+  { value: "CN", uk: "Китай", en: "China" },
+  { value: "UA", uk: "Україна", en: "Ukraine" },
+  { value: "FR", uk: "Франція", en: "France" },
+  { value: "DE", uk: "Німеччина", en: "Germany" },
+  { value: "IT", uk: "Італія", en: "Italy" },
+  { value: "ES", uk: "Іспанія", en: "Spain" },
   { value: "IN", uk: "Індія", en: "India" },
   { value: "CA", uk: "Канада", en: "Canada" },
+  { value: "AU", uk: "Австралія", en: "Australia" },
 ];
 
 export const REGIONS: string[] = ["UA", "PL", "US", "GB", "DE"];
@@ -60,6 +59,40 @@ export const TITLE_TYPES: { value: "movie" | "series" | "show"; key: string }[] 
   { value: "movie", key: "filters.movie" },
   { value: "series", key: "filters.series" },
   { value: "show", key: "filters.show" },
+];
+
+// FR-19: віртуальні категорії (unified-схема titles) — значення = бекенд-коди
+// /api/search?category=. tvshow — це телешоу (reality/talk/game-show),
+// cartoon — уся анімація крім аніме, dorama — KR/CN/JP-драми.
+export const CATEGORY_OPTIONS: { value: CategoryCode; key: string }[] = [
+  { value: "movie", key: "filters.movie" },
+  { value: "series", key: "filters.series" },
+  { value: "tvshow", key: "filters.show" },
+  { value: "cartoon", key: "filters.cartoon" },
+  { value: "dorama", key: "filters.dorama" },
+  { value: "anime", key: "filters.anime" },
+  { value: "manga", key: "filters.manga" },
+];
+
+// FR-19: мова аудіо/озвучки в наявних провайдерах (watch_links.audio_lang).
+// «Російська» тут — КОНТЕНТ-фільтр озвучок, не мова інтерфейсу (uk/en).
+export const AUDIO_LANG_OPTIONS: { value: AudioLangCode; key: string }[] = [
+  { value: "ukr", key: "filters.audioLang.ukr" },
+  { value: "russ", key: "filters.audioLang.russ" },
+  { value: "eng", key: "filters.audioLang.eng" },
+  { value: "jpn", key: "filters.audioLang.jpn" },
+  { value: "kor", key: "filters.audioLang.kor" },
+  { value: "zho", key: "filters.audioLang.zho" },
+  { value: "original", key: "filters.audioLang.original" },
+  { value: "multi", key: "filters.audioLang.multi" },
+];
+
+// FR-19: мінімальна якість watch_links.quality (max height, px).
+export const QUALITY_OPTIONS: { value: number; key: string }[] = [
+  { value: 480, key: "quality.480" },
+  { value: 720, key: "quality.720" },
+  { value: 1080, key: "quality.1080" },
+  { value: 2160, key: "quality.2160" },
 ];
 
 export const SORTS: {

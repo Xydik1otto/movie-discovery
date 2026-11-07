@@ -54,6 +54,8 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.HasIndex(x => x.Genres).HasMethod("gin");
             e.HasIndex(x => x.Keywords).HasMethod("gin");
             e.HasIndex(x => x.Actors).HasMethod("gin");
+            // FR-20 розширення: режисери-масив з IMDb crew (directors; director-рядок лишається)
+            e.Property(x => x.Directors).HasMaxLength(4000);
             // Аніме/манга: пошук студій + часткова унікальність зовнішніх id (NULL не конфліктують).
             e.HasIndex(x => x.Studios).HasMethod("gin");
             e.HasIndex(x => x.MalId).IsUnique().HasFilter("mal_id IS NOT NULL");

@@ -19,6 +19,7 @@ using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watchability;
+using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Api;
 
@@ -48,7 +49,10 @@ public class Program
         builder.Services.Configure<MalOfficialOptions>(builder.Configuration.GetSection("MalOfficial"));
         builder.Services.Configure<JikanOptions>(builder.Configuration.GetSection("Jikan"));
         builder.Services.Configure<ImdbOptions>(builder.Configuration.GetSection("Imdb"));
+        builder.Services.Configure<ImdbAkasOptions>(builder.Configuration.GetSection("Imdb"));
+        builder.Services.Configure<ImdbCrewOptions>(builder.Configuration.GetSection("Imdb"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
+        builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
         // FR-16/17/18: ваги профілю смаку + опції discover
         builder.Services.Configure<ProfileOptions>(builder.Configuration.GetSection("Profile"));
         builder.Services.Configure<DiscoverOptions>(builder.Configuration.GetSection("Discover"));
@@ -165,6 +169,25 @@ public class Program
             c.BaseAddress = new Uri("https://datasets.imdbws.com/");
             c.Timeout = TimeSpan.FromMinutes(60);
         });
+        // FR-19: imdb-akas (title.akas.tsv.gz ~300 MB) — той самий довгий стрім-патерн
+        builder.Services.AddHttpClient<ImdbAkasService>(c =>
+        {
+            c.BaseAddress = new Uri("https://datasets.imdbws.com/");
+            c.Timeout = TimeSpan.FromMinutes(60);
+        });
+        // Розширення FR-19/20: imdb-crew (crew + principals + name.basics — стріми до ~600 MB сумарно)
+        builder.Services.AddHttpClient<ImdbCrewService>(c =>
+        {
+            c.BaseAddress = new Uri("https://datasets.imdbws.com/");
+            c.Timeout = TimeSpan.FromMinutes(60);
+        });
+        // FR-20: YouTube Data API v3 (base з опцій; ключ YOUTUBE_API_KEY через MapEnvDefaults)
+        builder.Services.AddHttpClient<YoutubeClient>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<YoutubeOptions>>().Value;
+            c.BaseAddress = new Uri(opt.BaseUrl.TrimEnd('/') + "/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
         // FR-14: Internet Archive advancedsearch (сторінка на 500 рядків у IA віддається
         // довше 30 с — таймаут 120 с; інакше sync падає TaskCanceledException)
         builder.Services.AddHttpClient<ArchiveWatchService>(c =>
@@ -189,6 +212,9 @@ public class Program
         builder.Services.AddSingleton<ImportQueue>();
         builder.Services.AddSingleton<ImdbSyncQueue>();
         builder.Services.AddSingleton<WatchSyncQueue>();
+        builder.Services.AddSingleton<ImdbAkasSyncQueue>();
+        builder.Services.AddSingleton<ImdbCrewSyncQueue>();
+        builder.Services.AddSingleton<YoutubeSyncQueue>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
         builder.Services.AddSingleton<ShikimoriThrottle>();
@@ -207,6 +233,7 @@ public class Program
         builder.Services.AddScoped<AniListCatalogService>(); // PRIMARY sync каталогу аніме/манги + MAL official-шар
         builder.Services.AddScoped<ImportService>();
         builder.Services.AddScoped<TmdbProvidersService>();
+        builder.Services.AddScoped<YouTubeEnrichService>();
         // FR-16/17/18: акаунти, профіль смаку, discover, онбординг
         builder.Services.AddScoped<TasteProfileService>();
         builder.Services.AddScoped<UserListService>();
@@ -218,6 +245,9 @@ public class Program
         builder.Services.AddHostedService<ImportBackgroundService>();
         builder.Services.AddHostedService<ImdbSyncBackgroundService>();
         builder.Services.AddHostedService<WatchSyncBackgroundService>();
+        builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
+        builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
+        builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
 
         var app = builder.Build();
 
@@ -262,6 +292,7 @@ public class Program
                 cfg[configKey] = value;
         }
         Map("TMDB_API_KEY", "Tmdb:ApiKey");
+        Map("YOUTUBE_API_KEY", "Youtube:ApiKey");
         Map("OMDB_API_KEY", "Omdb:ApiKey");
         Map("OLLAMA_URL", "Ollama:Url");
         Map("OLLAMA_EMBED_MODEL", "Ollama:EmbedModel");

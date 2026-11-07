@@ -71,6 +71,10 @@ export async function guardedSearch(
           minRuntime: p.minRuntime,
           maxRuntime: p.maxRuntime,
           watchable: p.watchable,
+          // FR-19: демо теж поважає нові фільтри.
+          category: p.category,
+          audioLang: p.audioLang,
+          minQuality: p.minQuality,
         },
         lang,
         p.page ?? 1,

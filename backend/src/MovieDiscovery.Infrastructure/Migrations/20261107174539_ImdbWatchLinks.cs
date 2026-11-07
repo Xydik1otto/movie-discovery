@@ -83,11 +83,8 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 columns: new[] { "type", "popularity" },
                 descending: new[] { false, true });
 
-            migrationBuilder.CreateIndex(
-                name: "ix_titles_genres_gin",
-                table: "titles",
-                column: "genres",
-                method: "gin");
+            migrationBuilder.Sql(
+                "CREATE INDEX IF NOT EXISTS ix_titles_genres_gin ON titles USING gin (genres);");
 
             migrationBuilder.CreateIndex(
                 name: "ix_watch_links_provider_is_available",
@@ -117,6 +114,8 @@ namespace MovieDiscovery.Infrastructure.Migrations
             migrationBuilder.DropIndex(
                 name: "ix_titles_imdb_id",
                 table: "titles");
+
+            migrationBuilder.Sql("DROP INDEX IF EXISTS ix_titles_genres_gin;");
 
             migrationBuilder.DropIndex(
                 name: "ix_titles_type_popularity",

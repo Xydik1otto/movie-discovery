@@ -2,7 +2,7 @@
 // колір за kind. Провайдер-посилання — target=_blank rel=noopener noreferrer.
 import { useI18n } from "../i18n/I18nContext";
 import { PROVIDER_KIND_STYLE } from "../lib/constants";
-import { providerNameKey, watchKindLabelKey } from "../lib/watch";
+import { providerNameKey, qualityLabel, watchKindLabelKey } from "../lib/watch";
 import type { WatchProvider } from "../lib/types";
 
 export default function ProviderBadge({ watch }: { watch: WatchProvider }) {
@@ -12,11 +12,19 @@ export default function ProviderBadge({ watch }: { watch: WatchProvider }) {
   const name = nameKey ? t(nameKey) : watch.provider;
   const kindKey = watchKindLabelKey(watch.kind);
   const kindLabel = kindKey ? t(kindKey) : watch.kind;
+  // FR-19: якість конкретного посилання (напр., «1080p»), коли бекенд її знає.
+  const quality = qualityLabel(watch.quality);
   const inner = (
     <>
       <span className="font-semibold">{name}</span>
       <span className="opacity-60">·</span>
       <span className="opacity-80">{kindLabel}</span>
+      {quality && (
+        <>
+          <span className="opacity-60">·</span>
+          <span className="font-bold">{quality}</span>
+        </>
+      )}
     </>
   );
   const cls = `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${style}`;

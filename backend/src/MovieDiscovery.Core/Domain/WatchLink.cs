@@ -17,4 +17,9 @@ public class WatchLink
     public string? Url { get; set; }
     public bool IsAvailable { get; set; } = true;
     public DateTime CheckedAt { get; set; } = DateTime.UtcNow;
+
+    // ── Озвучки/якість (FR-19) ──
+    public string? AudioLang { get; set; } // ukr|russ|eng|jpn|kor|zho|original|multi
+    public int? Quality { get; set; }      // max height px: 480|720|1080|2160
+    public string? Dub { get; set; }       // ukr|russ|eng|original|multi
 }

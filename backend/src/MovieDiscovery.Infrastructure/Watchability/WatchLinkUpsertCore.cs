@@ -19,12 +19,16 @@ public static class WatchLinkUpsertCore
         return found is null ? (patch, true) : (found, false);
     }
 
-    /// <summary>Оновити наявне посилання: url/is_available — свіжий стан перевірки, checked_at = зараз.</summary>
+    /// <summary>Оновити наявне посилання: url/is_available — свіжий стан перевірки, checked_at = зараз;
+    /// озвучка/якість (FR-19) — лише коли патч їх має (NULL у патчі не затирає наявне).</summary>
     public static void Merge(WatchLink target, WatchLink patch)
     {
         if (!string.IsNullOrWhiteSpace(patch.Url)) target.Url = patch.Url;
         target.IsAvailable = patch.IsAvailable;
         target.CheckedAt = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(patch.AudioLang)) target.AudioLang = patch.AudioLang;
+        if (patch.Quality is { } q) target.Quality = q;
+        if (!string.IsNullOrWhiteSpace(patch.Dub)) target.Dub = patch.Dub;
     }
 
     /// <summary>Ключ посилання для діагностики/логів.</summary>

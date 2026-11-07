@@ -577,6 +577,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("countries");
 
+                    b.Property<string>("Country")
+                        .HasColumnType("text")
+                        .HasColumnName("country");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -584,6 +588,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.Property<string>("Director")
                         .HasColumnType("text")
                         .HasColumnName("director");
+
+                    b.Property<string[]>("Directors")
+                        .HasMaxLength(4000)
+                        .HasColumnType("text[]")
+                        .HasColumnName("directors");
 
                     b.Property<int?>("EpisodeRuntimeMin")
                         .HasColumnType("integer")
@@ -856,9 +865,17 @@ namespace MovieDiscovery.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AudioLang")
+                        .HasColumnType("text")
+                        .HasColumnName("audio_lang");
+
                     b.Property<DateTime>("CheckedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("checked_at");
+
+                    b.Property<string>("Dub")
+                        .HasColumnType("text")
+                        .HasColumnName("dub");
 
                     b.Property<bool>("IsAvailable")
                         .HasColumnType("boolean")
@@ -874,6 +891,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("provider");
+
+                    b.Property<int?>("Quality")
+                        .HasColumnType("integer")
+                        .HasColumnName("quality");
 
                     b.Property<string>("Region")
                         .IsRequired()
