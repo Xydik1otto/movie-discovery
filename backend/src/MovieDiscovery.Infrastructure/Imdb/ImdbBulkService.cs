@@ -228,9 +228,10 @@ public sealed class ImdbBulkService(
 
     private async Task<int> StageAndMergeAsync(List<ImdbStagingRow> rows, CancellationToken ct)
     {
-        await using var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-        var wasOpen = conn.State == System.Data.ConnectionState.Open;
-        if (!wasOpen) await conn.OpenAsync(ct);
+        // Окреме з'єднання з пулу: спільне EF-з'єднання контексту не чіпаємо і не диспозимо
+        // (await using спільного з'єднання ламав наступні батчі — ObjectDisposedException).
+        await using var conn = new NpgsqlConnection(db.Database.GetConnectionString());
+        await conn.OpenAsync(ct);
         try
         {
             await using (var truncate = new NpgsqlCommand(ImdbStaging.TruncateSql, conn))
@@ -261,7 +262,7 @@ public sealed class ImdbBulkService(
         }
         finally
         {
-            if (!wasOpen) await conn.CloseAsync();
+            // await using повертає з'єднання в пул
         }
     }
 
