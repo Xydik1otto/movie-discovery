@@ -62,6 +62,19 @@ services:
       - api
     restart: unless-stopped
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: moviediscovery-tunnel
+    # Quick-тунель до web. trycloudflare пише URL у stderr, тому 2>&1 обов'язково —
+    # tee зберігає повний лог у спільний volume, звідки бот /tunnel витягує свіжий URL.
+    # Внутрішній порт web — 3000 (3001 — лише хост-мапінг), тому ціль http://web:3000.
+    entrypoint: sh -c "cloudflared tunnel --no-autoupdate --url http://web:3000 2>&1 | tee /state/tunnel.log"
+    depends_on:
+      - web
+    volumes:
+      - tunnel-state:/state
+    restart: unless-stopped
+
   bot:
     build: ./bot
     container_name: moviediscovery-bot
@@ -70,4 +83,12 @@ services:
       TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
     depends_on:
       - api
+    volumes:
+      # docker-сокет — ТІЛЬКИ щоб бот міг зробити `docker restart moviediscovery-tunnel` (/tunnel)
+      - //var/run/docker.sock:/var/run/docker.sock
+      # лог тунелю зі спільного volume — бот читає звідти URL (read-only)
+      - tunnel-state:/state:ro
     restart: unless-stopped
+
+volumes:
+  tunnel-state:

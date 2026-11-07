@@ -27,12 +27,14 @@ public sealed class BotUpdateHandler
     private readonly ApiClient _api;
     private readonly ChatState _state;
     private readonly Action<string> _log;
+    private readonly TunnelService _tunnel;
 
-    public BotUpdateHandler(ApiClient api, ChatState state, Action<string>? log = null)
+    public BotUpdateHandler(ApiClient api, ChatState state, Action<string>? log = null, TunnelService? tunnel = null)
     {
         _api = api;
         _state = state;
         _log = log ?? (_ => { });
+        _tunnel = tunnel ?? new TunnelService();
     }
 
     // ------------------------------------------------------------------ вхідні оновлення
@@ -137,6 +139,10 @@ public sealed class BotUpdateHandler
 
                 break;
             }
+
+            case "tunnel":
+                await RunTunnelAsync(botClient, chatId, lang, ct);
+                break;
 
             default:
                 await SendText(botClient, chatId, Strings.S(lang, "cmd.unknown"), null, ct);
@@ -405,6 +411,46 @@ public sealed class BotUpdateHandler
         var markup = Keyboards.ResultsActions(lastItems, lastFirst, hasPrev: false, hasNext: false, lang);
 
         await SendOrEditAsync(botClient, chatId, null, chunks, markup, ct);
+    }
+
+    // ------------------------------------------------------------------ /tunnel
+
+    /// <summary>
+    /// /tunnel: свіжий публічний URL quick-тунелю (особистий застосунок — доступно будь-якому
+    /// юзеру бота, без адмін-перевірки). URL беремо з логу тунелю, живість перевіряємо через
+    /// /api/health; мертвий/нема URL → docker restart контейнера tunnel і повторна спроба,
+    /// інакше — чесне повідомлення про збій.
+    /// </summary>
+    private async Task RunTunnelAsync(ITelegramBotClient botClient, long chatId, string lang, CancellationToken ct)
+    {
+        var url = _tunnel.ReadUrl();
+        if (url is not null && await _tunnel.IsHealthyAsync(url, ct))
+        {
+            await SendText(botClient, chatId, Strings.F(lang, "tunnel.ok", url), null, ct);
+            return;
+        }
+
+        _log("Tunnel: URL missing or unhealthy — restarting " + TunnelService.ContainerName);
+        await SendText(botClient, chatId, Strings.S(lang, "tunnel.restarting"), null, ct);
+
+        if (!_tunnel.RestartTunnel())
+        {
+            _log("Tunnel: docker restart failed");
+            await SendText(botClient, chatId, Strings.S(lang, "tunnel.fail"), null, ct);
+            return;
+        }
+
+        // після рестарту tee обнуляє лог і новий cloudflared пише туди вже новий URL
+        await Task.Delay(TunnelService.RestartSettle, ct);
+        var fresh = _tunnel.ReadUrl();
+        if (fresh is not null && await _tunnel.IsHealthyAsync(fresh, ct))
+        {
+            await SendText(botClient, chatId, Strings.F(lang, "tunnel.ok", fresh), null, ct);
+            return;
+        }
+
+        _log("Tunnel: still no healthy URL after restart");
+        await SendText(botClient, chatId, Strings.S(lang, "tunnel.fail"), null, ct);
     }
 
     // ------------------------------------------------------------------ помилки API

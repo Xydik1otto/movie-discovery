@@ -58,6 +58,19 @@ public class CommandParserTests
         Assert.NotNull(cmd);
         Assert.Equal("легкий  ситком", cmd.Args); // лишні пробіли всередині аргументів не рушають
     }
+
+    /// <summary>/tunnel — команда обслуговування тунелю, доступна всім юзерам бота.</summary>
+    [Theory]
+    [InlineData("/tunnel")]
+    [InlineData("/TUNNEL")]
+    [InlineData("/tunnel@my_kino_bot")]
+    [InlineData("/tunnel зайве")]
+    public void Parse_TunnelCommand_IsRecognized(string text)
+    {
+        var cmd = CommandParser.Parse(text);
+        Assert.NotNull(cmd);
+        Assert.Equal("tunnel", cmd.Command);
+    }
 }
 
 public class SimilarSeedsParserTests
