@@ -35,7 +35,9 @@ API_URL=http://api:5200  # для бота всередині compose
 
 ## Схема БД (PostgreSQL; names snake_case у БД, C# PascalCase)
 
-**titles** — `id serial PK`, `tmdb_id int UNIQUE NOT NULL`, `type text NOT NULL` (`movie|series|show`), `title_uk text`, `title_en text NOT NULL`, `overview_uk text`, `overview_en text`, `year int`, `countries text[]`, `genres text[]`, `keywords text[]`, `actors text[]`, `director text`, `runtime_min int NULL`, `episode_runtime_min int NULL`, `seasons int NULL`, `status text NULL` (`released|returning|ended|canceled`), `original_language text`, `rating_tmdb double precision NULL`, `rating_imdb double precision NULL`, `votes_imdb int NULL`, `popularity double precision DEFAULT 0`, `poster_path text`, `backdrop_path text`, `trailer_yt_id text NULL`, `created_at timestamptz DEFAULT now()`, `updated_at timestamptz DEFAULT now()`. Індекси: gin(genres), gin(keywords), gin(actors), btree(year), btree(popularity desc), unique(tmdb_id,type).
+**titles** — `id serial PK`, `tmdb_id int NULL` (NULL для аніме/манги з зовнішніх джерел), `type text NOT NULL` (`movie|series|show|anime|manga`), `title_uk text`, `title_en text NOT NULL`, `overview_uk text`, `overview_en text`, `year int`, `countries text[]`, `genres text[]`, `keywords text[]`, `actors text[]`, `director text`, `runtime_min int NULL`, `episode_runtime_min int NULL`, `seasons int NULL`, `status text NULL` (`released|returning|ended|canceled|finished|airing`), `original_language text`, `rating_tmdb double precision NULL`, `rating_imdb double precision NULL`, `votes_imdb int NULL`, `popularity double precision DEFAULT 0`, `poster_path text`, `backdrop_path text`, `trailer_yt_id text NULL`, `created_at timestamptz DEFAULT now()`, `updated_at timestamptz DEFAULT now()`.
+**Аніме/манга-специфіка (nullable):** `mal_id int NULL`, `anilist_id int NULL`, `shikimori_id int NULL`, `format text NULL` (`tv|movie|ova|ona|special|manga|manhwa|one_shot|novel`), `episodes int NULL` (аніме), `chapters int NULL` / `volumes int NULL` (манга), `studios text[]` (аніме), `authors text[]` (манга), `score_mal double precision NULL`, `score_anilist double precision NULL`, `score_shikimori double precision NULL`.
+Індекси: gin(genres), gin(keywords), gin(actors), gin(studios), btree(year), btree(popularity desc), unique(tmdb_id,type) [NULL не конфліктують], partial unique mal_id/anilist_id/shikimori_id WHERE NOT NULL.
 
 **providers** — `id serial PK`, `title_id int FK→titles ON DELETE CASCADE`, `provider text NOT NULL`, `kind text NOT NULL` (`stream|rent|buy|free`), `url text`, `source text NOT NULL`, `region text NOT NULL DEFAULT 'UA'`, `updated_at timestamptz`. UNIQUE(title_id, provider, kind, source, region).
 
@@ -43,7 +45,9 @@ API_URL=http://api:5200  # для бота всередині compose
 
 **profiles** — `id serial PK`, `name text NOT NULL`, `is_default bool DEFAULT false`, `created_at timestamptz`. При першому старті сіється єдиний профіль "Головний" (is_default=true).
 
-**lists** — `id serial PK`, `profile_id int FK→profiles`, `kind text NOT NULL` (`watchlist|watched`), `title_id int FK→titles CASCADE`, `rating int NULL` (1–10), `created_at timestamptz DEFAULT now()`, `watched_at timestamptz NULL`. UNIQUE(profile_id, kind, title_id).
+**lists** — `id serial PK`, `profile_id int FK→profiles`, `kind text NOT NULL` (`watchlist|watched|read` — `read` лише для type='manga'), `title_id int FK→titles CASCADE`, `rating int NULL` (1–10), `created_at timestamptz DEFAULT now()`, `watched_at timestamptz NULL`. UNIQUE(profile_id, kind, title_id).
+
+**import_jobs** — `id serial PK`, `source text NOT NULL` (`mal|anilist|shikimori`), `username text NOT NULL`, `profile_id int FK→profiles`, `status text NOT NULL DEFAULT 'queued'` (`queued|running|done|failed`), `stats jsonb NULL` (`{animeTotal, mangaTotal, matched, created, animeWatched, mangaRead, watchlistAdded, errors[]}`), `error text NULL`, `created_at timestamptz DEFAULT now()`, `finished_at timestamptz NULL`.
 
 **queries** — `id serial PK`, `profile_id int NULL FK`, `name text NOT NULL`, `seeds jsonb NOT NULL` (масив int tmdb_id), `filters jsonb NULL`, `created_at timestamptz`.
 
@@ -76,6 +80,15 @@ API_URL=http://api:5200  # для бота всередині compose
 - `GET /api/profiles` → `[{id,name,isDefault}]`; `POST /api/profiles {name}` (Е2+, але ендпоінт існує з Е0).
 - `GET /api/lists?profileId=1&kind=watchlist` → `{"items":[{itemId, ...TitleCard, kind, rating, createdAt, watchedAt}]}` (`itemId` — id РЯДКА списку; саме в нього целяться PATCH/DELETE; `id` всередині — id тайтла); `POST /api/lists {profileId,kind,tmdbId,rating?}` → 201; `PATCH /api/lists/{itemId} {rating?}`; `DELETE /api/lists/{itemId}`. Реакція на неіснуючий tmdbId → 404, дублікат → 409.
 - `GET /api/i18n/{lang}` → плоский словник `{"key":"текст",...}` (uk, en). КОПІЯ у backend як дефолт; фронт тримає свою (збіжні ключі!) — contract: ключі описані у PLAN §i18n.
+
+## Аніме і манга (FR-12/FR-13)
+
+- Загальний `/api/search` працює з `type=anime|manga`; TitleCard доповнено опціональними полями: `format`, `episodes`, `chapters`, `volumes`, `studios`, `authors`, `scoreMal`, `scoreAnilist`, `scoreShikimori` (null для звичайних тайтлів).
+- `GET /api/anime/catalog?sort=&page=` → аніме-канон (top MAL + поточний сезон, джерело Jikan), `GET /api/manga/catalog?sort=&page=` — аналогічно для манги; обидва — тонкі обгортки над `/api/search` з type=anime|manga та своїми дефолтними сортуваннями (для UI-розділів).
+- `POST /api/admin/sync/anime` / `POST /api/admin/sync/manga` (X-Admin-Key, body `{pages}`) → 202: джоба тягне Jikan `top/anime?filter=bypopularity` + `seasons/now` (для манги `top/manga`), батчами з тротлінгом 400 мс/запит, upsert titles за mal_id.
+- Імпорт списків: `POST /api/import/jobs` body `{"source":"mal|anilist|shikimori","username":"..."}` → 202 `{"jobId":N}`; `GET /api/import/jobs/{id}` → `{id,status,stats}`; `GET /api/import/sources` → статичний перелік трьох джерел з підказками (що вводити: нік MAL / нік AniList / ID або нік Shikimori).
+- Імпорт: Jikan `users/{username}/animelist` + `mangalist` (статуси completed→watched/read, watching→watchlist; 100/стор., тротлінг 400 мс); Shikimori `api/users/{id|nick}/anime_rates|manga_rates` (User-Agent + X-Application-Name обов'язкові, тротлінг 500 мс); AniList GraphQL `User(name)`→`MediaListCollection` (усі списки, розбір entries за status/score). Матчинг за mal_id/anilist_id/shikimori_id; відсутні тайтли створюються upsert-ом з даних списку. Ідемпотентно: повторний імпорт НЕ дублює записів списків (UNIQUE profile+kind+title), оновлює оцінку.
+- Приватний/незнайдений профіль → job failed з осмисленим error.
 - `POST /api/admin/sync/popular` header `X-Admin-Key`, body `{"pages":5,"type":"movie|series|all"}` → 202 `{queued:true}`; фонова джоба тягне TMDB popular/discover батчами, upsert у titles, ставить чергу на embeddings.
 - `GET /api/admin/sync/status` → `{lastRunAt, titlesCount, embeddingsCount, queueSize}`.
 - Swagger: увімкнений лише в Development (`/swagger`).
