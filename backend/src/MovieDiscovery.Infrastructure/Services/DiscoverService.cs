@@ -32,8 +32,10 @@ public sealed class DiscoverService(
             .ToListAsync(ct);
 
         var poolSize = Math.Max(count * 30, 300);
+        // БЕЗ фільтра по PosterPath: IMDb-рядки не мають постерів (це поле TMDB, dormant) —
+        // з фільтром топ-пул сканує весь індекс 2.4 млн рядків (30 с таймаут). UI має плейсхолдер.
         var baseQuery = db.Titles.AsNoTracking()
-            .Where(t => !excluded.Contains(t.Id) && t.PosterPath != null && !string.IsNullOrEmpty(t.TitleEn));
+            .Where(t => !excluded.Contains(t.Id) && !string.IsNullOrEmpty(t.TitleEn));
         if (!allowAdult)
             baseQuery = baseQuery.Where(t => !t.IsAdult);
 
