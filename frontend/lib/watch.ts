@@ -40,6 +40,13 @@ export function watchBadgeLabelKey(kind: string): string | null {
   return KIND_BADGE_KEYS[kind] ?? null;
 }
 
+// Рішення власника (07.11.2026): показуємо ЛИШЕ безкоштовні варіанти перегляду.
+// Платні (передплата/оренда/купівля) офіційні сайти не показуємо взагалі —
+// ні бейджі на картках, ні блок «Де подивитись»: усі дивляться безкоштовне.
+export function freeOnly(list: WatchProvider[]): WatchProvider[] {
+  return list.filter((w) => w.kind === "free");
+}
+
 // Перший провайдер на кожен kind — щоб у кутку картки не було дублікатів.
 export function dedupeWatchKinds(list: WatchProvider[]): WatchProvider[] {
   const seen = new Set<string>();

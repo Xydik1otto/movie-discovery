@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { WATCH_KIND_BADGE_STYLE, formatLabel, posterUrlFull } from "../lib/constants";
-import { dedupeWatchKinds, watchBadgeLabelKey, watchKindLabelKey } from "../lib/watch";
+import { dedupeWatchKinds, freeOnly, watchBadgeLabelKey, watchKindLabelKey } from "../lib/watch";
 import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
 import RatingBadge from "./RatingBadge";
@@ -43,7 +43,7 @@ export default function TitleCard({
 
   // FR-14: маленькі бейджі доступності перегляду у верхньому правому куті —
   // разом із % схожості (одна колонка, лейаут картки не змінюється).
-  const watchBadges = dedupeWatchKinds(item.watchProviders ?? []).slice(0, 3);
+  const watchBadges = dedupeWatchKinds(freeOnly(item.watchProviders ?? [])).slice(0, 3);
 
   return (
     <div className="group">

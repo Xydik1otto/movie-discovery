@@ -7,6 +7,7 @@ import { getWatch } from "@/lib/api";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
 import {
   dubGroupLabelKey,
+  freeOnly,
   groupWatchByDub,
   hasDubMetadata,
   qualityLabel,
@@ -166,10 +167,11 @@ export default function TitleDetailPage() {
   }
 
   // FR-14: спершу повні провайдери з /watch, інакше компактні з detail
-  // (легасі/демо); регіон фільтруємо на клієнті.
+  // (легасі/демо); регіон фільтруємо на клієнті. Рішення власника: лише
+  // безкоштовні варіанти — платні сайти (передплата/оренда/купівля) не показуємо.
   const watchPool: WatchProvider[] = watchList ?? detail.providers ?? [];
-  const providers = watchPool.filter(
-    (p) => !p.region || p.region === "*" || p.region === region,
+  const providers = freeOnly(
+    watchPool.filter((p) => !p.region || p.region === "*" || p.region === region),
   );
   const isAnime = detail.type === "anime";
   const isManga = detail.type === "manga";
