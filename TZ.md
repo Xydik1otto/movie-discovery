@@ -105,6 +105,19 @@ TMDB/IMDb дають лише фіксований «similar/recommended». Ту
 - Матчинг: за зовнішніми ID (mal_id/anilist_id/shikimori_id); якщо тайтла нема в каталозі — створюється запис з метаданих імпорту (upsert, ідемпотентно).
 - Імпорт — фонова джоба з прогресом (ліміти джерел: Jikan 3 req/s, AniList 90/min, Shikimori ~2 req/s; тротлінг обов'язковий), статус і статистика доступні опитуванням.
 
+### FR-14. «Де подивитись»: провайдери перегляду
+- Нова таблиця `watch_links`: title_id, provider (sweettv|archive|tmdb-streaming|...), kind (`free`|`subscription`|`rent`|`buy`), region (`UA`|`US`|`*`), url, is_available, checked_at. UNIQUE(title_id, provider, kind, region).
+- **sweet.tv — PRIMARY UA-провайдер (парсинг)**: каталог `/ua-uk/movie` (патерн `/ua-uk/movie/{id}-{slug}`), картки фільмів дають назву укр., рік, маркери доступності (безкоштовно/передплата). Тротлінг і пошана robots.txt (NFR-6): каталог і картки дозволені; /search, /payment — заборонені і НЕ парсаться. uk-назви з sweet.tv пишуться в title_uk (це легальне джерело укр. назв).
+- **Internet Archive — free-провайдер**: колекція `feature_films` (~28.6k повнометражок public domain) через advancedsearch API; матчинг до каталогу за нормалізованою назвою + рік (±1); знайдені → watch_links kind=free з прямим посиланням.
+- **TMDB watch/providers — dormant до ключа**: env `TMDB_API_KEY`; коли з'явиться — провайдери JustWatch (регіон UA) через `find/{imdb_id}?external_source=imdb_id` → `/watch/providers`. Без ключа — чесний 400/пропуск, нічого не ламається. Прямий скрапінг justwatch.com НЕ РОБИМО (ToS забороняє; санкціонований канал — TMDB).
+- UI: на картці та сторінці тайтла блок «Де подивитись» з бейджами провайдерів (free/передплата) і посиланнями; фільтр пошуку «лише те, що можна подивитись» (exists watch_links available).
+
+### FR-15. Масивний каталог фільмів/серіалів (IMDb datasets, без ключа)
+- Джерело: офіційні IMDb datasets (datasets.imdbws.com, доступні без реєстрації, умова — атрибуція IMDb у README/футері): `title.basics.tsv.gz` (~10 млн тайтлів) + `title.ratings.tsv.gz`. `title.akas.tsv.gz` на Е2 не тягнемо (занадто великий; uk-назви — з sweet.tv і пізніше TMDB).
+- Мапінг titleType: movie, tvMovie, video, tvSpecial, short → `type='movie'`; tvSeries, tvMiniSeries → `type='series'`; tvEpisode і videoGames — SKIP. Поля: primaryTitle/originalTitle, startYear, runtimeMinutes, genres (canonical lowercase), isAdult, averageRating→rating_imdb, numVotes→popularity (лог-нормалізація як для інших джерел).
+- Реалізація: потокове завантаження .gz у контейнері, PG COPY у staging-таблицю imdb_raw, MERGE-злиття в titles за imdb_id (idempotent); повторний запуск оновлює, не дублює. Стейджинг чиститься після злиття.
+- Пошук `type=movie|series` працює з масивним каталогом; сортування за популярністю (numVotes) — реальні IMDb-топи.
+
 ---
 
 ## 4. Нефункціональні вимоги

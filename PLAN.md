@@ -93,6 +93,16 @@ API_URL=http://api:5200  # для бота всередині compose
 - `GET /api/admin/sync/status` → `{lastRunAt, titlesCount, embeddingsCount, queueSize}`.
 - Swagger: увімкнений лише в Development (`/swagger`).
 
+## IMDb bulk + «Де подивитись» (FR-14/FR-15)
+
+- `POST /api/admin/sync/imdb` (X-Admin-Key, body `{mediaTypes:["movie","series"], maxRows?:N}`) → 202 `{queued}`: фонова джоба потоково завантажує `https://datasets.imdbws.com/title.basics.tsv.gz` + `title.ratings.tsv.gz`, GZip-стрім → рядки, PG COPY у staging `imdb_raw`, MERGE у titles за imdb_id (idempotent: повторний запуск оновлює, не дублює), staging чиститься. titleType→type: movie/tvMovie/video/tvSpecial/short→movie; tvSeries/tvMiniSeries→series; tvEpisode/videoGame→SKIP. rating_imdb=averageRating, popularity=лог-нормалізація numVotes (консистентно з іншими джерелами), жанри canonical lowercase, title_uk=NULL (uk-назви — sweet.tv/TMDB).
+- `POST /api/admin/sync/archive-films` (body `{pages}`) → 202: IA advancedsearch `collection:(feature_films)` пагінацією (500/стор), матчинг до titles за нормалізованою назвою + рік ±1 → watch_links (provider=archive, kind=free, url=archive.org/details/{identifier}); тайтли, яких нема в каталозі, НЕ створюються.
+- `POST /api/admin/sync/sweettv` (body `{pages}`) → 202: парсинг каталогу `https://sweet.tv/ua-uk/movie` (посилання `/ua-uk/movie/{id}-{slug}`) + карток фільмів: title_uk (укр. назва), рік, тип доступу (безкоштовно/передплата) → upsert titles (type=movie, source sweettv) + watch_links (provider=sweettv, kind=free|subscription, region=UA). Тротлінг 1 req/2 c, чесний User-Agent `KinoNavigatorBot/1.0`, robots: /search і /payment НЕ парсаться. Фіксстури-зразки сторінок: `C:/Users/bigpi/AppData/Local/hermes/cache/scratch/vod-recon/sweet_catalog.html` і `sweet_movie_card.html`.
+- `POST /api/admin/sync/tmdb-providers` → БЕЗ `TMDB_API_KEY` → 400 з підказкою в error; З ключем → 202: для titles з imdb_id (`find/{imdb_id}?external_source=imdb_id` → `/watch/providers`, region=UA) → watch_links provider=tmdb-streaming з kind за модель провайдера (flat/free → free|subscription; rent/buy). Dormant: без ключа нічого не ламається.
+- `GET /api/titles/{id}/watch` → `{providers:[{provider,kind,region,url}]}`; у TitleCard — компактне `watchProviders:[{provider,kind,url}]` (для бейджів). `/api/search` приймає `watchable=true` → EXISTS watch_links is_available.
+- Міграція: таблиця `watch_links` (title_id FK, provider, kind, region, url, is_available, checked_at, UNIQUE(title_id,provider,kind,region)) + колонка `imdb_id` (text, UNIQUE, index) у titles.
+- Пряме парсення justwatch.com ЗАБОРОНЕНО (ToS) — дані приходять лише через TMDB watch/providers.
+
 ## Движок схожості (Core, чистий C#, без I/O — тестопридатний)
 
 Ваги (конфіг `SimilarityOptions`): semantic 0.35, keywords 0.20, genres 0.15, credits 0.15, era 0.05, numeric(rating+runtime) 0.05, tmdbSimilarBoost 0.05; бонус same-type ×1.1. Semantic term = 0, якщо векторів нема → ваги нормалізуються на решту. Jaccard для жанрів; overlap-частка для keywords/actors (режисер ×2); era: exp-спад за |Δyear| з напівжиттям 7 років; numeric: гаус. Multi-seed: середнє векторів seeds; жанри/keywords/actors — об'єднання з вагою (означена ознака зустрічається у k seeds → вага k/n); причини — топ-3 внески. Косинус — через `System.Numerics.Tensors` (SIMD) або `TensorPrimitives.CosineSimilarity`.
