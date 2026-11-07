@@ -62,6 +62,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     primary_name text NOT NULL
                 );
                 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+                -- array_to_string STABLE -> не можна напряму в індекс-виразі;
+                -- IMMUTABLE-обгортка для trgm-індексації масиву акторів.
+                CREATE OR REPLACE FUNCTION actors_trgm_text(a text[])
+                    RETURNS text LANGUAGE sql IMMUTABLE STRICT
+                    RETURN array_to_string(a, ' ');
                 CREATE INDEX IF NOT EXISTS ix_titles_title_en_trgm
                     ON titles USING gin (title_en gin_trgm_ops);
                 CREATE INDEX IF NOT EXISTS ix_titles_title_uk_trgm
@@ -69,7 +74,7 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 CREATE INDEX IF NOT EXISTS ix_titles_director_trgm
                     ON titles USING gin (director gin_trgm_ops);
                 CREATE INDEX IF NOT EXISTS ix_titles_actors_trgm
-                    ON titles USING gin ((array_to_string(actors, ' ')) gin_trgm_ops);
+                    ON titles USING gin ((actors_trgm_text(actors)) gin_trgm_ops);
                 """);
         }
 

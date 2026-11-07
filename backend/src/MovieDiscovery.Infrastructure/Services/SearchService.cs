@@ -79,7 +79,7 @@ SELECT * FROM titles
 WHERE title_uk ILIKE {pat}
    OR title_en ILIKE {pat}
    OR director ILIKE {pat}
-   OR array_to_string(actors, ' ') ILIKE {pat}");
+   OR actors_trgm_text(actors) ILIKE {pat}");
         }
         else
         {
