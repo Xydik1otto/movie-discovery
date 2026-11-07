@@ -72,7 +72,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       credentials: "include",
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       cache: "no-store",
-      signal: AbortSignal.timeout(8000),
+      // Пошук/агрегати по 2.8 млн рядків під навантаженням масових синків можуть
+      // легально мислити 10-20 с; 8 с давало фальшивий «API недоступний» + демо-дані.
+      signal: AbortSignal.timeout(25_000),
     });
   } catch {
     markDown();
