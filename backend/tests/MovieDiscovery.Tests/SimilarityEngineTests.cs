@@ -246,35 +246,48 @@ public class SimilarityEngineTests
     }
 
     [Fact]
-    public void Reasons_Top3_Localized_UkAndEn()
+    public void Reasons_Codes_GenresActorsDecade()
     {
-        var s = Seed(genres: ["Drama", "Thriller"], actors: ["Іван"], director: "Jane Director", year: 2000);
-        var c = Candidate(genres: ["Drama", "Thriller"], actors: ["Іван"], director: "Jane Director", year: 2001);
+        var s = Seed(genres: ["Drama", "Thriller"], actors: ["Іван"], director: "Jane Director", year: 1994);
+        var c = Candidate(genres: ["Drama", "Thriller", "Comedy"], actors: ["Іван", "Петро"], director: "Jane Director", year: 1996);
         var score = new SimilarityEngine().Score(s, c);
 
-        var uk = SimilarityTexts.BuildReasons(score.Contributions, 1, "uk");
-        var en = SimilarityTexts.BuildReasons(score.Contributions, 1, "en");
+        var codes = SimilarityReasons.Build(score, candidateYear: 1996, seedYear: 1994);
 
-        Assert.Equal(3, uk.Count);
-        Assert.Contains(uk, r => r.StartsWith("Спільний режисер: Jane Director"));
-        Assert.Contains(uk, r => r.StartsWith("Спільні жанри: Drama, Thriller"));
-        Assert.Contains(uk, r => r.StartsWith("Спільні актори: Іван"));
-        Assert.Contains(en, r => r.StartsWith("Shared director: Jane Director"));
-        Assert.Contains(en, r => r.StartsWith("Shared genres: Drama, Thriller"));
-        Assert.Equal(3, en.Count);
+        // коди FR-21: спільні жанри (lowercase en), спільні актори (ім'я як у БД), та сама декада
+        Assert.Contains("shared_genres:drama", codes);
+        Assert.Contains("shared_genres:thriller", codes);
+        Assert.Equal("shared_actor:Іван", codes.Single(x => x.StartsWith("shared_actor:", StringComparison.Ordinal)));
+        Assert.Equal("decade:1990s", codes.Single(x => x.StartsWith("decade:", StringComparison.Ordinal)));
     }
 
     [Fact]
-    public void Reasons_MultiSeed_Suffix()
+    public void Reasons_Codes_Limits_Genres3_Actors2()
     {
-        var contrib = new List<SignalContribution>
-        {
-            new("genres", 0.15, 0.5, ["Action"], 2.0 / 3.0),
-        };
-        var uk = SimilarityTexts.BuildReasons(contrib, 3, "uk");
-        var en = SimilarityTexts.BuildReasons(contrib, 3, "en");
+        var s = Seed(genres: ["Action", "Adventure", "Sci-Fi", "Fantasy"], actors: ["A", "B", "C"], year: 2010);
+        var c = Candidate(genres: ["Action", "Adventure", "Sci-Fi", "Fantasy"], actors: ["A", "B", "C"], year: 2010);
+        var score = new SimilarityEngine().Score(s, c);
 
-        Assert.Equal("Спільні жанри: Action (у 2 з 3 еталонів)", uk[0]);
-        Assert.Equal("Shared genres: Action (in 2 of 3 seeds)", en[0]);
+        var codes = SimilarityReasons.Build(score, candidateYear: 2010, seedYear: 2010);
+
+        Assert.Equal(3, codes.Count(x => x.StartsWith("shared_genres:", StringComparison.Ordinal)));
+        Assert.Equal(2, codes.Count(x => x.StartsWith("shared_actor:", StringComparison.Ordinal)));
+        Assert.Equal("decade:2010s", codes.Single(x => x.StartsWith("decade:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Reasons_Codes_NoDecade_OnMismatchOrUnknownSeedYear()
+    {
+        var s = Seed(genres: ["Drama"]);
+        var c = Candidate(genres: ["Drama"]);
+        var score = new SimilarityEngine().Score(s, c);
+
+        Assert.DoesNotContain(
+            SimilarityReasons.Build(score, 2005, 1994),
+            x => x.StartsWith("decade:", StringComparison.Ordinal));
+        // seedYear невідомий (by-text) — код декади не видається
+        Assert.DoesNotContain(
+            SimilarityReasons.Build(score, 2005, null),
+            x => x.StartsWith("decade:", StringComparison.Ordinal));
     }
 }

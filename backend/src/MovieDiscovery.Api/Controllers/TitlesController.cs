@@ -77,7 +77,7 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
         if (seed is null)
             return NotFound(new { error = "not_found", message = "Тайтл не знайдено" });
 
-        var scored = await similarity.SimilarByTitleAsync(seed, limit, langSafe, ct);
+        var scored = await similarity.SimilarByTitleAsync(seed, limit, langSafe, filters: null, ct);
         return Ok(new { items = scored.Select(s => ToSimilarItem(s, langSafe)).ToList() });
     }
 
@@ -101,8 +101,9 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             Seasons = card.Seasons,
             Overview = card.Overview,
             Score = Math.Round(s.Score.Value, 4),
-            Reasons = SimilarityTexts.BuildReasons(s.Score.Contributions, 1, lang,
-                g => lang == "en" ? g : TmdbGenres.ToUk(g)),
+            // FR-21: причини — машинні коди (shared_genres:<genre> / shared_actor:<ім'я> / decade:<YYYY0>s),
+            // фронт локалізує; ліміти — жанри ≤3, актори ≤2.
+            Reasons = SimilarityReasons.Build(s.Score, s.Title.Year, s.SeedYear),
         };
         return item;
     }

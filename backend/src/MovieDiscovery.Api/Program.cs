@@ -237,6 +237,7 @@ public class Program
         // FR-16/17/18: акаунти, профіль смаку, discover, онбординг
         builder.Services.AddScoped<TasteProfileService>();
         builder.Services.AddScoped<UserListService>();
+        builder.Services.AddScoped<CollectionsService>();
         builder.Services.AddScoped<DiscoverService>();
 
         builder.Services.AddHostedService<EmbeddingBackgroundService>();

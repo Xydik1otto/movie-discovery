@@ -10,7 +10,9 @@ using MovieDiscovery.Infrastructure.Tmdb;
 
 namespace MovieDiscovery.Infrastructure.Services;
 
-public sealed record ScoredTitle(Title Title, SimilarityScore Score);
+/// <summary>Скорений кандидат. SeedYear — рік еталона (для multi-seed — усереднений рік агрегата);
+/// null, коли рік еталона невідомий (by-text) — код декади причин тоді не видається.</summary>
+public sealed record ScoredTitle(Title Title, SimilarityScore Score, int? SeedYear = null);
 
 /// <summary>
 /// Оркестрація схожості: будує профіль еталонів (вектори з БД, TMDB-similar id з кешу),
@@ -24,18 +26,23 @@ public sealed class SimilarityService(
 {
     public const int CandidateCap = 2000;
 
-    /// <summary>Схожість від картки (1 seed).</summary>
-    public Task<List<ScoredTitle>> SimilarByTitleAsync(Title seed, int limit, string lang, CancellationToken ct = default) =>
-        SimilarBySeedsAsync([seed], limit, lang, ct);
+    /// <summary>InMemory-провайдер (тести) не транслює масив-предикати/EXISTS-сортування — гілки адаптації.</summary>
+    private bool IsInMemoryProvider =>
+        !db.Database.ProviderName!.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Multi-seed: 1..10 еталонів.</summary>
+    /// <summary>Схожість від картки (1 seed).</summary>
+    public Task<List<ScoredTitle>> SimilarByTitleAsync(
+        Title seed, int limit, string lang, SimilarFilters? filters = null, CancellationToken ct = default) =>
+        SimilarBySeedsAsync([seed], limit, lang, filters, ct);
+
+    /// <summary>Multi-seed: 1..10 еталонів. filters — опційні hard-фільтри type/рік + soft-boost жанрів (FR-21).</summary>
     public async Task<List<ScoredTitle>> SimilarBySeedsAsync(
-        IReadOnlyList<Title> seeds, int limit, string lang, CancellationToken ct = default)
+        IReadOnlyList<Title> seeds, int limit, string lang, SimilarFilters? filters = null, CancellationToken ct = default)
     {
         var seedFeatures = await BuildSeedFeaturesAsync(seeds, ct);
         var seedAgg = SeedAggregate.FromSeeds(seedFeatures);
-        var candidates = await LoadCandidatesAsync(seedAgg, ct);
-        return await ScoreAndRankAsync(seedAgg, candidates, limit, lang, tokenizeKeywords: false, ct);
+        var candidates = await LoadCandidatesAsync(seedAgg, filters, ct);
+        return await ScoreAndRankAsync(seedAgg, candidates, limit, lang, tokenizeKeywords: false, filters, ct);
     }
 
     /// <summary>
@@ -64,7 +71,7 @@ public sealed class SimilarityService(
         };
 
         var candidates = await LoadByTextCandidatesAsync(seedAgg, signals, vector is not null, ct);
-        var results = await ScoreAndRankAsync(seedAgg, candidates, limit, lang, tokenizeKeywords: true, ct);
+        var results = await ScoreAndRankAsync(seedAgg, candidates, limit, lang, tokenizeKeywords: true, filters: null, ct);
         return (results, false);
     }
 
@@ -134,31 +141,55 @@ public sealed class SimilarityService(
 
     // ─── Пул кандидатів ───
 
-    private async Task<List<Title>> LoadCandidatesAsync(SeedAggregate seed, CancellationToken ct)
+    private async Task<List<Title>> LoadCandidatesAsync(SeedAggregate seed, SimilarFilters? filters, CancellationToken ct)
     {
         var seedLocalIds = await db.Titles.AsNoTracking()
             .Where(t => t.TmdbId != null && seed.SeedTmdbIds.Contains(t.TmdbId.Value))
             .Select(t => t.Id)
             .ToListAsync(ct);
 
-        var genres = seed.Genres.Select(g => g.Value.ToLowerInvariant()).ToArray();
-        var keywords = seed.Keywords.Select(k => k.Value.ToLowerInvariant()).ToArray();
-        var actors = seed.Actors.Select(a => a.Value.ToLowerInvariant()).ToArray();
+        var genres = seed.Genres.Select(g => g.Value.Trim()).ToArray();
+        var keywords = seed.Keywords.Select(k => k.Value.Trim()).ToArray();
+        var actors = seed.Actors.Select(a => a.Value.Trim()).ToArray();
         var anyMeta = genres.Length > 0 || keywords.Length > 0 || actors.Length > 0;
 
         var pool = db.Titles.AsNoTracking();
         if (seedLocalIds.Count > 0)
             pool = pool.Where(t => !seedLocalIds.Contains(t.Id));
-        if (anyMeta)
+        // Npgsql-шлях: meta-пул через unnest/&& по масивах (GIN). InMemory-провайдер не транслює
+        // Any-по-масивових колонках (усталена адаптація тестів, як у DbContext) — пул ширший,
+        // зайвих кандидатів відсіює gate score>0 у скорингу; семантика результату та сама.
+        if (anyMeta && !IsInMemoryProvider)
             pool = pool.Where(t =>
-                t.Genres.Any(g => genres.Contains(g.ToLower())) ||
-                t.Keywords.Any(k => keywords.Contains(k.ToLower())) ||
-                t.Actors.Any(a => actors.Contains(a.ToLower())));
+                t.Genres.Any(g => genres.Contains(g)) ||
+                t.Keywords.Any(k => keywords.Contains(k)) ||
+                t.Actors.Any(a => actors.Contains(a)));
+
+        // FR-21: hard-фільтри type/рік — у SQL ДО ORDER BY/TAKE (індексний план, а не фільтрація
+        // 2000 матеріалізованих кандидатів). Рік — діапазон на year (BETWEEN-семантика) → ix_titles_year.
+        pool = ApplyCandidateFilters(pool, filters);
 
         return await pool
             .OrderByDescending(t => t.Popularity)
             .Take(CandidateCap)
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Hard-фільтри пулу кандидатів (FR-21): types → type = ANY(...), рік → year &gt;= from AND year &lt;= to
+    /// (BETWEEN-семантика: той самий btree-range-план по ix_titles_year). Жанри сюди НЕ входять — вони soft-boost.
+    /// Public static — щоб тест SQL-трансляції (ToQueryString, без БД) перевіряв план.
+    /// </summary>
+    public static IQueryable<Title> ApplyCandidateFilters(IQueryable<Title> pool, SimilarFilters? filters)
+    {
+        if (filters is null || !filters.HasPoolFilters) return pool;
+        if (filters.Types is { Count: > 0 } types)
+            pool = pool.Where(t => types.Contains(t.Type));
+        if (filters.YearFrom is int yearFrom)
+            pool = pool.Where(t => t.Year >= yearFrom);
+        if (filters.YearTo is int yearTo)
+            pool = pool.Where(t => t.Year <= yearTo);
+        return pool;
     }
 
     private async Task<List<Title>> LoadByTextCandidatesAsync(
@@ -235,6 +266,7 @@ LIMIT 1500").ToListAsync(ct));
         int limit,
         string lang,
         bool tokenizeKeywords,
+        SimilarFilters? filters,
         CancellationToken ct)
     {
         var candidateIds = candidates.Select(t => t.Id).ToList();
@@ -243,6 +275,11 @@ LIMIT 1500").ToListAsync(ct));
             : await db.Embeddings.AsNoTracking()
                 .Where(e => candidateIds.Contains(e.TitleId))
                 .ToDictionaryAsync(e => e.TitleId, e => e.Vec, ct);
+
+        // Soft-boost жанрів (FR-21): перетин з жанрами-акцентами додає бонус до score (НЕ відсікання).
+        HashSet<string>? boostSet = null;
+        if (filters?.Genres is { Count: > 0 } boostGenres)
+            boostSet = new HashSet<string>(boostGenres, StringComparer.OrdinalIgnoreCase);
 
         var scored = new List<ScoredTitle>(candidates.Count);
         foreach (var t in candidates)
@@ -262,7 +299,15 @@ LIMIT 1500").ToListAsync(ct));
             };
             var score = engine.Score(seedAgg, features);
             if (score.Value <= 0) continue;
-            scored.Add(new ScoredTitle(t, score));
+
+            var value = score.Value;
+            if (boostSet is not null)
+            {
+                var matches = t.Genres.Count(g => boostSet.Contains(g));
+                if (matches > 0)
+                    value += SimilarFilters.GenreBoostPerGenre * Math.Min(matches, SimilarFilters.MaxBoostGenres);
+            }
+            scored.Add(new ScoredTitle(t, new SimilarityScore(value, score.Contributions), seedAgg.Year));
         }
 
         var top = scored

@@ -23,6 +23,8 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<WatchLink> WatchLinks => Set<WatchLink>();
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<InteractionLog> InteractionLogs => Set<InteractionLog>();
+    public DbSet<UserCollection> UserCollections => Set<UserCollection>();
+    public DbSet<UserCollectionItem> UserCollectionItems => Set<UserCollectionItem>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -208,6 +210,31 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
                 .HasForeignKey(x => x.TitleId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        // FR-21: збережені добірки юзера — user_collections + user_collection_items.
+        // Ізоляція як у TasteProfileService: власник ТІЛЬКИ з поточного юзера (FK asp_net_users).
+        mb.Entity<UserCollection>(e =>
+        {
+            e.ToTable("user_collections");
+            e.Property(x => x.UserId).IsRequired();
+            e.Property(x => x.Name).IsRequired();
+            e.HasIndex(x => x.UserId);
+            e.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        mb.Entity<UserCollectionItem>(e =>
+        {
+            e.ToTable("user_collection_items");
+            // PK(collection_id, title_id) — також покриває вибірку items добірки за collection_id.
+            e.HasKey(x => new { x.CollectionId, x.TitleId });
+            e.Property(x => x.TitleId).HasColumnType("bigint");
+            e.HasOne(x => x.Collection)
+                .WithMany(c => c.Items)
+                .HasForeignKey(x => x.CollectionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Тестовий InMemory-провайдер не вміє jsonb/vector — наприкінці (після всіх конфігурацій),

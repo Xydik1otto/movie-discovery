@@ -793,6 +793,58 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.ToTable("titles", (string)null);
                 });
 
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_collections");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_user_collections_user_id");
+
+                    b.ToTable("user_collections", (string)null);
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollectionItem", b =>
+                {
+                    b.Property<int>("CollectionId")
+                        .HasColumnType("integer")
+                        .HasColumnName("collection_id");
+
+                    b.Property<long>("TitleId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("title_id");
+
+                    b.Property<int>("Ord")
+                        .HasColumnType("integer")
+                        .HasColumnName("ord");
+
+                    b.HasKey("CollectionId", "TitleId")
+                        .HasName("pk_user_collection_items");
+
+                    b.ToTable("user_collection_items", (string)null);
+                });
+
             modelBuilder.Entity("MovieDiscovery.Core.Domain.UserProfile", b =>
                 {
                     b.Property<int>("Id")
@@ -1055,6 +1107,28 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollection", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_collections_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollectionItem", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.UserCollection", "Collection")
+                        .WithMany("Items")
+                        .HasForeignKey("CollectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_collection_items_user_collections_collection_id");
+
+                    b.Navigation("Collection");
+                });
+
             modelBuilder.Entity("MovieDiscovery.Core.Domain.UserProfile", b =>
                 {
                     b.HasOne("MovieDiscovery.Core.Domain.Profile", "Profile")
@@ -1101,6 +1175,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
             modelBuilder.Entity("MovieDiscovery.Core.Domain.Profile", b =>
                 {
                     b.Navigation("Lists");
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollection", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }
