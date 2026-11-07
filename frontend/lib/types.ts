@@ -2,7 +2,8 @@
 
 export type TitleType = "movie" | "series" | "show" | "anime" | "manga";
 export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free";
-export type ListKind = "watchlist" | "watched" | "read";
+// FR-17: liked/disliked розширюють системні списки.
+export type ListKind = "watchlist" | "watched" | "read" | "liked" | "disliked";
 
 export interface TitleCard {
   id: number;
@@ -147,4 +148,68 @@ export interface ImportJob {
   status: ImportJobStatus;
   stats?: ImportJobStats | null;
   error?: string | null;
+}
+
+// --- FR-16/17/18: акаунти, discover, онбординг, статистика списків ---
+
+export interface AuthUser {
+  id: number;
+  email?: string | null;
+  username: string;
+  onboardingDone?: boolean | null;
+}
+
+// Нормалізовані помилки полів реєстрації (бекенд повертає {errors: {...}}).
+export interface AuthFieldErrors {
+  email?: string[];
+  username?: string[];
+  password?: string[];
+  general?: string[];
+}
+
+export type DiscoverMode = "exploit" | "safe" | "explore";
+export type DiscoverAction = "like" | "dislike" | "skip" | "watchlist" | "watched";
+
+export interface DiscoverResponse {
+  items: TitleCard[];
+  mode?: DiscoverMode | null;
+}
+
+export interface ListStats {
+  watchedCount?: number | null;
+  likedCount?: number | null;
+  dislikedCount?: number | null;
+  avgRating?: number | null;
+  // topGenres може прийти масивом рядків або пар genre/count — толеруємо обидва.
+  topGenres?: (string | { genre: string; count?: number | null })[] | null;
+}
+
+export interface OnboardingOption {
+  id: string;
+  label?: string | null;
+  value?: string | null;
+  posterUrl?: string | null;
+}
+
+export interface OnboardingQuestion {
+  id: string;
+  type: "posters" | "mood" | "era" | "titles";
+  title?: string | null;
+  options?: OnboardingOption[] | null;
+}
+
+export interface OnboardingAnswers {
+  picks?: { questionId: string; values: string[] }[];
+  mood?: string[];
+  era?: string | null;
+  favoriteTitles?: { titleId: number; tmdbId?: number | null; title: string }[];
+  skipped?: boolean;
+}
+
+// Елемент гостьового списку для POST /api/lists/migrate-guest.
+export interface GuestListItem {
+  kind: ListKind;
+  titleId: number;
+  tmdbId?: number | null;
+  rating?: number | null;
 }

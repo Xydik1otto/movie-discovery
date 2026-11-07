@@ -106,7 +106,7 @@ public class SweetTvServiceTests
     private static SweetTvService NewService(MovieDiscoveryDbContext db, StubHttpHandler handler) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("https://sweet.tv/") }, db,
             Options.Create(new SweetTvOptions()),
-            new IntervalThrottle(TimeSpan.Zero), // без тротлінгу в тестах
+            new SweetTvThrottle(TimeSpan.Zero), // без тротлінгу в тестах
             Logs.Null<SweetTvService>());
 
     private static HttpResponseMessage Respond(HttpRequestMessage req)

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { I18nProvider } from "../i18n/I18nContext";
+import { AuthProvider } from "../lib/auth";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
@@ -42,10 +43,12 @@ export default function RootLayout({
     <html lang="uk">
       <body className="flex min-h-screen flex-col bg-bg text-ink antialiased">
         <I18nProvider>
-          <Header />
-          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">{children}</main>
-          <Footer />
-          <ServiceWorkerRegister />
+          <AuthProvider>
+            <Header />
+            <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">{children}</main>
+            <Footer />
+            <ServiceWorkerRegister />
+          </AuthProvider>
         </I18nProvider>
       </body>
     </html>

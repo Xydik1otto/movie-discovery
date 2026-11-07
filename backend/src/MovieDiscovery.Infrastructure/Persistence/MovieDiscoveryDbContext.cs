@@ -1,13 +1,15 @@
 using System.Text.Json;
 using MovieDiscovery.Core.Domain;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace MovieDiscovery.Infrastructure.Persistence;
 
-/// <summary>EF Core DbContext. Схема — PLAN.md (snake_case у БД через EFCore.NamingConventions).</summary>
+/// <summary>EF Core DbContext. Схема — PLAN.md (snake_case у БД через EFCore.NamingConventions).
+/// База — IdentityUserContext (FR-16): AspNetUsers (+AspNetUserClaims); ролі навмисно НЕ підключені.</summary>
 public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> options)
-    : DbContext(options)
+    : IdentityUserContext<ApplicationUser>(options)
 {
     public DbSet<Title> Titles => Set<Title>();
     public DbSet<Provider> Providers => Set<Provider>();
@@ -19,9 +21,23 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<EmbeddingRow> Embeddings => Set<EmbeddingRow>();
     public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
     public DbSet<WatchLink> WatchLinks => Set<WatchLink>();
+    public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
+    public DbSet<InteractionLog> InteractionLogs => Set<InteractionLog>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
+        // FR-16: Identity-сутності (AspNetUsers + AspNetUserClaims; ролі НЕ потрібні).
+        base.OnModelCreating(mb);
+        mb.Entity<ApplicationUser>(e =>
+        {
+            // Явні назви таблиць Identity (без ролей): юзер + claims-сховище (AddIdentityCore).
+            e.ToTable("asp_net_users");
+            e.HasIndex(x => x.NormalizedEmail);
+        });
+        mb.Entity<Microsoft.AspNetCore.Identity.IdentityUserClaim<string>>(e => e.ToTable("asp_net_user_claims"));
+        mb.Entity<Microsoft.AspNetCore.Identity.IdentityUserLogin<string>>(e => e.ToTable("asp_net_user_logins"));
+        mb.Entity<Microsoft.AspNetCore.Identity.IdentityUserToken<string>>(e => e.ToTable("asp_net_user_tokens"));
+
         mb.HasPostgresExtension("vector");
 
         mb.Entity<Title>(e =>
@@ -155,6 +171,41 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.HasIndex(x => new { x.TitleId, x.Provider, x.Kind, x.Region }).IsUnique();
             e.HasIndex(x => x.TitleId);
             e.HasIndex(x => new { x.Provider, x.IsAvailable });
+        });
+
+        // FR-16/17: профіль смаку юзера — зв'язка user_id → постійний профіль списків + jsonb-мапи ваг
+        mb.Entity<UserProfile>(e =>
+        {
+            e.ToTable("user_profiles");
+            e.Property(x => x.UserId).IsRequired();
+            e.Property(x => x.TasteGenres).HasColumnType("jsonb");
+            e.Property(x => x.TasteKeywords).HasColumnType("jsonb");
+            e.Property(x => x.TasteEra).HasColumnType("jsonb");
+            e.Property(x => x.TasteActors).HasColumnType("jsonb");
+            e.Property(x => x.NegativeGenres).HasColumnType("jsonb");
+            e.Property(x => x.Quiz).HasColumnType("jsonb");
+            e.HasIndex(x => x.UserId).IsUnique();
+            e.HasOne<ApplicationUser>()
+                .WithOne()
+                .HasForeignKey<UserProfile>(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Profile)
+                .WithMany()
+                .HasForeignKey(x => x.ProfileId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // FR-17: «пам'ять про користувача» — interaction_log
+        mb.Entity<InteractionLog>(e =>
+        {
+            e.ToTable("interaction_log");
+            e.Property(x => x.UserId).IsRequired();
+            e.Property(x => x.Action).IsRequired().HasMaxLength(16);
+            e.HasOne(x => x.Title)
+                .WithMany()
+                .HasForeignKey(x => x.TitleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
         });
 
         // Тестовий InMemory-провайдер не вміє jsonb/vector — наприкінці (після всіх конфігурацій),

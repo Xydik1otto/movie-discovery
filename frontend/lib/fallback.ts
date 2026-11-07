@@ -5,19 +5,39 @@ import {
   ApiError,
   addToList,
   deleteListItem,
+  getDiscover,
   getLists,
+  getOnboardingQuestions,
+  getListStats,
   getTitle,
   getTitleSimilar,
+  migrateGuestLists,
   patchListItem,
+  postDiscoverAction,
+  postOnboardingAnswers,
+  rateListItem,
   searchTitles,
   similarBySeeds,
   similarByText,
 } from "./api";
-import { demoCards, demoDetail, demoLists, demoSearch, demoSimilar } from "./demo";
+import {
+  demoCards,
+  demoDetail,
+  demoDiscover,
+  demoLists,
+  demoListStats,
+  demoOnboardingQuestions,
+  demoSearch,
+  demoSimilar,
+} from "./demo";
 import type { Lang } from "../i18n/I18nContext";
 import type {
+  DiscoverResponse,
+  GuestListItem,
   ListKind,
   ListItem,
+  ListStats,
+  OnboardingQuestion,
   Paged,
   SearchParams,
   SimilarItem,
@@ -163,6 +183,72 @@ export async function guardedLists(
 
 // Мутації не мають демо-підмінки — помилки показуємо користувачу.
 export { addToList, patchListItem, deleteListItem };
+
+// --- FR-17/18: guarded-обгортки нових ендпоінтів ---
+
+export async function guardedDiscover(
+  lang: Lang,
+  exclude: number[] = [],
+  count = 10,
+): Promise<Gate<DiscoverResponse>> {
+  try {
+    return { data: await getDiscover(count, lang), unavailable: false };
+  } catch (e) {
+    if (isUnavailable(e)) {
+      return { data: demoDiscover(lang, exclude, count), unavailable: true };
+    }
+    throw e;
+  }
+}
+
+export async function guardedOnboardingQuestions(
+  lang: Lang,
+): Promise<Gate<OnboardingQuestion[]>> {
+  try {
+    return { data: await getOnboardingQuestions(lang), unavailable: false };
+  } catch (e) {
+    if (isUnavailable(e)) {
+      return { data: demoOnboardingQuestions(lang), unavailable: true };
+    }
+    throw e;
+  }
+}
+
+export async function guardedListStats(lang: Lang): Promise<Gate<ListStats>> {
+  try {
+    return { data: await getListStats(), unavailable: false };
+  } catch (e) {
+    if (isUnavailable(e)) {
+      return { data: demoListStats(lang), unavailable: true };
+    }
+    throw e;
+  }
+}
+
+// Гостьові елементи для міграції: читаємо п'ять списків під дефолтним
+// профілем-гостем (як зараз). Що не прочиталось — пропускаємо (м'яко).
+export async function guardedGuestItems(): Promise<Gate<GuestListItem[]>> {
+  const kinds: ListKind[] = ["watchlist", "watched", "read", "liked", "disliked"];
+  const results = await Promise.allSettled(kinds.map((k) => getLists(k)));
+  const items: GuestListItem[] = [];
+  let anyOk = false;
+  results.forEach((r, i) => {
+    if (r.status !== "fulfilled") return;
+    anyOk = true;
+    for (const it of r.value.items ?? []) {
+      items.push({
+        kind: kinds[i],
+        titleId: it.id,
+        tmdbId: it.tmdbId ?? null,
+        rating: it.rating ?? null,
+      });
+    }
+  });
+  if (!anyOk) return { data: [], unavailable: true };
+  return { data: items, unavailable: false };
+}
+
+export { postDiscoverAction, postOnboardingAnswers, migrateGuestLists, rateListItem };
 
 export function isUnavailable(e: unknown): boolean {
   return e instanceof Error && e.name === "ApiUnavailableError";

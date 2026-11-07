@@ -15,5 +15,5 @@ public sealed class SweetTvOptions
     public int MaxCards { get; set; } = 1000;
 }
 
-/// <summary>sweet.tv: 1 req / 2 c (NFR-6).</summary>
-public sealed class SweetTvThrottle() : IntervalThrottle(TimeSpan.FromSeconds(2));
+/// <summary>sweet.tv: 1 req / 2 c (NFR-6); тестам дозволено override (напр. TimeSpan.Zero).</summary>
+public sealed class SweetTvThrottle(TimeSpan? minInterval = null) : IntervalThrottle(minInterval ?? TimeSpan.FromSeconds(2));

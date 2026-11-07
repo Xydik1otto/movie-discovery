@@ -1,8 +1,18 @@
 // Демо-дані: 8 фіктивних тайтлів з плейсхолдер-постерами.
 // Використовуються, коли API недоступний — щоб UI жив без бекенду.
 
-import type { ListItem, ListKind, SimilarItem, TitleCard, TitleDetail } from "./types";
+import type {
+  DiscoverResponse,
+  ListItem,
+  ListKind,
+  ListStats,
+  OnboardingQuestion,
+  SimilarItem,
+  TitleCard,
+  TitleDetail,
+} from "./types";
 import type { Lang } from "../i18n/I18nContext";
+import { GENRES } from "./constants";
 
 // FR-14: демо-провайдери перегляду (provider: sweettv|archive|tmdb-streaming).
 // Компактна форма → TitleCard.watchProviders; повна (+region/isAvailable) → detail.providers.
@@ -349,10 +359,94 @@ export function demoLists(kind: ListKind, lang: Lang): ListItem[] {
   if (kind === "watchlist") {
     return [9003, 9005, 9006].map((id) => ({ ...demoDetail(id, lang)!, rating: null }));
   }
-  if (kind === "read") return [];
+  if (kind === "read" || kind === "disliked") return [];
+  if (kind === "liked") {
+    return [9002, 9007].map((id) => ({ ...demoDetail(id, lang)!, rating: null }));
+  }
   return [
     { ...demoDetail(9001, lang)!, rating: 9 },
     { ...demoDetail(9002, lang)!, rating: 8 },
     { ...demoDetail(9007, lang)!, rating: 10 },
+  ];
+}
+
+// --- FR-17/18: демо-статистика, discover-колода, онбординг-квіз ---
+
+export function demoListStats(lang: Lang): ListStats {
+  const watched = demoLists("watched", lang);
+  const liked = demoLists("liked", lang);
+  const ratings = watched.map((w) => w.rating).filter((r): r is number => r != null);
+  const genreCount = new Map<string, number>();
+  for (const w of watched) {
+    for (const g of w.genres ?? []) {
+      genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
+    }
+  }
+  const topGenres = [...genreCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([genre]) => genre);
+  return {
+    watchedCount: watched.length,
+    likedCount: liked.length,
+    dislikedCount: 0,
+    avgRating: ratings.length
+      ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+      : null,
+    topGenres,
+  };
+}
+
+// Демо-колода discover: усі демо-тайтли, окрім уже розіграних (excluded).
+export function demoDiscover(lang: Lang, exclude: number[] = [], count = 10): DiscoverResponse {
+  const items = DEMO.filter(
+    (d) => !exclude.includes(d.id) && !exclude.includes(d.tmdbId),
+  )
+    .slice(0, count)
+    .map((d) => demoToCard(d, lang));
+  // Демо не знає профілю — чесний «safe» (популярні високооцінені).
+  return { items, mode: "safe" };
+}
+
+// Статичні демо-питання онбордингу: 3 екрани постерів по жанрах + настрій + ера.
+export function demoOnboardingQuestions(lang: Lang): OnboardingQuestion[] {
+  const label = (g: { value: string; uk: string; en: string }) => (lang === "uk" ? g.uk : g.en);
+  const posterGroups = [GENRES.slice(0, 6), GENRES.slice(6, 11), GENRES.slice(11, 16)];
+  const posters: OnboardingQuestion[] = posterGroups.map((g, i) => ({
+    id: `posters-${i + 1}`,
+    type: "posters",
+    title: null,
+    options: g.map((x) => ({ id: x.value, label: label(x), value: x.value })),
+  }));
+  const moods: [string, string, string][] = [
+    ["fun", "Щось весале й легке", "Something fun and light"],
+    ["tense", "Напружене, на нервах", "Tense, on edge"],
+    ["cozy", "Затишне, під плед", "Cozy, blanket-level"],
+    ["sad", "Сумне, але чесне", "Sad but honest"],
+    ["epic", "Епічне, велике", "Epic, large-scale"],
+    ["mind", "Загадкове, для розуму", "Mysterious, brainy"],
+  ];
+  const eras: [string, string, string][] = [
+    ["1960s", "1960-ті", "1960s"],
+    ["1980s", "1980-ті", "1980s"],
+    ["1990s", "1990-ті", "1990s"],
+    ["2000s", "2000-ті", "2000s"],
+    ["2010s", "2010-ті", "2010s"],
+    ["2020s", "2020-ті", "2020s"],
+  ];
+  return [
+    ...posters,
+    {
+      id: "mood",
+      type: "mood",
+      title: null,
+      options: moods.map(([id, uk, en]) => ({ id, label: lang === "uk" ? uk : en, value: id })),
+    },
+    {
+      id: "era",
+      type: "era",
+      title: null,
+      options: eras.map(([id, uk, en]) => ({ id, label: lang === "uk" ? uk : en, value: id })),
+    },
   ];
 }

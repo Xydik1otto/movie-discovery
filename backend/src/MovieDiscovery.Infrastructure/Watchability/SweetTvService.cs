@@ -21,7 +21,7 @@ public sealed class SweetTvService(
     HttpClient http,
     MovieDiscoveryDbContext db,
     IOptions<SweetTvOptions> options,
-    IntervalThrottle throttle,
+    SweetTvThrottle throttle,
     ILogger<SweetTvService> log)
 {
     public const string Source = "sweettv";

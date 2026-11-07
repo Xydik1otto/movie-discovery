@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useI18n } from "../i18n/I18nContext";
+import { useAuth } from "../lib/auth";
 import LangSwitcher from "./LangSwitcher";
 
 const NAV = [
   { href: "/", key: "nav.home" },
+  { href: "/discover", key: "nav.discover" },
   { href: "/anime", key: "nav.anime" },
   { href: "/manga", key: "nav.manga" },
   { href: "/similar", key: "nav.similar" },
@@ -17,6 +19,7 @@ const NAV = [
 
 export default function Header() {
   const { t } = useI18n();
+  const { user, ready, logout } = useAuth();
   const pathname = usePathname();
 
   return (
@@ -53,6 +56,41 @@ export default function Header() {
             );
           })}
         </nav>
+
+        {/* FR-16: стан користувача. Поки /me не відповідав — нічого (без блимання). */}
+        {ready &&
+          (user ? (
+            <div className="flex shrink-0 items-center gap-1.5">
+              {user.onboardingDone === false && (
+                <Link
+                  href="/onboarding"
+                  className="hidden shrink-0 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent-2 md:inline-block"
+                >
+                  {t("onboarding.title")}
+                </Link>
+              )}
+              <span
+                className="hidden max-w-32 truncate text-xs text-mute sm:inline"
+                title={user.username}
+              >
+                {user.username}
+              </span>
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="shrink-0 rounded-full border border-line bg-panel px-3 py-1.5 text-xs text-mute transition-colors hover:text-ink"
+              >
+                {t("auth.logout")}
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="shrink-0 rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-accent-2"
+            >
+              {t("auth.login")}
+            </Link>
+          ))}
 
         <LangSwitcher />
       </div>

@@ -28,8 +28,27 @@ public static class ListKinds
     public const string Watchlist = "watchlist";
     public const string Watched = "watched";
     public const string Read = "read";
+    public const string Liked = "liked";     // FR-17
+    public const string Disliked = "disliked"; // FR-17
 
-    public static bool IsValid(string? kind) => kind is Watchlist or Watched or Read;
+    /// <summary>Види списків, які рахуються як «переглянутий контент» для discover-кандидатів (FR-18).</summary>
+    public static readonly string[] DiscoverExcluded = [Watchlist, Watched, Liked, Disliked];
+
+    public static bool IsValid(string? kind) =>
+        kind is Watchlist or Watched or Read or Liked or Disliked;
+
+    /// <summary>Оцінка 1–10 або відсутня (FR-17).</summary>
+    public static bool IsValidRating(int? rating) => rating is null or (>= 1 and <= 10);
+
+    /// <summary>kind списку → дія interaction_log (для перерахунку профілю смаку).</summary>
+    public static string? ActionForKind(string kind) => kind switch
+    {
+        Liked => "like",
+        Disliked => "dislike",
+        Watchlist => "watchlist",
+        Watched or Read => "watched",
+        _ => null,
+    };
 
     /// <summary>kind=read валідний лише для type='manga' (інакше контролер віддає 400).</summary>
     public static bool AllowedForType(string kind, string type) =>

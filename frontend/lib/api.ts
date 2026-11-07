@@ -2,12 +2,19 @@
 // Базовий URL — NEXT_PUBLIC_API_URL, дефолт http://localhost:5200.
 
 import type {
+  AuthUser,
+  DiscoverAction,
+  DiscoverResponse,
   HealthResponse,
+  GuestListItem,
   ImportJob,
   ImportSource,
   ListKind,
   ListItem,
   ListResponse,
+  ListStats,
+  OnboardingAnswers,
+  OnboardingQuestion,
   Paged,
   SearchParams,
   SimilarItem,
@@ -29,9 +36,12 @@ export class ApiUnavailableError extends Error {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // Розпарсене тіло помилки (наприклад {errors:{...}} реєстрації), якщо є.
+  body: unknown;
+  constructor(status: number, message: string, body: unknown = null) {
     super(message);
     this.status = status;
+    this.body = body;
     this.name = "ApiError";
   }
 }
@@ -54,6 +64,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${API_URL}${path}`, {
       ...init,
+      // FR-16: cookie-автентифікація — cookie бекенду ходять з кожним запитом
+      // (cross-origin між :3001 і :5200 — same-site, Lax-cookie проходять).
+      credentials: "include",
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
@@ -67,9 +80,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(503, await res.text().catch(() => "Service unavailable"));
   }
   if (!res.ok) {
-    throw new ApiError(res.status, `${res.status} ${res.statusText}`);
+    // Тіло помилки зберігаємо (реєстрація повертає {errors:{...}} на 400).
+    let body: unknown = null;
+    try {
+      const text = await res.text();
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+    throw new ApiError(res.status, `${res.status} ${res.statusText}`, body);
   }
-  return (await res.json()) as T;
+  // 204/порожнє тіло — валідний результат для мутацій.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -178,16 +201,29 @@ export async function addToList(
   ref: { tmdbId?: number | null; id: number },
   kind: ListKind,
   rating?: number | null,
-  profileId = DEFAULT_PROFILE_ID,
 ): Promise<ListItem | null> {
-  // Аніме/манга з імпорту не мають tmdbId — тоді посилаємось на внутрішній
-  // id тайтла (titleId); бекенд розрізняє поля tmdbId/titleId.
-  const body: Record<string, unknown> =
-    ref.tmdbId != null
-      ? { profileId, kind, tmdbId: ref.tmdbId }
-      : { profileId, kind, titleId: ref.id };
+  // Контракт FR-17: POST /api/lists/{kind} {titleId, rating?} — ідемпотентний
+  // upsert за UNIQUE(profile,kind,title). Аніме/манга з імпорту не мають
+  // tmdbId — тоді йде лише внутрішній titleId; бекенд толерує зайві поля.
+  const body: Record<string, unknown> = { titleId: ref.id };
+  if (ref.tmdbId != null) body.tmdbId = ref.tmdbId;
   if (rating != null) body.rating = rating;
-  return request<ListItem | null>("/api/lists", {
+  return request<ListItem | null>(`/api/lists/${kind}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// Зміна оцінки на watched/read — той самий ідемпотентний upsert (FR-17).
+export async function rateListItem(
+  kind: ListKind,
+  ref: { tmdbId?: number | null; id: number },
+  rating: number,
+): Promise<void> {
+  const body: Record<string, unknown> = { titleId: ref.id };
+  if (ref.tmdbId != null) body.tmdbId = ref.tmdbId;
+  body.rating = rating;
+  await request<void>(`/api/lists/${kind}`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -229,4 +265,105 @@ export async function startImportJob(
 
 export async function getImportJob(id: number): Promise<ImportJob> {
   return request<ImportJob>(`/api/import/jobs/${id}`);
+}
+
+// --- FR-16: акаунти (cookie-автентифікація, credentials: include у request) ---
+
+export async function registerUser(
+  email: string,
+  username: string,
+  password: string,
+): Promise<{ userId?: number | string }> {
+  const r = await request<{ userId?: number | string } | null>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, username, password }),
+  });
+  return r ?? {};
+}
+
+export async function loginUser(
+  email: string,
+  password: string,
+): Promise<{ user?: AuthUser }> {
+  const r = await request<{ user?: AuthUser } | null>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  return r ?? {};
+}
+
+export async function logoutUser(): Promise<void> {
+  await request<void>("/api/auth/logout", { method: "POST" });
+}
+
+// 401 → null (анонім), інші помилки прокидаємо нагору (auth.tsx розрізняє
+// недоступність API від «не залогінений»).
+export async function getMe(): Promise<AuthUser | null> {
+  try {
+    const r = await request<AuthUser | null>("/api/auth/me");
+    return r ?? null;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
+  }
+}
+
+// --- FR-18: discover «Кінотека-свайпи» + онбординг ---
+
+export async function getDiscover(
+  count = 10,
+  lang: Lang = "uk",
+): Promise<DiscoverResponse> {
+  const r = await request<Partial<DiscoverResponse> | null>(
+    `/api/discover${qs({ count, lang })}`,
+  );
+  return {
+    items: r?.items ?? [],
+    mode: r?.mode ?? null,
+  };
+}
+
+export async function postDiscoverAction(
+  titleId: number,
+  action: DiscoverAction,
+  rating?: number | null,
+): Promise<void> {
+  const body: Record<string, unknown> = { titleId, action };
+  if (rating != null) body.rating = rating;
+  await request<void>("/api/discover/action", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getOnboardingQuestions(lang: Lang = "uk"): Promise<OnboardingQuestion[]> {
+  const r = await request<{ questions?: OnboardingQuestion[] } | OnboardingQuestion[]>(
+    `/api/onboarding/questions${qs({ lang })}`,
+  );
+  if (Array.isArray(r)) return r;
+  return r.questions ?? [];
+}
+
+export async function postOnboardingAnswers(answers: OnboardingAnswers): Promise<void> {
+  await request<void>("/api/onboarding/answers", {
+    method: "POST",
+    body: JSON.stringify(answers),
+  });
+}
+
+// --- FR-17: статистика списків + міграція гостьових даних ---
+
+export async function getListStats(): Promise<ListStats> {
+  const r = await request<ListStats | null>("/api/lists/stats");
+  return r ?? {};
+}
+
+export async function migrateGuestLists(
+  items: GuestListItem[],
+): Promise<{ migrated?: number }> {
+  const r = await request<{ migrated?: number } | null>("/api/lists/migrate-guest", {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  });
+  return r ?? {};
 }
