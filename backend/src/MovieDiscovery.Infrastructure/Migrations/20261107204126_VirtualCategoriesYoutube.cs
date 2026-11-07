@@ -64,6 +64,12 @@ namespace MovieDiscovery.Infrastructure.Migrations
                 CREATE EXTENSION IF NOT EXISTS pg_trgm;
                 CREATE INDEX IF NOT EXISTS ix_titles_title_en_trgm
                     ON titles USING gin (title_en gin_trgm_ops);
+                CREATE INDEX IF NOT EXISTS ix_titles_title_uk_trgm
+                    ON titles USING gin (title_uk gin_trgm_ops);
+                CREATE INDEX IF NOT EXISTS ix_titles_director_trgm
+                    ON titles USING gin (director gin_trgm_ops);
+                CREATE INDEX IF NOT EXISTS ix_titles_actors_trgm
+                    ON titles USING gin (actors gin_trgm_ops);
                 """);
         }
 
