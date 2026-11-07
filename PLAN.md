@@ -66,8 +66,8 @@ API_URL=http://api:5200  # для бота всередині compose
 ```
 
 - `GET /api/health` → `{"status":"ok","db":true,"ollama":false,"titlesCount":0}`
-- `GET /api/search?q=&type=&genres=a,b&yearFrom=&yearTo=&country=&lang=&minRating=&maxRating=&minRuntime=&maxRuntime=&status=&sort=relevance|rating|year|popularity&page=1&pageSize=24`
-  → `{"items":[TitleCard],"total":1234,"page":1,"pageSize":24}`. Пошук/фільтри — ЛИШЕ по локальній БД (postgres full-text + фільтри); жодних зовнішніх викликів у hot path. `q` шукає в назвах (uk+en), акторах, режисері.
+- `GET /api/search?q=&type=&genres=a,b&excludeGenres=c&yearFrom=&yearTo=&country=US,GB&lang=&minRating=&maxRating=&ratingSource=tmdb|imdb&minRuntime=&maxRuntime=&status=&actor=&director=&keyword=&language=&minVotes=&seasonsFrom=&seasonsTo=&hasTrailer=true&hasProviders=true&providerRegion=UA&sort=relevance|rating|imdb|votes|year|popularity&page=1&pageSize=24`
+  → `{"items":[TitleCard],"total":1234,"page":1,"pageSize":24}`. Пошук/фільтри — ЛИШЕ по локальній БД (full-text + фільтри); жодних зовнішніх викликів у hot path. `q` шукає в назвах (uk+en), акторах, режисері. `actor/director/keyword` — окремі ILIKE-фільтри; `country` — кома-список (будь-який збіг); `ratingSource` обирає джерело для min/maxRating (дефолт — TMDB з fallback IMDb); `hasProviders` — наявність провайдерів у `providerRegion` (дефолт UA); `language` — ISO 639-1/2 код (2-3 літери).
 - `GET /api/title/{id}?lang=` → TitleCard + `actors`, `director`, `keywords`, `overviewFull`, `backdropUrl`, `trailerYtId`, `providers:[{provider,kind,url}]`, `status`, `originalLanguage`.
 - `GET /api/title/{id}/similar?limit=20&lang=` → `{"items":[TitleCard + "score":0.83, "reasons":["спільні жанри: драма, трилер","спільний актор X","близький рік"]]}` (reasons — 1-3 рядки, ЛОКАЛІЗОВАНІ).
 - `POST /api/similar/by-seeds` body `{"tmdbIds":[123,456],"limit":20,"lang":"uk"}` → та сама форма. tmdbIds 1–10; незнайдені id → 404 з переліком.

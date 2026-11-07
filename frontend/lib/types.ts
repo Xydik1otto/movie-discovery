@@ -80,7 +80,19 @@ export interface SearchParams {
   minRuntime?: number | null;
   maxRuntime?: number | null;
   status?: string | null;
-  sort?: "relevance" | "rating" | "year" | "popularity";
+  // розширені
+  actor?: string | null;
+  director?: string | null;
+  keyword?: string | null;
+  language?: string | null;
+  minVotes?: number | null;
+  seasonsFrom?: number | null;
+  seasonsTo?: number | null;
+  excludeGenres?: string[];
+  hasTrailer?: boolean | null;
+  hasProviders?: boolean | null;
+  ratingSource?: string | null;
+  sort?: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   page?: number;
   pageSize?: number;
 }

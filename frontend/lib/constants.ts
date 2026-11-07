@@ -40,6 +40,22 @@ export const COUNTRIES: { value: string; uk: string; en: string }[] = [
 
 export const REGIONS: string[] = ["UA", "PL", "US", "GB", "DE"];
 
+// Мови оригіналу (ISO 639-1) — для фільтра language.
+export const LANGUAGES: { value: string; uk: string; en: string }[] = [
+  { value: "uk", uk: "українська", en: "Ukrainian" },
+  { value: "en", uk: "англійська", en: "English" },
+  { value: "ja", uk: "японська", en: "Japanese" },
+  { value: "ko", uk: "корейська", en: "Korean" },
+  { value: "fr", uk: "французька", en: "French" },
+  { value: "de", uk: "німецька", en: "German" },
+  { value: "es", uk: "іспанська", en: "Spanish" },
+  { value: "it", uk: "італійська", en: "Italian" },
+  { value: "pl", uk: "польська", en: "Polish" },
+  // російської в списках мов НЕМА — свідоме рішення власника
+  { value: "zh", uk: "китайська", en: "Chinese" },
+  { value: "hi", uk: "гінді", en: "Hindi" },
+];
+
 export const TITLE_TYPES: { value: "movie" | "series" | "show"; key: string }[] = [
   { value: "movie", key: "filters.movie" },
   { value: "series", key: "filters.series" },
@@ -47,11 +63,13 @@ export const TITLE_TYPES: { value: "movie" | "series" | "show"; key: string }[] 
 ];
 
 export const SORTS: {
-  value: "relevance" | "rating" | "year" | "popularity";
+  value: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   key: string;
 }[] = [
   { value: "relevance", key: "filters.sort.relevance" },
   { value: "rating", key: "filters.sort.rating" },
+  { value: "imdb", key: "filters.sort.imdb" },
+  { value: "votes", key: "filters.sort.votes" },
   { value: "year", key: "filters.sort.year" },
   { value: "popularity", key: "filters.sort.popularity" },
 ];

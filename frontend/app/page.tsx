@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nContext";
 import { guardedBySeeds, guardedSearch } from "@/lib/fallback";
-import { COUNTRIES, GENRES, SORTS, TITLE_TYPES } from "@/lib/constants";
+import { COUNTRIES, GENRES, LANGUAGES, SORTS, TITLE_TYPES } from "@/lib/constants";
 import type { Paged, SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
@@ -27,7 +27,18 @@ interface Applied {
   maxRating: number | null;
   minRuntime: number | null;
   maxRuntime: number | null;
-  sort: "relevance" | "rating" | "year" | "popularity";
+  actor: string;
+  director: string;
+  keyword: string;
+  language: string | null;
+  minVotes: number | null;
+  seasonsFrom: number | null;
+  seasonsTo: number | null;
+  excludeGenres: string[];
+  hasTrailer: boolean | null;
+  hasProviders: boolean | null;
+  ratingSource: string | null;
+  sort: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
 }
 
 const EMPTY: Applied = {
@@ -41,6 +52,17 @@ const EMPTY: Applied = {
   maxRating: null,
   minRuntime: null,
   maxRuntime: null,
+  actor: "",
+  director: "",
+  keyword: "",
+  language: "",
+  minVotes: null,
+  seasonsFrom: null,
+  seasonsTo: null,
+  excludeGenres: [],
+  hasTrailer: null,
+  hasProviders: null,
+  ratingSource: null,
   sort: "popularity",
 };
 
@@ -66,6 +88,18 @@ export default function HomePage() {
   const [maxRating, setMaxRating] = useState("");
   const [minRuntime, setMinRuntime] = useState("");
   const [maxRuntime, setMaxRuntime] = useState("");
+  const [actor, setActor] = useState("");
+  const [director, setDirector] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [language, setLanguage] = useState("");
+  const [minVotes, setMinVotes] = useState("");
+  const [seasonsFrom, setSeasonsFrom] = useState("");
+  const [seasonsTo, setSeasonsTo] = useState("");
+  const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
+  const [hasTrailer, setHasTrailer] = useState(false);
+  const [hasProviders, setHasProviders] = useState(false);
+  const [ratingSource, setRatingSource] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [applied, setApplied] = useState<Applied>(EMPTY);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paged<TitleCardType> | null>(null);
@@ -86,6 +120,17 @@ export default function HomePage() {
       maxRating: numOrNull(maxRating),
       minRuntime: numOrNull(minRuntime),
       maxRuntime: numOrNull(maxRuntime),
+      actor: actor.trim(),
+      director: director.trim(),
+      keyword: keyword.trim(),
+      language: language || null,
+      minVotes: numOrNull(minVotes),
+      seasonsFrom: numOrNull(seasonsFrom),
+      seasonsTo: numOrNull(seasonsTo),
+      excludeGenres,
+      hasTrailer: hasTrailer ? true : null,
+      hasProviders: hasProviders ? true : null,
+      ratingSource: ratingSource || null,
       sort: q ? "relevance" : "popularity",
     });
     setPage(1);
@@ -102,6 +147,17 @@ export default function HomePage() {
     setMaxRating("");
     setMinRuntime("");
     setMaxRuntime("");
+    setActor("");
+    setDirector("");
+    setKeyword("");
+    setLanguage("");
+    setMinVotes("");
+    setSeasonsFrom("");
+    setSeasonsTo("");
+    setExcludeGenres([]);
+    setHasTrailer(false);
+    setHasProviders(false);
+    setRatingSource("");
     setApplied(EMPTY);
     setPage(1);
   }
@@ -368,7 +424,170 @@ export default function HomePage() {
                   </select>
                 </label>
               </div>
-            </div>
+              {/* Розширені фільтри (згортаються) */}
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className="flex w-full items-center justify-between rounded-xl border border-line bg-panel-2 px-4 py-2 text-sm text-mute transition-colors hover:text-ink"
+              aria-expanded={advancedOpen}
+            >
+              <span className="font-semibold">{t("filters.advanced")}</span>
+              <span aria-hidden>{advancedOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {advancedOpen && (
+              <div className="space-y-3 rounded-xl border border-line/60 bg-panel-2/40 p-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.actor")}</span>
+                    <input
+                      type="text"
+                      value={actor}
+                      onChange={(e) => setActor(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && apply()}
+                      placeholder="DiCaprio"
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.director")}</span>
+                    <input
+                      type="text"
+                      value={director}
+                      onChange={(e) => setDirector(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && apply()}
+                      placeholder="Nolan"
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.keyword")}</span>
+                    <input
+                      type="text"
+                      value={keyword}
+                      onChange={(e) => setKeyword(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && apply()}
+                      placeholder="heist"
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.language")}</span>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.any")}</option>
+                      {LANGUAGES.map((l) => (
+                        <option key={l.value} value={l.value}>
+                          {lang === "uk" ? l.uk : l.en}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.ratingSource")}</span>
+                    <select
+                      value={ratingSource}
+                      onChange={(e) => setRatingSource(e.target.value)}
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    >
+                      <option value="">{t("filters.ratingAny")}</option>
+                      <option value="tmdb">TMDB</option>
+                      <option value="imdb">IMDb</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.minVotes")}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      value={minVotes}
+                      onChange={(e) => setMinVotes(e.target.value)}
+                      placeholder="10000"
+                      className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-mute">{t("filters.seasons")}</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        value={seasonsFrom}
+                        onChange={(e) => setSeasonsFrom(e.target.value)}
+                        placeholder={t("filters.min")}
+                        aria-label={`${t("filters.seasons")} ${t("filters.min")}`}
+                        className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                      />
+                      <span className="text-mute">–</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        value={seasonsTo}
+                        onChange={(e) => setSeasonsTo(e.target.value)}
+                        placeholder={t("filters.max")}
+                        aria-label={`${t("filters.seasons")} ${t("filters.max")}`}
+                        className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 text-sm text-mute">
+                    <input
+                      type="checkbox"
+                      checked={hasTrailer}
+                      onChange={(e) => setHasTrailer(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--color-accent)]"
+                    />
+                    {t("filters.hasTrailer")}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-mute">
+                    <input
+                      type="checkbox"
+                      checked={hasProviders}
+                      onChange={(e) => setHasProviders(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--color-accent)]"
+                    />
+                    {t("filters.hasProviders")}
+                  </label>
+                </div>
+
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mute">
+                    {t("filters.excludeGenres")}
+                  </div>
+                  <ChipGroup>
+                    {GENRES.map((g) => (
+                      <Chip
+                        key={g.value}
+                        small
+                        selected={excludeGenres.includes(g.value)}
+                        onClick={() =>
+                          setExcludeGenres((prev) =>
+                            prev.includes(g.value)
+                              ? prev.filter((x) => x !== g.value)
+                              : [...prev, g.value],
+                          )
+                        }
+                      >
+                        {lang === "uk" ? g.uk : g.en}
+                      </Chip>
+                    ))}
+                  </ChipGroup>
+                </div>
+              </div>
+            )}
+          </div>
 
             <div className="flex gap-2 pt-1">
               <button

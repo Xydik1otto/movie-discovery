@@ -26,6 +26,19 @@ public sealed class SearchController(SearchService search) : ControllerBase
         [FromQuery] string? sort,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 24,
+        // ── Розширені фільтри ──
+        [FromQuery] string? actor = null,
+        [FromQuery] string? director = null,
+        [FromQuery] string? keyword = null,
+        [FromQuery] string? language = null,
+        [FromQuery] int? minVotes = null,
+        [FromQuery] int? seasonsFrom = null,
+        [FromQuery] int? seasonsTo = null,
+        [FromQuery] string? excludeGenres = null,
+        [FromQuery] bool? hasTrailer = null,
+        [FromQuery] bool? hasProviders = null,
+        [FromQuery] string? ratingSource = null,
+        [FromQuery] string? providerRegion = null,
         CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show"))
@@ -36,10 +49,26 @@ public sealed class SearchController(SearchService search) : ControllerBase
         if (genreList is null)
             return BadRequest(new { error = "invalid_request", message = "Некоректний фільтр жанрів" });
 
+        var excludeList = ParseGenres(excludeGenres);
+        if (excludeList is null)
+            return BadRequest(new { error = "invalid_request", message = "Некоректний фільтр виключених жанрів" });
+
+        if (!string.IsNullOrWhiteSpace(language) && !System.Text.RegularExpressions.Regex.IsMatch(language.Trim(), @"^[a-zA-Z]{2,3}$"))
+            return BadRequest(new { error = "invalid_request", message = "language має бути ISO-кодом (2-3 літери)" });
+
+        if (!string.IsNullOrWhiteSpace(ratingSource) && ratingSource is not ("tmdb" or "imdb"))
+            return BadRequest(new { error = "invalid_request", message = "ratingSource має бути tmdb | imdb" });
+
         var result = await search.SearchAsync(new SearchQuery(
             q, type, genreList, yearFrom, yearTo, country,
             minRating, maxRating, minRuntime, maxRuntime, status,
-            sort ?? "relevance", page, pageSize), ct);
+            sort ?? "relevance", page, pageSize,
+            Actor: actor, Director: director, Keyword: keyword,
+            Language: language, MinVotes: minVotes,
+            SeasonsFrom: seasonsFrom, SeasonsTo: seasonsTo,
+            ExcludeGenres: excludeList,
+            HasTrailer: hasTrailer, HasProviders: hasProviders,
+            RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA"), ct);
 
         return Ok(new
         {
