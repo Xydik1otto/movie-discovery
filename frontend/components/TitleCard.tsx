@@ -1,0 +1,107 @@
+"use client";
+
+import Link from "next/link";
+import { posterUrlFull } from "../lib/constants";
+import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
+import { useI18n } from "../i18n/I18nContext";
+import RatingBadge from "./RatingBadge";
+import ReasonsList from "./ReasonsList";
+
+// Картка тайтла (форма TitleCard за PLAN). Форма використовується всюди.
+// eager=true — постери першого екрана БЕЗ loading=lazy (пітфолл lazy після ре-рендера);
+// lazy — лише для глибоких елементів.
+export default function TitleCard({
+  item,
+  eager = false,
+  score,
+  reasonsLabel,
+  footer,
+}: {
+  item: TitleCardType;
+  eager?: boolean;
+  score?: number | null;
+  reasonsLabel?: string;
+  footer?: React.ReactNode;
+}) {
+  const { t } = useI18n();
+  const similar = item as SimilarItem;
+  const url = posterUrlFull(item.posterUrl);
+  const typeKey =
+    item.type === "movie"
+      ? "filters.movie"
+      : item.type === "series"
+        ? "filters.series"
+        : "filters.show";
+
+  return (
+    <div className="group">
+      <Link
+        href={`/title/${item.id}`}
+        className="block overflow-hidden rounded-xl border border-line bg-panel transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-lg hover:shadow-accent/10"
+      >
+        <div className="relative aspect-[2/3] overflow-hidden bg-panel-2">
+          {url ? (
+            <img
+              src={url}
+              alt={item.title}
+              loading={eager ? "eager" : "lazy"}
+              decoding="async"
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-panel-2 via-[#232a3d] to-[#3a1a2b] p-3 text-center">
+              <span className="text-3xl opacity-60" aria-hidden>
+                🎬
+              </span>
+              <span className="line-clamp-3 text-xs font-semibold text-ink/80">
+                {item.title}
+              </span>
+            </div>
+          )}
+
+          <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
+            <RatingBadge source="TMDB" value={item.ratingTmdb} />
+            <RatingBadge source="IMDb" value={item.ratingImdb} />
+          </div>
+
+          {score != null && (
+            <div className="absolute right-1.5 top-1.5 rounded-md border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[11px] font-bold text-white backdrop-blur-sm">
+              {Math.round(score * 100)}%
+            </div>
+          )}
+
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-8">
+            <div className="line-clamp-2 text-sm font-semibold leading-tight text-white">
+              {item.title}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/60">
+              <span>{t(typeKey)}</span>
+              {item.year != null && <span>· {item.year}</span>}
+              {item.runtimeMin != null && item.runtimeMin > 0 && (
+                <span>· {t("title.runtimeMin", { n: item.runtimeMin })}</span>
+              )}
+              {item.runtimeMin == null && item.seasons != null && (
+                <span>
+                  · {t("title.seasons")}: {item.seasons}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </Link>
+
+      {!!item.genres?.length && (
+        <div className="mt-1.5 line-clamp-1 px-0.5 text-[11px] text-mute">
+          {item.genres.slice(0, 3).join(" · ")}
+        </div>
+      )}
+
+      {score != null && (similar.reasons?.length ?? 0) > 0 && (
+        <div className="px-0.5">
+          <ReasonsList reasons={similar.reasons} label={reasonsLabel ?? t("title.why")} />
+        </div>
+      )}
+      {footer}
+    </div>
+  );
+}

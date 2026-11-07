@@ -74,7 +74,7 @@ API_URL=http://api:5200  # для бота всередині compose
 - `POST /api/similar/by-text` body `{"text":"...","limit":20,"lang":"uk"}` → та сама форма. Якщо Ollama недоступна → 503 (не падати). Реалізація Е2: embed тексту + hybrid; на Е0/Е1 дозволений fallback: keyword extraction з тексту → пошук по keywords/genres.
 - `GET /api/title/{id}/providers?region=UA` → `{"providers":[{...}]}`.
 - `GET /api/profiles` → `[{id,name,isDefault}]`; `POST /api/profiles {name}` (Е2+, але ендпоінт існує з Е0).
-- `GET /api/lists?profileId=1&kind=watchlist` → `{"items":[{...TitleCard, rating, createdAt}]}`; `POST /api/lists {profileId,kind,tmdbId,rating?}` → 201; `PATCH /api/lists/{itemId} {rating?}`; `DELETE /api/lists/{itemId}`. Реакція на неіснуючий tmdbId → 404.
+- `GET /api/lists?profileId=1&kind=watchlist` → `{"items":[{itemId, ...TitleCard, kind, rating, createdAt, watchedAt}]}` (`itemId` — id РЯДКА списку; саме в нього целяться PATCH/DELETE; `id` всередині — id тайтла); `POST /api/lists {profileId,kind,tmdbId,rating?}` → 201; `PATCH /api/lists/{itemId} {rating?}`; `DELETE /api/lists/{itemId}`. Реакція на неіснуючий tmdbId → 404, дублікат → 409.
 - `GET /api/i18n/{lang}` → плоский словник `{"key":"текст",...}` (uk, en). КОПІЯ у backend як дефолт; фронт тримає свою (збіжні ключі!) — contract: ключі описані у PLAN §i18n.
 - `POST /api/admin/sync/popular` header `X-Admin-Key`, body `{"pages":5,"type":"movie|series|all"}` → 202 `{queued:true}`; фонова джоба тягне TMDB popular/discover батчами, upsert у titles, ставить чергу на embeddings.
 - `GET /api/admin/sync/status` → `{lastRunAt, titlesCount, embeddingsCount, queueSize}`.
