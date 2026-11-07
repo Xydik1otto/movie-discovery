@@ -118,6 +118,24 @@ TMDB/IMDb дають лише фіксований «similar/recommended». Ту
 - Реалізація: потокове завантаження .gz у контейнері, PG COPY у staging-таблицю imdb_raw, MERGE-злиття в titles за imdb_id (idempotent); повторний запуск оновлює, не дублює. Стейджинг чиститься після злиття.
 - Пошук `type=movie|series` працює з масивним каталогом; сортування за популярністю (numVotes) — реальні IMDb-топи.
 
+### FR-16. Акаунти, реєстрація, захист
+- ASP.NET Core Identity (EF store): email + username + пароль (вбудоване хешування). Політика пароля: ≥8 символів, цифра + велика літера. Lockout: 5 невдалих спроб → 15 хв. Реєстрація/логін — rate-limit (login 5/хв/IP, register 3/год/IP, вбудований .NET RateLimiter).
+- Cookie-автентифікація (HttpOnly, SameSite=Lax; Secure — на публічній стадії Е4+). Ендпоінти: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`. Помилки логіна генеричні («невірний email або пароль») — без розкриття існування акаунта.
+- Авторизація: списки/оцінки/discover — лише для свого профілю. Анонімний гостьовий режим лишається (як зараз), але з акаунтом дані персистентні. Email-підтвердження НЕ блокує (SMTP ще не підключений; поле залишено на майбутнє).
+- Голосування/дії записуються з user id; німе логування спроб логіну (без паролів).
+
+### FR-17. Лайки/дизлайки, оцінки, пам'ять про користувача
+- `list_items` розширюється kind: `liked` | `disliked` (поряд з watchlist/watched/read); оцінка 1–10 на watched (масштаб, узгоджений з трекерами). UNIQUE(profile,kind,title) — ідемпотентно.
+- Таблиця `user_profiles`: user_id FK, taste_genres jsonb (жанр→вага), taste_keywords jsonb, taste_era jsonb (декада→вага), taste_actors jsonb, negative_genres jsonb (жанр→cooldown-вага), onboarding_done bool, quiz jsonb, updated_at.
+- Таблиця `interaction_log`: user_id, title_id, action (like|dislike|rate|watchlist|watched|skip|open), value (оцінка), created_at — повна історія взаємодій («пам'ять про користувача»); профіль агрегується з неї, ніколи не втрачається.
+- Перерахунок профілю інкрементально після кожної дії: like +1.0; оцінка (r−5.5)/4.5×1.2; watchlist +0.4; dislike −0.8 (і +cooldown негативному жанру); часовий спад внесків (напівжиття 60 днів). Сигнали: жанри, keywords, ера (декада), актори; семантичні вектори — додадуться, коли з'явиться Ollama (ваги в SimilarityOptions-стилі конфігу).
+
+### FR-18. Режим «Кінотека-свайпи» (discover) + онбординг
+- `GET /api/discover?count=10` (авторизований): кандидати з titles, яких нема в liked/disliked/watched/watchlist; скоринг за user_profiles (жанри+era+актори+rating+popularity; семантика пізніше). Diversity: ≤2 тайтлів одного жанру в одній видачі; 70% exploitation (найкращий прогноз) / 20% safe (популярні високооцінені близькі до профілю) / 10% exploration (жанр з онбординг-цікавостей, яких мало в профілі).
+- Anti-fatigue (замість жорсткого «не більше 5 дизлайків підряд»): лічильник dislike-стріка; 3 підряд → наступні видачі лише safe/exploration (кластер, який не зайшов, «вимикається»); після 5 підряд — soft-пауза: повідомлення + пропозиція списків/пошуку (не блокує). Окрема дія «Not now» (skip) — не впливає на профіль зовсім.
+- `POST /api/discover/action {titleId, action: like|dislike|skip|watchlist|watched}` → пише в list_items + interaction_log, інкрементально оновлює профіль.
+- Онбординг після реєстрації: 8–12 мультивибірів по постерах (жанри/настрій/ера) + 3 улюблених тайтли через пошук → cold-start профіль. `POST /api/onboarding/answers`. Квіз можна пропустити (onboarding_done=false не блокує нічого, але discover до квізу працює лише на popularity+safe).
+
 ---
 
 ## 4. Нефункціональні вимоги
