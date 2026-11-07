@@ -51,6 +51,8 @@ public sealed class AuthController(
 
         // зв'язка юзера з постійним профілем списків (FR-16)
         await taste.ResolveAsync(user.Id, ct);
+        // авто-сесія після реєстрації (UX: register → onboarding без повторного логіна)
+        await SignInCookieAsync(user);
         return Ok(new { userId = user.Id, email = user.Email, username = user.UserName });
     }
 
