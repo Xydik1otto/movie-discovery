@@ -63,7 +63,9 @@ services:
     restart: unless-stopped
 
   tunnel:
-    image: cloudflare/cloudflared:latest
+    build:
+      context: .
+      dockerfile: docker/tunnel.Dockerfile
     container_name: moviediscovery-tunnel
     # Quick-тунель до web. trycloudflare пише URL у stderr, тому 2>&1 обов'язково —
     # tee зберігає повний лог у спільний volume, звідки бот /tunnel витягує свіжий URL.
