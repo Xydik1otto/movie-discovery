@@ -136,6 +136,18 @@ TMDB/IMDb дають лише фіксований «similar/recommended». Ту
 - `POST /api/discover/action {titleId, action: like|dislike|skip|watchlist|watched}` → пише в list_items + interaction_log, інкрементально оновлює профіль.
 - Онбординг після реєстрації: 8–12 мультивибірів по постерах (жанри/настрій/ера) + 3 улюблених тайтли через пошук → cold-start профіль. `POST /api/onboarding/answers`. Квіз можна пропустити (onboarding_done=false не блокує нічого, але discover до квізу працює лише на popularity+safe).
 
+### FR-19. Віртуальні категорії та розширені фільтри (усі фільтри ОПЦІЙНІ)
+- Віртуальні категорії над unified-схемою titles (без розмноження type): `tvshow` (genres: reality-tv|talk-show|game-show|variety), `cartoon` (genres: animation; включає мультфільми й мультсеріали), `dorama` (країна виробника KR|CN|JP + жанр drama; охоплює китайські/корейські/японські серіали й фільми). Категорія — параметр пошуку, що транслюється в SQL-умови по genres/country.
+- Дані про країну виробника: IMDb `title.akas.tsv.gz` (регіон оригінальної назви, isOriginalTitle=1) → колонка `country` у titles (2-буквений ISO). Акас великий — тягнемо стрімом, батчі як FR-15; лише рядки isOriginalTitle.
+- Нові фільтри `/api/search` (необов'язкові, комбінуються): `category` (movie|series|anime|manga|tvshow|cartoon|dorama), `country` (ISO-код), `audioLang` (мова аудіо/озвучки в наявних провайдерах: ukr|eng|russ|jpn|kor|zho|original|multi), `minQuality` (480|720|1080|2160 — по watch_links.quality). ВАЖЛИВО: «російська озвучка» — це КОНТЕНТ-фільтр доступних озвучок (fr-19 не суперечить правилу «ru не в i18n UI»: інтерфейс uk/en, як і раніше).
+- watch_links розширюється: `audio_lang` (основна мова доріжки/озвучки), `quality` (max height: 480|720|1080|2160), `dub` (ukr|russ|eng|original|multi). Показ «всі озвучки вибраного тайтла»: `/api/titles/{id}/watch` групує посилання за audio_lang/dub — UI показує кожну озвучку окремим посиланням.
+
+### FR-20. YouTube як джерело перегляду (телешоу/фільми/серіали/аніме/мультфільми/дорами)
+- Джерело: **YouTube Data API v3** (free tier 10k units/день ≈ 100 пошуків; потрібен безкоштовний ключ Google Cloud — env `YOUTUBE_API_KEY`, чекаємо від власника; dormant без нього) — primary; fallback — публічні Piped/Invidious інстанси (env `PIPED_URL`, best-effort).
+- Що шукається: легальні повні викладки — офіційні канали студій, YouTube Movies (free-with-ads / rent / buy), public-domain, офіційні аніме-канали (Muse Asia, Ani-One тощо), телешоу-канали, мультстудії. Запити: `«<назва> <рік> full movie»`-подібні шаблони з channel-фільтрами + фільтри API (duration=long, type=video).
+- Матчинг до каталогу: нормалізована назва+рік (TitleMatcher), оцінка «це повний фільм, а не трейлер» (тривалість ≥ 60 хв для movie; для серіалів — епізоди окремими відео того ж плейлиста/каналу).
+- Результат → watch_links (provider=youtube, kind=free|rent|buy за метаданими, url=watch-лінк, quality з відео-метаданих ≤4K, audio_lang з опису/каналу де відомо). Пошук YouTube — окремий режим UI («Шукати на YouTube») + авто-збагачення watch_links при перегляді сторінки тайтла (on-demand, кешується).
+
 ---
 
 ## 4. Нефункціональні вимоги
