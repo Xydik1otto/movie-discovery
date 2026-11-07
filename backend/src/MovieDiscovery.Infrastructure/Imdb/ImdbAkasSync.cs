@@ -16,7 +16,13 @@ public sealed record ImdbAkasRow(string ImdbId, string Region);
 /// <summary>
 /// Потоковий парсер title.akas.tsv.gz (FR-19). Колонки: 0=titleId, 1=ordering, 2=title,
 /// 3=region, 4=language, 5=types, 6=attributes, 7=isOriginalTitle, 8=comment.
-/// ЛИШЕ isOriginalTitle=1; region — валідний ISO-2 (2 великі ASCII-літери);
+/// ФІЛЬТР КРАЇНИ (жива верифікація даних 07.11.2026): у рядках isOriginalTitle=1
+/// region ЗАВЖДИ \N (оригінальна назва безрегіональна за природою даних);
+/// регіон виробника лежить у найнижчих ordering imdbDisplay-рядках (напр. tt1375666
+/// -> 인셉션 KR imdbDisplay). Тому: беремо ПЕРШИЙ (низький ordering) рядок tconst
+/// з валідним ISO-2 регіоном (stream у порядку файлу = ordering-зростання).
+/// Дублікати tconst відкидаються у StreamBatchesAsync (перший виграє).
+/// region — валідний ISO-2 (2 великі ASCII-літери);
 /// «\N», XWW/XEU-подібні псевдокоди та порожні — SKIP.
 /// </summary>
 public static class ImdbAkasParser
@@ -34,7 +40,6 @@ public static class ImdbAkasParser
 
         var titleId = p[ColTitleId].Trim();
         if (titleId.Length == 0 || titleId == ImdbTsv.NullField) return null;
-        if (p[ColIsOriginalTitle].Trim() != "1") return null; // лише регіон оригінальної назви
 
         var region = p[ColRegion].Trim();
         if (!IsValidRegion(region)) return null; // \N / XWW / XEU / порожній

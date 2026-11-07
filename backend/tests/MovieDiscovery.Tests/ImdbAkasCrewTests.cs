@@ -39,7 +39,6 @@ public class ImdbAkasParserTests
     }
 
     [Theory]
-    [InlineData("tt0114369\t2\tSeven\tUS\ten\ttr.attribute\t\\N\t0\t")]  // не оригінальна назва
     [InlineData("tt0133093\t1\tThe Matrix\tXWW\ten\t\\N\t\\N\t1\t")]     // XWW-псевдокод
     [InlineData("tt0133093\t1\tThe Matrix\tXEU\tde\t\\N\t\\N\t1\t")]     // XEU-псевдокод
     [InlineData("tt0133093\t1\tThe Matrix\t\\N\ten\t\\N\t\\N\t1\t")]     // \N-регіон
@@ -47,8 +46,19 @@ public class ImdbAkasParserTests
     [InlineData("tt0133093\t1\tThe Matrix")]                              // обрізаний рядок
     [InlineData("")]
     [InlineData(null)]
-    public void ParseRow_Skips_NonOriginal_BadRegion_Malformed(string? line) =>
+    public void ParseRow_Skips_BadRegion_Malformed(string? line) =>
         Assert.Null(ImdbAkasParser.ParseRow(line));
+
+    [Fact]
+    public void ParseRow_NonOriginal_With_Region_Is_Valid()
+    {
+        // Жива верифікація даних akas: isOriginalTitle=1 рядки ВСЕ з region=\N;
+        // країна виробника лежить у imdbDisplay-рядках (isOriginalTitle=0).
+        var row = ImdbAkasParser.ParseRow("tt0114369\t2\tSeven\tUS\ten\timdbDisplay\t\\N\t0\t");
+        Assert.NotNull(row);
+        Assert.Equal("tt0114369", row!.ImdbId);
+        Assert.Equal("US", row.Region);
+    }
 
     [Fact]
     public void IsValidRegion_Only_Iso2_Uppercase()
