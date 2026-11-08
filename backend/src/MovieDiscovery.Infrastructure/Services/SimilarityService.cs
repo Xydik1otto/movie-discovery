@@ -87,6 +87,7 @@ public sealed class SimilarityService(
 
         return seeds.Select(s => new TitleFeatures
         {
+            LocalId = s.Id,
             TmdbId = s.TmdbId,
             Type = s.Type,
             Genres = s.Genres,
@@ -143,10 +144,9 @@ public sealed class SimilarityService(
 
     private async Task<List<Title>> LoadCandidatesAsync(SeedAggregate seed, SimilarFilters? filters, CancellationToken ct)
     {
-        var seedLocalIds = await db.Titles.AsNoTracking()
-            .Where(t => t.TmdbId != null && seed.SeedTmdbIds.Contains(t.TmdbId.Value))
-            .Select(t => t.Id)
-            .ToListAsync(ct);
+        // FR-21: внутрішні id еталонів відомі ще на резолві контролера — повторний
+        // запит по tmdb_id не потрібен (і виключав би IMDb-сіди без tmdb_id).
+        var seedLocalIds = seed.SeedLocalIds.ToList();
 
         var genres = seed.Genres.Select(g => g.Value.Trim()).ToArray();
         var keywords = seed.Keywords.Select(k => k.Value.Trim()).ToArray();

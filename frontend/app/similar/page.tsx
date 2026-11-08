@@ -95,10 +95,8 @@ function SimilarInner() {
     label: string,
     filters: SimilarSeedsFilters = {},
   ) {
-    // by-seeds приймає лише tmdbId — тайтли без нього (аніме/манга з імпорту) відкидаємо.
-    const seedIds = list
-      .map((s) => s.tmdbId)
-      .filter((x): x is number => x != null);
+    // FR-21: сиди — внутрішні id (є в усіх тайтлів; tmdb_id є лише у частини каталогу).
+    const seedIds = list.map((s) => s.id);
     if (!seedIds.length) {
       setError(true);
       return;
@@ -182,7 +180,7 @@ function SimilarInner() {
 
   // Студія: живе оновлення з дебаунсом 500 мс, без кнопки (FR-21.3).
   useEffect(() => {
-    const ids = studioSeeds.map((s) => s.tmdbId).filter((x): x is number => x != null);
+    const ids = studioSeeds.map((s) => s.id); // FR-21: внутрішні id
     if (!ids.length) return;
     const f = studioFilters;
     const key = `${ids.join(",")}|${f.yearFrom ?? ""}|${f.yearTo ?? ""}|${f.type ?? ""}|${(f.genres ?? []).join(",")}|${lang}`;

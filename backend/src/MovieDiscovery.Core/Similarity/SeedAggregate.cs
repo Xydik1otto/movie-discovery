@@ -7,6 +7,8 @@ public sealed record WeightedFeature(string Value, double Weight);
 public sealed record TitleFeatures
 {
     public required int? TmdbId { get; init; } // null для аніме/манги з зовнішніх джерел
+    /// <summary>Внутрішній id тайтла (0 у синтетичних ознаках тестів) — універсальний ключ сидів FR-21.</summary>
+    public int LocalId { get; init; }
     public required string Type { get; init; } // movie | series | show | anime | manga
     public string[] Genres { get; init; } = [];
     public string[] Keywords { get; init; } = [];
@@ -27,7 +29,9 @@ public sealed record TitleFeatures
 public sealed class SeedAggregate
 {
     public required IReadOnlyList<int> SeedTmdbIds { get; init; }
-    public int SeedCount => SeedTmdbIds.Count;
+    /// <summary>Внутрішні id еталонів (FR-21): сид може не мати tmdb_id (IMDb-каталог).</summary>
+    public IReadOnlyList<int> SeedLocalIds { get; init; } = [];
+    public int SeedCount => SeedLocalIds.Count > 0 ? SeedLocalIds.Count : SeedTmdbIds.Count;
     public string? Type { get; init; }
     public required IReadOnlyList<WeightedFeature> Genres { get; init; }
     public required IReadOnlyList<WeightedFeature> Keywords { get; init; }
@@ -102,6 +106,7 @@ public sealed class SeedAggregate
         return new SeedAggregate
         {
             SeedTmdbIds = seeds.Select(s => s.TmdbId).Where(v => v.HasValue).Select(v => v!.Value).ToList(),
+            SeedLocalIds = seeds.Select(s => s.LocalId).Where(v => v > 0).Distinct().ToList(),
             Type = type,
             Genres = genres,
             Keywords = keywords,

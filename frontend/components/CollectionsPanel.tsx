@@ -142,7 +142,7 @@ export default function CollectionsPanel({
     const timer = setTimeout(async () => {
       try {
         const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
-        setOptions(r.data.items.filter((o) => o.tmdbId != null));
+        setOptions(r.data.items);
         setOpen(true);
       } catch {
         // автокомпліт не блокує панель
@@ -161,7 +161,7 @@ export default function CollectionsPanel({
   };
 
   async function runPreview(list: TitleCardType[], label: string) {
-    const ids = list.map((c) => c.tmdbId).filter((x): x is number => x != null);
+    const ids = list.map((c) => c.id);
     setPreviewLabel(label);
     if (!ids.length) {
       setPreview([]);

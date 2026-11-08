@@ -53,8 +53,8 @@ export default function SeedsBuilder({
       try {
         const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
         if (!ctl.signal.aborted) {
-          // by-seeds працює по tmdbId — тайтли без нього (аніме/манга з імпорту) не еталони.
-          setOptions(r.data.items.filter((o) => o.tmdbId != null));
+          // FR-21: by-seeds резолвить внутрішні id — опції без обрізання по tmdbId.
+          setOptions(r.data.items);
           setOpen(true);
         }
       } catch {

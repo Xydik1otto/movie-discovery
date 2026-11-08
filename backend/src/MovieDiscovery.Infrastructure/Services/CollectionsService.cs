@@ -122,8 +122,28 @@ public sealed class CollectionsService(MovieDiscoveryDbContext db)
                 .ToList();
         }
 
-        var q = BuildPresetQuery(db.Titles.AsNoTracking(), db.WatchLinks, genres, minRating, shortRuntime);
-        return await q.Take(PresetSize).ToListAsync(ct);
+        // Двофазний план (FR-21, 33с → <1с): фаза 1 — індексний відбір кандидатів
+        // (фільтри + ORDER BY popularity + LIMIT), фаза 2 — локальне ранжування пулу
+        // (watch_links/uk/рейтинг/популярність) без корельованого EXISTS по 2.8 млн.
+        var candidatePool = await BuildPresetQuery(db.Titles.AsNoTracking(), genres, minRating, shortRuntime)
+            .ToListAsync(ct);
+        if (candidatePool.Count == 0)
+            return [];
+
+        var poolIds = candidatePool.Select(t => t.Id).ToList();
+        var watchIdsPool = (await db.WatchLinks.AsNoTracking()
+                .Where(w => w.IsAvailable && poolIds.Contains(w.TitleId))
+                .Select(w => w.TitleId)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        return candidatePool
+            .OrderByDescending(t => watchIdsPool.Contains(t.Id))
+            .ThenByDescending(t => t.TitleUk != null)
+            .ThenByDescending(t => t.RatingTmdb ?? t.RatingImdb)
+            .ThenByDescending(t => t.Popularity)
+            .Take(PresetSize)
+            .ToList();
     }
 
     /// <summary>
@@ -131,8 +151,11 @@ public sealed class CollectionsService(MovieDiscoveryDbContext db)
     /// порядок: доступні watch_links (EXISTS) → uk-назва → рейтинг → популярність.
     /// Public static — тест SQL-трансляції (ToQueryString, без БД) перевіряє план.
     /// </summary>
+    /// <summary>Розмір пулу кандидатів фази 1 (достатньо для ранжування 12 фіналів).</summary>
+    public const int PresetCandidatePool = 600;
+
     public static IQueryable<Title> BuildPresetQuery(
-        IQueryable<Title> titles, IQueryable<WatchLink> watchLinks,
+        IQueryable<Title> titles,
         string[] genres, double? minRating, bool shortRuntime)
     {
         // жанри в БД — нормалізований lowercase (усі маппери), тому пряме порівняння (SearchService-конвенція)
@@ -145,11 +168,11 @@ public sealed class CollectionsService(MovieDiscoveryDbContext db)
         if (shortRuntime)
             q = q.Where(t => t.Type == "movie" && t.RuntimeMin > 0 && t.RuntimeMin < 95);
 
+        // Фаза 1: тільки фільтри + популярність (індекс ix_titles_type_pop) —
+        // ранжування watch_links/uk/рейтингом робить фаза 2 у PresetAsync.
         return q
-            .OrderByDescending(t => watchLinks.Any(w => w.TitleId == t.Id && w.IsAvailable))
-            .ThenByDescending(t => t.TitleUk != null)
-            .ThenByDescending(t => t.RatingTmdb ?? t.RatingImdb)
-            .ThenByDescending(t => t.Popularity);
+            .OrderByDescending(t => t.Popularity)
+            .Take(PresetCandidatePool);
     }
 }
 

@@ -315,11 +315,11 @@ export default function TitleDetailPage() {
           {added === "watchlist" ? `✓ ${t("title.added")}` : `＋ ${t("title.watchlist")}`}
         </button>
 
-        {/* FR-21: «Схожі» зі сторінки тайтла → /similar?seed={tmdbId} (авто-прогін). */}
+        {/* FR-21: «Схожі» зі сторінки тайтла → /similar?seed={id} (авто-прогін, внутрішній id). */}
         {detail.tmdbId != null && (
           <button
             type="button"
-            onClick={() => router.push(`/similar?seed=${detail.tmdbId}`)}
+            onClick={() => router.push(`/similar?seed=${detail.id}`)}
             className="rounded-xl border border-accent/50 bg-accent/10 px-4 py-2.5 text-sm font-bold text-accent-2 transition-colors hover:bg-accent/20"
           >
             ✦ {t("similar.cardBtn")}

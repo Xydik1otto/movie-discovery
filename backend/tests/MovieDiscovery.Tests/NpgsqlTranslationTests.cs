@@ -104,18 +104,17 @@ public class NpgsqlTranslationTests
     {
         using var db = CreateContext();
         var sql = CollectionsService.BuildPresetQuery(
-                db.Titles.AsNoTracking(), db.WatchLinks,
+                db.Titles.AsNoTracking(),
                 ["comedy", "romance"], minRating: 7.0, shortRuntime: false)
-            .Take(12).ToQueryString();
+            .ToQueryString();
 
         var upper = sql.ToUpperInvariant();
         // жанри через GIN-friendly overlap (genres &&), рейтинг через COALESCE
         Assert.Contains("GENRES", upper);
         Assert.Contains("COALESCE", upper);
-        // пріоритет watch_links — корельований EXISTS-підзапит (індекс ix_watch_links_titleid)
-        Assert.Contains("EXISTS", upper);
-        Assert.Contains("WATCH_LINKS", upper);
-        // пріоритети в ORDER BY до LIMIT
+        // фаза 1 (FR-21): індексний ORDER BY popularity до LIMIT пулу кандидатів;
+        // ранжування watch_links/uk/рейтингом — фаза 2 в пам'яті (33с → <1с).
+        Assert.Contains("POPULARITY", upper);
         Assert.True(
             upper.IndexOf("ORDER BY") > -1 && upper.IndexOf("LIMIT") > upper.IndexOf("ORDER BY"),
             $"Очікується ORDER BY перед LIMIT, отримано: {sql}");

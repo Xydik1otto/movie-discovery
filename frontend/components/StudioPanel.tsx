@@ -53,8 +53,8 @@ export default function StudioPanel({
     const timer = setTimeout(async () => {
       try {
         const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
-        // by-seeds працює по tmdbId — тайтли без нього (аніме/манга з імпорту) не еталони.
-        setOptions(r.data.items.filter((o) => o.tmdbId != null));
+        // FR-21: by-seeds резолвить внутрішні id — опції без обрізання по tmdbId.
+        setOptions(r.data.items);
         setOpen(true);
       } catch {
         // помилки автокомпліту не блокують студію

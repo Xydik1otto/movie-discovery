@@ -58,10 +58,10 @@ export default function QuickSimilar({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // FR-21: ?seed={tmdbId} — авто-прогін зі сторінки тайтла/картки. Резолвимо
-  // тайтл через detail-endpoint (перевірка tmdbId — /api/title/{id} живе за
-  // внутрішнім id), додаємо чіп і запускаємо пошук через onPick. Без резолву —
-  // чіп-заглушка «Тайтл TMDB #N»: пошук усе одно йде по tmdbId (graceful).
+  // FR-21: ?seed={id} — авто-прогін зі сторінки тайтла/картки (внутрішній id —
+  // універсальний ключ: у 2.8 млн IMDb-рядків tmdb_id = NULL). Резолвимо тайтл
+  // через detail-endpoint, додаємо чіп і запускаємо пошук через onPick.
+  // Без резолву — чіп-заглушка: пошук усе одно йде по id (graceful).
   const searchParams = useSearchParams();
   const seedNum = Number(searchParams.get("seed"));
   const appliedSeedRef = useRef<number | null>(null);
@@ -74,15 +74,15 @@ export default function QuickSimilar({
       let card: TitleCardType | null = null;
       try {
         const d = await getTitle(seedNum, lang);
-        if (d && d.tmdbId === seedNum) card = d;
+        if (d) card = d;
       } catch {
         // нема резолву — чіп-заглушка, пошук не блокуємо
       }
       if (!alive) return;
       onPick(
         card ?? {
-          id: -seedNum,
-          tmdbId: seedNum,
+          id: seedNum,
+          tmdbId: null,
           type: "movie",
           title: t("similar.seedFallback", { n: seedNum }),
         },
@@ -112,9 +112,9 @@ export default function QuickSimilar({
       try {
         const r = await searchTitles({ q, pageSize: 8, page: 1 }, lang);
         if (seq !== seqRef.current) return;
-        // by-seeds працює лише по tmdbId — тайтли без нього (імпорт аніме/манги)
-        // не можуть бути сидом, як і в SeedsBuilder.
-        const items = (r.items ?? []).filter((o) => o.tmdbId != null);
+        // FR-21: by-seeds резолвить внутрішні id — сидом може бути будь-який тайтл
+        // каталогу (фільтр по tmdbId знімано: він обрізав 2.8 млн IMDb-рядків).
+        const items = r.items ?? [];
         setOptions(items);
         setNoResults(items.length === 0);
         setOpen(true);

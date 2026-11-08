@@ -14,7 +14,7 @@ import ReasonBadges from "./ReasonBadges";
 // lazy — лише для глибоких елементів.
 // FR-21: onSimilar — ланцюг на сторінці /similar (кнопка «Схожі» на картках
 // результатів підміняє еталони, не виходячи зі сторінки); без onSimilar кнопка
-// веде на /similar?seed={tmdbId} (авто-прогін). Кнопка з'являється при hover
+// веде на /similar?seed={id} — внутрішній id (є в усіх тайтлів, на відміну від tmdbId). Кнопка з'являється при hover
 // у кутку постера й не змінює лейаут картки.
 export default function TitleCard({
   item,
@@ -60,7 +60,7 @@ export default function TitleCard({
       onSimilar(item);
       return;
     }
-    if (item.tmdbId != null) router.push(`/similar?seed=${item.tmdbId}`);
+    router.push(`/similar?seed=${item.id}`);
   }
 
   return (

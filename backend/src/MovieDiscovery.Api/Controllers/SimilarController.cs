@@ -124,19 +124,31 @@ public sealed class SimilarController(
     private async Task<IActionResult> RunBySeedsAsync(
         List<int> distinct, int limit, string langSafe, SimilarFilters filters, CancellationToken ct)
     {
+        // FR-21: подвійний резолв — tmdb_id АБО внутрішній id (2.8 млн IMDb-рядків
+        // мають tmdb_id = NULL; «Схоже на...» має працювати на всьому каталозі).
         var found = await db.Titles.AsNoTracking()
-            .Where(t => t.TmdbId != null && distinct.Contains(t.TmdbId.Value))
+            .Where(t => (t.TmdbId != null && distinct.Contains(t.TmdbId.Value)) || distinct.Contains(t.Id))
             .ToListAsync(ct);
 
+        var seeds = new List<Title>(distinct.Count);
+        var missing = new List<int>();
+        foreach (var id in distinct)
+        {
+            // tmdb-матч пріоритетніший (seed-контракти історично по tmdb); всередині — movie перший
+            var match = found
+                .Where(t => t.TmdbId == id || t.Id == id)
+                .OrderBy(t => t.TmdbId != null ? 0 : 1)
+                .ThenBy(t => t.Type == "movie" ? 0 : 1)
+                .FirstOrDefault();
+            if (match is null)
+                missing.Add(id);
+            else
+                seeds.Add(match);
+        }
+
         // незнайдені id → 404 ДО побудови seeds (інакше First() на порожній послідовності падає в 500)
-        var missing = distinct.Where(id => !found.Any(t => t.TmdbId == id)).ToList();
         if (missing.Count > 0)
             return NotFound(new { error = "titles_not_found", message = "Деякі тайтли не знайдено", missing });
-
-        // один tmdb id теоретично може відповідати і фільму, і серіалу — беремо перший (movie пріоритетніше)
-        var seeds = distinct
-            .Select(id => found.Where(t => t.TmdbId == id).OrderBy(t => t.Type == "movie" ? 0 : 1).First())
-            .ToList();
 
         var scored = await similarity.SimilarBySeedsAsync(seeds, limit, langSafe, filters, ct);
         // reasons (коди FR-21: shared_genres/shared_actor/decade) ставить TitlesController.ToSimilarItem
