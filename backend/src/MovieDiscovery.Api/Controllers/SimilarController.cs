@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Similarity;
+using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Tmdb;
