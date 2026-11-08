@@ -602,6 +602,10 @@ public sealed class ImdbCrewService(
                 await using var conn = new NpgsqlConnection(db.Database.GetConnectionString());
                 await conn.OpenAsync(ct);
                 await using var cmd = new NpgsqlCommand(sql, conn);
+                // Дефолтні 30 с недостатні для merge-UPDATE по 2.8 млн рядків під
+                // I/O-нагрузкою інших синків — 15 хв з запасом; ретрай нижче ловить
+                // лише PostgresException, тому таймаут лікуємо тут, а не ретраєм.
+                cmd.CommandTimeout = 900;
                 return await cmd.ExecuteNonQueryAsync(ct);
             }
             catch (PostgresException ex) when (attempt < 3 && PgRetry.IsTransient(ex))
