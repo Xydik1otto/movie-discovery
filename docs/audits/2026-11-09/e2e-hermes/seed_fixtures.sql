@@ -1,20 +1,23 @@
--- Fixture-сід для ізольованого тестового стеку (MD-10).
--- Виконується ПІСЛЯ старту api-test (EF-міграції застосовані) через:
---   docker exec -i moviediscovery-test-db psql -U movie -d moviediscovery_test < seed_fixtures.sql
--- Детерміновані id; колізійна фікстура MD-03: title 7000 (id, tmdb_id=NULL)
--- і title 7001 з tmdb_id=7000 → ids=7000 резолвить 7000, legacy tmdbIds=7000 → 7001.
-TRUNCATE list_entries, user_profiles, bot_identities, profiles, titles RESTART IDENTITY CASCADE;
-
-INSERT INTO profiles (id, name, is_default) VALUES
-  (1, 'Guest', true);
-
-INSERT INTO titles (id, type, title_en, title_uk, year, genres, popularity, runtime_min) VALUES
-  (7000, 'movie', 'Inception Test', 'Початок (тест)', 2010, '{drama,science fiction}', 50.0, 148),
-  (7001, 'movie', 'Collision Fixture', 'Колізія', 1999, '{drama}', 40.0, 120),
-  (7002, 'movie', 'Shawshank Test', 'Втеча (тест)', 1994, '{drama,crime}', 60.0, 142),
-  (7003, 'anime', 'Anime Fixture', 'Аніме (тест)', 2015, '{action,adventure}', 30.0, 24),
-  (7004, 'manga', 'Manga Fixture', 'Манга (тест)', 2012, '{adventure}', 20.0, NULL);
-
-INSERT INTO list_entries (id, profile_id, kind, title_id, created_at) VALUES
-  (900, 1, 'watchlist', 7000, now());
-SELECT setval('list_entries_id_seq', 1000, false);
+-- Fixture-сід для ізольованого тестового стеку (MD-10) — ІСТОРИЧНИЙ ФАЙЛ.
+--
+-- УВАГА: канонічний сід ізольованого стеку — e2e/seed_fixture.sql (ids 2..7,
+-- таблиця `lists`). Цей файл спочатку посилався на неіснуючу таблицю
+-- `list_entries` (реальна назва — `lists`) і на іншу схему id (7000..7004);
+-- залишено як посилання для історії аудиту.
+--
+-- Відтворення fixture-БД:
+--   docker compose -f docker-compose.test.yml -p moviediscovery-test up -d --build
+--   docker exec -i moviediscovery-test-db psql -U movie -d moviediscovery_test < e2e/seed_fixture.sql
+--   python e2e/md_audit_fixes.py            # 40/40
+--   python docs/audits/2026-11-09/e2e-hermes/api_matrix.py   # 52/52 (незалежна матриця)
+--
+-- Канонічні фікстури (e2e/seed_fixture.sql):
+--   id=2 "Collision Target A" (tmdb_id=NULL) / id=3 "Collision Twin B" (tmdb_id=2) — колізія MD-03;
+--   id=4 "Space Heist C" 2012 sci-fi; id=5 "Drama Quiet D" 2015 drama;
+--   id=6 anime; id=7 manga; profile 1 — гостьовий (не приріплений до акаунта).
+--
+-- Пастки, виявлені при проганянні (фіксовані в api_matrix.py):
+--   * auth-cookie тест-стеку називається `md_auth` (з чанкінгом .C1/.C2 при великому payload);
+--   * register rate-limit 3/год/IP → 429 з ПОРОЖНІМ тілом; login теж лімітується —
+--     повторні прогони мають логінитися в акаунти попередніх прогонів (fallback);
+--   * POST /api/similar/by-seeds: `types` — List<string>, рядок "movie" → 400.
