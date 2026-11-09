@@ -74,14 +74,17 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         if (!string.IsNullOrWhiteSpace(q.Q))
         {
             var pat = "%" + EscapeLike(q.Q.Trim()) + "%";
-            query = db.Titles.FromSqlInterpolated($"""
-SELECT * FROM titles
-WHERE title_uk ILIKE {pat}
-   OR title_ru ILIKE {pat}
-   OR title_en ILIKE {pat}
-   OR director ILIKE {pat}
-   OR actors_trgm_text(actors) ILIKE {pat}
-""");
+            // COMPOSABLE LINQ, не FromSqlInterpolated: FromSql + OrderBy/Skip/Take
+            // генерує SELECT * FROM (raw без LIMIT) AS m — внутрішній підзапит
+            // materializує УСІ збіги (104k рядків з TOAST-масивами) перед сортуванням
+            // → 15–30 с на частотних підрядках. Один рівень дає планеру ранню
+            // термінацію по ix_titles_popularity (замір: 2.9 мс проти 15.5 с).
+            query = db.Titles.Where(t =>
+                (t.TitleUk != null && EF.Functions.ILike(t.TitleUk, pat)) ||
+                (t.TitleRu != null && EF.Functions.ILike(t.TitleRu, pat)) ||
+                EF.Functions.ILike(t.TitleEn, pat) ||
+                (t.Director != null && EF.Functions.ILike(t.Director, pat)) ||
+                EF.Functions.ILike(MovieDbFunctions.ActorsTrgmText(t.Actors)!, pat));
         }
         else
         {

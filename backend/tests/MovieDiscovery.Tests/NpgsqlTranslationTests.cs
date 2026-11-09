@@ -119,4 +119,29 @@ public class NpgsqlTranslationTests
             upper.IndexOf("ORDER BY") > -1 && upper.IndexOf("LIMIT") > upper.IndexOf("ORDER BY"),
             $"Очікується ORDER BY перед LIMIT, отримано: {sql}");
     }
+
+    [Fact]
+    public void Search_Q_Is_Composable_No_Raw_Subquery_Wrap()
+    {
+        // Регрес 09.11: FromSqlInterpolated + OrderBy/Skip/Take генерували
+        // SELECT * FROM (SELECT * FROM titles WHERE ILIKE...) ORDER BY LIMIT —
+        // внутрішній підзапит materializував УСІ збіги (104k × TOAST) → 15–30 с.
+        // Composable LINQ має дати ОДИН рівень з ранньою термінацією по індексу.
+        using var db = CreateContext();
+        var svc = new SearchService(db);
+        var query = svc.BuildQuery(new SearchQuery(
+            Q: "x", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
+            MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
+            Status: null, Sort: "popularity", Page: 1, PageSize: 24));
+        var sorted = query
+            .OrderByDescending(t => t.Popularity)
+            .Skip(0).Take(24);
+        var sql = sorted.ToQueryString();
+        var upper = sql.ToUpperInvariant();
+
+        Assert.Contains("ACTORS_TRGM_TEXT", upper);          // функція транслюється (HasDbFunction)
+        Assert.Contains("TITLE_RU", upper);                  // ru-гілка пошуку на місці
+        Assert.DoesNotContain("FROM (SELECT", upper);        // БЕЗ raw-підзапиту-матеріалізації
+        Assert.Contains("ILIKE", upper);
+    }
 }

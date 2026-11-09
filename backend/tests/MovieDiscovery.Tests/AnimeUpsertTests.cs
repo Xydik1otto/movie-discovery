@@ -134,4 +134,61 @@ public class AnimeUpsertTests
         Assert.True(created);
         Assert.Equal(9253, title.MalId);
     }
+
+    // ── Дедеп list-рядків у межах батчу (регрес 23505 імпорту shikimori 09.11) ──
+
+    private static Core.Domain.ListEntry Row(string kind, Title title, int? rating) => new()
+    {
+        ProfileId = 7,
+        Kind = kind,
+        Title = title,
+        Rating = rating,
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    [Fact]
+    public void DedupeBatchRows_Created_Title_Collapses_Later_Rating_Wins()
+    {
+        // два rate одного target у ОДНОМУ батчі: перший створює тайтл (Id=0),
+        // другий резолвиться в нього ж (спільне посилання) — має лишитись ОДИН рядок
+        var title = new Title { Type = "anime", TitleEn = "FMA:B", ShikimoriId = 5114 };
+        var deduped = AnimeUpsertCore.DedupeBatchRows(
+        [
+            Row("watched", title, 10),
+            Row("watched", title, 9),  // пізніший дубль — оцінка переноситься
+        ]);
+
+        var entry = Assert.Single(deduped);
+        Assert.Equal(9, entry.Rating); // пізніший виграє
+    }
+
+    [Fact]
+    public void DedupeBatchRows_Matched_Candidate_Collapses()
+    {
+        // обидва rate зійшлися на ОДНОМУ каталожному тайтлі (перетин mal/anilist/shikimori)
+        var candidate = new Title { Id = 700, Type = "anime", TitleEn = "FMA:B", MalId = 5114 };
+        var deduped = AnimeUpsertCore.DedupeBatchRows(
+        [
+            Row("watched", candidate, 8),
+            Row("watched", candidate, 10),
+        ]);
+
+        var entry = Assert.Single(deduped);
+        Assert.Equal(10, entry.Rating);
+    }
+
+    [Fact]
+    public void DedupeBatchRows_Different_Kind_Or_Title_Are_Kept()
+    {
+        var t1 = new Title { Id = 700, TitleEn = "FMA:B" };
+        var t2 = new Title { Id = 701, TitleEn = "Other" };
+        var deduped = AnimeUpsertCore.DedupeBatchRows(
+        [
+            Row("watched", t1, 8),
+            Row("watchlist", t1, null), // інший kind — УНІКАЛЬНІСТЬ включає kind → обидва свої
+            Row("watched", t2, 7),      // інший тайтл
+        ]);
+
+        Assert.Equal(3, deduped.Count);
+    }
 }

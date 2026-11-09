@@ -24,7 +24,31 @@ public static class AnimeUpsertCore
         id is null ? null : candidates.FirstOrDefault(t => selector(t) == id);
 
     /// <summary>
-    /// Оновити наявний тайтл патчем: score/episodes/год оновлюємо, title_uk null'ом НЕ затираємо,
+    /// Дедуп list-рядків У МЕЖАХ одного батчу по (kind, тайтл). Різні зовнішні id
+    /// (mal/anilist/shikimori) можуть зійтися на одному тайтлі — без дедупу два рядки
+    /// з однаковим (profile, kind, title) падають на SaveChanges з 23505 (UNIQUE
+    /// ix_lists_profile_id_kind_title_id). Title-об'єкт спільний (ReferenceEquals),
+    /// тому хеш по посиланню коректний і для ще-не-збережених (Id=0) записів;
+    /// оцінка пізнішого дубля переноситься на запланований рядок.
+    /// </summary>
+    public static List<ListEntry> DedupeBatchRows(List<ListEntry> rows)
+    {
+        var deduped = new List<ListEntry>(rows.Count);
+        var seen = new HashSet<(string Kind, Title Title)>();
+        foreach (var row in rows)
+        {
+            if (!seen.Add((row.Kind, row.Title)))
+            {
+                var kept = deduped.Single(r => r.Kind == row.Kind && ReferenceEquals(r.Title, row.Title));
+                if (row.Rating is { } r) kept.Rating = r;
+                continue;
+            }
+            deduped.Add(row);
+        }
+        return deduped;
+    }
+
+    /// <summary>Оновити наявний тайтл патчем: score/episodes/год оновлюємо, title_uk null'ом НЕ затираємо,
     /// масиви замінюємо тільки непорожніми патчами (повторний upsert → той самий стан, без дублів).
     /// </summary>
     public static void Merge(Title target, Title patch)

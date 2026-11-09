@@ -43,6 +43,11 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
 
         mb.HasPostgresExtension("vector");
 
+        // SQL-функція акторів для composable-пошуку (SearchService q-гілка):
+        // ILIKE по виразному GIN-індексу actors_trgm_text замість per-element unnest.
+        mb.HasDbFunction(typeof(MovieDbFunctions).GetMethod(nameof(MovieDbFunctions.ActorsTrgmText))!)
+            .HasName("actors_trgm_text");
+
         mb.Entity<Title>(e =>
         {
             e.Property(x => x.Type).IsRequired().HasMaxLength(16);

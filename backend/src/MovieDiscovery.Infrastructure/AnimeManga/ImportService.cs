@@ -250,8 +250,18 @@ public sealed class ImportService(
                     CreatedAt = DateTime.UtcNow,
                     WatchedAt = item.Kind is ListKinds.Watched or ListKinds.Read ? DateTime.UtcNow : null,
                 });
+            }
 
-                switch (item.Kind)
+            // Дедуп У МЕЖАХ батчу (чиста функція в AnimeUpsertCore): різні зовнішні id
+            // (mal/anilist/shikimori) можуть зійтися на ОДНОМУ тайтлі — тоді два ListEntry
+            // з однаковим (profile, kind, title) падають на SaveChanges з 23505 (UNIQUE
+            // ix_lists_profile_id_kind_title_id) — prod-фейл імпорту shikimori 09.11.
+            rows = AnimeUpsertCore.DedupeBatchRows(rows);
+
+            // лічильники статусів — ПІСЛЯ дедупу (об'єднані дублі не рахуються двічі)
+            foreach (var row in rows)
+            {
+                switch (row.Kind)
                 {
                     case ListKinds.Watched: stats.AnimeWatched++; break;
                     case ListKinds.Read: stats.MangaRead++; break;
@@ -318,11 +328,28 @@ public sealed class ImportService(
 
     private async Task FailAsync(ImportJob job, ImportStats stats, string message, CancellationToken ct)
     {
-        job.Status = "failed";
-        job.Error = message;
-        job.Stats = stats.ToJsonDocument();
-        job.FinishedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        // Контекст може бути отруєний невдалим батчем (23505 у FlushAsync): звичайний
+        // SaveChanges статусу впаде на тих самих Add-записах і job назавжди застрягне
+        // в «running» (prod-зомбі #9/#10 09.11). Фолбек: чистий трекер → свіжий job.
+        try
+        {
+            job.Status = "failed";
+            job.Error = message;
+            job.Stats = stats.ToJsonDocument();
+            job.FinishedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            var fresh = await db.ImportJobs.FirstOrDefaultAsync(j => j.Id == job.Id, ct);
+            if (fresh is null) return;
+            fresh.Status = "failed";
+            fresh.Error = message;
+            fresh.Stats = stats.ToJsonDocument();
+            fresh.FinishedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     /// <summary>План одного імпорт-запису: kind списку, оцінка, патч тайтла.</summary>
