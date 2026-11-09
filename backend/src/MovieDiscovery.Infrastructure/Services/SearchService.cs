@@ -40,7 +40,7 @@ public sealed record SearchQuery(
     string? AudioLang = null,
     int? MinQuality = null);
 
-public sealed record SearchResult(IReadOnlyList<Title> Items, int Total, int Page, int PageSize);
+public sealed record SearchResult(IReadOnlyList<Title> Items, int Total, int Page, int PageSize, bool TotalCapped = false);
 
 /// <summary>
 /// Пошук/фільтри ЛИШЕ по локальній БД (NFR-1: жодних зовнішніх викликів у hot path).
@@ -55,7 +55,21 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         var pageSize = Math.Clamp(q.PageSize, 1, 50);
 
         var query = BuildQuery(q);
-        var total = await query.CountAsync(ct);
+        // Ліміт точного підрахунку ДЛЯ ТЕКСТОВОГО ПОШУКУ: частотний підрядок
+        // ('x' = 104k збігів) змушує планер до seq-scan по 2.86 млн рядків
+        // (замір prod: 14.2 с тільки на count — 30 с CommandTimeoutKill при
+        // навантаженні). Рахуємо максимум CountCap+1 — клієнт показує «2000+»;
+        // точне число лишається для фільтрів без q (їхні count-и по GIN дешеві).
+        const int CountCap = 2000;
+        var capped = !string.IsNullOrWhiteSpace(q.Q);
+        // Параметризовані LIMIT/ILIKE + generic-план PG = bitmap+sort без ранньої
+        // термінації ('а' 12–14 с). Лікується на рівні БД: ALTER ROLE movie SET
+        // plan_cache_mode = force_custom_plan (custom-план бачить реальні значення;
+        // планування ~6 мс проти секунд виконання). EF.Constant тут НЕ варіант —
+        // як аргумент Take(int) він викликається eagerly поза expression tree.
+        var total = capped
+            ? await query.Take(CountCap + 1).CountAsync(ct)
+            : await query.CountAsync(ct);
 
         query = Sort(query, q.Sort);
 
@@ -64,7 +78,7 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             .Take(pageSize)
             .ToListAsync(ct);
 
-        return new SearchResult(items, total, page, pageSize);
+        return new SearchResult(items, total, page, pageSize, capped && total > CountCap);
     }
 
     /// <summary>Побудова запиту з усіма фільтрами (public — тест трансляції без БД, як NpgsqlTranslationTests).</summary>
