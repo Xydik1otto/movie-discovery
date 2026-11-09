@@ -104,6 +104,7 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
                 return card;
             }).ToList(),
             total = result.Total,
+            totalCapped = result.TotalCapped,
             page = result.Page,
             pageSize = result.PageSize,
         });

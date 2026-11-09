@@ -13,6 +13,7 @@ export const uk = {
   "search.placeholder": "Назва фільму, серіалу, актор чи режисер…",
   "search.button": "Знайти",
   "search.results": "Знайдено: {n}",
+  "search.resultsCapped": "Знайдено: 2000+",
   "search.noResults": "Нічого не знайдено за цими параметрами",
   "search.watchable": "Можна подивитись",
 

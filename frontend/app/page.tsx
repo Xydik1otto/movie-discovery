@@ -687,7 +687,9 @@ export default function HomePage() {
           ) : (
             <>
               {list.total != null && (
-                <p className="mb-3 text-xs text-mute">{t("search.results", { n: list.total })}</p>
+                <p className="mb-3 text-xs text-mute">
+                  {list.totalCapped ? t("search.resultsCapped") : t("search.results", { n: list.total })}
+                </p>
               )}
               <div
                 className={`grid grid-cols-2 gap-3 transition-opacity duration-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${

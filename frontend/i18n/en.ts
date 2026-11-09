@@ -15,6 +15,7 @@ export const en: Dict = {
   "search.placeholder": "Movie or series title, actor, director…",
   "search.button": "Search",
   "search.results": "Found: {n}",
+  "search.resultsCapped": "Found: 2000+",
   "search.noResults": "Nothing found for these parameters",
   "search.watchable": "Available to watch",
 

@@ -71,7 +71,9 @@ public static class TitleMapper
             Id = t.Id,
             TmdbId = t.TmdbId,
             Type = t.Type,
-            Title = uk ? (FirstNonEmpty(t.TitleUk) ?? t.TitleEn) : t.TitleEn,
+            // Рішення власника 09.11: українська назва → російський фолбек (якщо
+            // офіційної uk немає) → оригінальна en. Назви — з Wikidata/IMDb akas.
+            Title = uk ? (FirstNonEmpty(t.TitleUk) ?? FirstNonEmpty(t.TitleRu) ?? t.TitleEn) : t.TitleEn,
             OriginalTitle = t.TitleEn,
             Year = t.Year,
             Genres = uk ? t.Genres.Select(Infrastructure.Tmdb.TmdbGenres.ToUk).ToList() : [.. t.Genres],

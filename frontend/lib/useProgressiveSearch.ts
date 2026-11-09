@@ -14,6 +14,7 @@ import type { Paged } from "./types";
 export interface ProgressiveList<T> {
   items: T[];
   total: number | null;
+  totalCapped: boolean; // total обрізаний лімітом підрахунку (текстовий пошук 2000+)
   busy: boolean; // будь-яке завантаження в процесі
   firstLoad: boolean; // ще нічого не показано (скелетон)
   error: boolean;
@@ -30,6 +31,7 @@ export function useProgressiveSearch<T>(
 ): ProgressiveList<T> {
   const [items, setItems] = useState<T[]>([]);
   const [total, setTotal] = useState<number | null>(null);
+  const [totalCapped, setTotalCapped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
   const [error, setError] = useState(false);
@@ -69,6 +71,7 @@ export function useProgressiveSearch<T>(
     clearTimer();
     setItems([]);
     setTotal(null);
+    setTotalCapped(false);
     setPage(1);
     setFirstLoad(true);
     setError(false);
@@ -99,6 +102,7 @@ export function useProgressiveSearch<T>(
         totalRef.current = r.total;
         setItems(merged);
         setTotal(r.total);
+        setTotalCapped(r.totalCapped === true);
         setUnavailable(false);
         setFirstLoad(false);
       })
@@ -148,7 +152,7 @@ export function useProgressiveSearch<T>(
     [showMore],
   );
 
-  return { items, total, busy, firstLoad, error, unavailable, sentinelRef, canMore, showMore };
+  return { items, total, totalCapped, busy, firstLoad, error, unavailable, sentinelRef, canMore, showMore };
 }
 
 // Автодозавантаження «решти сторінок з часом»: 8 сторінок (≈192 картки) доливаються

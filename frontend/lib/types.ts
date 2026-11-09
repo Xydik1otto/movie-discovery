@@ -93,6 +93,9 @@ export interface SimilarItem extends TitleCard {
 export interface Paged<T> {
   items: T[];
   total: number;
+  // Точний підрахунок обрізаний лімітом бекенда (текстовий пошук, 2000+) —
+  // відображати «Знайдено: 2000+», не «2001».
+  totalCapped?: boolean;
   page: number;
   pageSize: number;
 }
