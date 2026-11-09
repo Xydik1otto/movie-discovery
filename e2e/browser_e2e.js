@@ -61,7 +61,9 @@ async function resolveId(page, name) {
     const input = page.locator("input").first();
     await input.fill("Space");
     await page.waitForTimeout(1500);
-    const opt = page.locator("text=Space Heist C").first();
+    // Локалізація назв (uk→ru→en): текст підказки мовозалежний — клікаємо ПЕРШУ
+    // опцію дропдауна (пошук за "Space" першим повертає фіксстурний C).
+    const opt = page.locator("ul li button").first();
     if (await opt.count()) {
       await opt.click();
       await page.waitForTimeout(800);

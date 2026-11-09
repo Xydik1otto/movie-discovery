@@ -74,12 +74,14 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         if (!string.IsNullOrWhiteSpace(q.Q))
         {
             var pat = "%" + EscapeLike(q.Q.Trim()) + "%";
-            query = db.Titles.FromSqlInterpolated($@"
+            query = db.Titles.FromSqlInterpolated($"""
 SELECT * FROM titles
 WHERE title_uk ILIKE {pat}
+   OR title_ru ILIKE {pat}
    OR title_en ILIKE {pat}
    OR director ILIKE {pat}
-   OR actors_trgm_text(actors) ILIKE {pat}");
+   OR actors_trgm_text(actors) ILIKE {pat}
+""");
         }
         else
         {

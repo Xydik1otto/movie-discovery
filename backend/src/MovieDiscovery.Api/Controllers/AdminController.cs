@@ -20,6 +20,7 @@ public sealed class AdminController(
     ImdbSyncQueue imdbSyncQueue,
     ImdbAkasSyncQueue imdbAkasSyncQueue,
     ImdbCrewSyncQueue imdbCrewSyncQueue,
+    WikidataNamesSyncQueue wikidataNamesSyncQueue,
     YoutubeSyncQueue youtubeSyncQueue,
     WatchSyncQueue watchSyncQueue,
     Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
@@ -195,6 +196,26 @@ public sealed class AdminController(
             return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
 
         return Accepted(new { queued = true, source = "imdb-crew" });
+    }
+
+    /// <summary>
+    /// Назви/постери з Wikidata (uk label + ru-фолбек + P18): 202 {queued:true, source:"wikidata-names"}.
+    /// maxRows — опційний smoke-ліміт рядків (смуок на одному бакеті).
+    /// </summary>
+    [HttpPost("sync/wikidata-names")]
+    public IActionResult SyncWikidataNames([FromBody] MaxRowsRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && mr is < 1 or > 100_000_000)
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–100 000 000" });
+
+        if (!wikidataNamesSyncQueue.TryEnqueue(new WikidataNamesSyncJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "wikidata-names" });
     }
 
     /// <summary>

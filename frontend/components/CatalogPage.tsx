@@ -5,17 +5,15 @@
 // Демо-підмінки немає: у демо-пулі немає аніме/манги, тож при недоступному API —
 // ApiBanner + підказка про синхронізацію.
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useI18n } from "../i18n/I18nContext";
 import { searchTitles } from "../lib/api";
-import { isUnavailable } from "../lib/fallback";
+import { useProgressiveSearch } from "../lib/useProgressiveSearch";
 import { ANIME_MEDIA_FORMATS, MANGA_FORMATS } from "../lib/constants";
-import type { Paged, TitleCard as TitleCardType } from "../lib/types";
 import TitleCard from "./TitleCard";
 import ApiBanner from "./ApiBanner";
 import EmptyState from "./EmptyState";
 import LoadingSkeleton from "./LoadingSkeleton";
-import Pagination from "./Pagination";
 import { Chip, ChipGroup } from "./FilterChips";
 
 const PAGE_SIZE = 24;
@@ -54,54 +52,33 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
     to: null,
   });
   const [sort, setSort] = useState<CatalogSort>("popularity");
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<Paged<TitleCardType> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [unavailable, setUnavailable] = useState(false);
-  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    setError(false);
-    searchTitles(
-      {
-        type: kind,
-        format,
-        status,
-        yearFrom: years.from,
-        yearTo: years.to,
-        sort,
-        page,
-        pageSize: PAGE_SIZE,
-      },
-      lang,
-    )
-      .then((r) => {
-        if (!alive) return;
-        setData(r);
-        setUnavailable(false);
-      })
-      .catch((e) => {
-        if (!alive) return;
-        if (isUnavailable(e)) {
-          setUnavailable(true);
-          setData(null);
-        } else {
-          setError(true);
-        }
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [kind, format, status, years, sort, page, lang]);
+  // Прогресивне завантаження: перша сторінка одразу, решта — інфініт-скролом;
+  // під час нового запиту сітка лишається видимою (opacity), без спустошення.
+  const fetchPage = useCallback(
+    (pg: number) =>
+      searchTitles(
+        {
+          type: kind,
+          format,
+          status,
+          yearFrom: years.from,
+          yearTo: years.to,
+          sort,
+          page: pg,
+          pageSize: PAGE_SIZE,
+        },
+        lang,
+      ),
+    [kind, format, status, years, sort, lang],
+  );
+  const list = useProgressiveSearch(
+    fetchPage,
+    JSON.stringify([kind, format, status, years, sort]) + "|" + lang,
+  );
 
   function applyYears() {
     setYears({ from: numOrNull(yearFrom), to: numOrNull(yearTo) });
-    setPage(1);
   }
 
   function resetFilters() {
@@ -111,7 +88,6 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
     setYearTo("");
     setYears({ from: null, to: null });
     setSort("popularity");
-    setPage(1);
   }
 
   const emptyKey = kind === "anime" ? "anime.empty" : "manga.empty";
@@ -142,7 +118,6 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
                 selected={format === f.value}
                 onClick={() => {
                   setFormat(format === f.value ? null : f.value);
-                  setPage(1);
                 }}
               >
                 {lang === "uk" ? f.uk : f.en}
@@ -195,7 +170,6 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
                   selected={status === s.value}
                   onClick={() => {
                     setStatus(status === s.value ? null : s.value);
-                    setPage(1);
                   }}
                 >
                   {t(s.key)}
@@ -210,7 +184,6 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
               value={sort}
               onChange={(e) => {
                 setSort(e.target.value as CatalogSort);
-                setPage(1);
               }}
               className="rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
             >
@@ -232,34 +205,48 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
         </div>
       </div>
 
-      {/* Результати */}
-      {unavailable && <ApiBanner />}
-      {loading ? (
+      {/* Результати — прогресивно: перша сторінка одразу, решта догружається скролом */}
+      {list.unavailable && <ApiBanner />}
+      {list.firstLoad ? (
         <LoadingSkeleton />
-      ) : error ? (
+      ) : list.error ? (
         <EmptyState icon="⚠️" title={t("common.error")} />
-      ) : data && data.items.length === 0 ? (
+      ) : list.items.length === 0 && !list.busy ? (
         <EmptyState icon={emptyIcon} title={t(emptyKey)} />
-      ) : data ? (
+      ) : (
         <>
-          <p className="mb-3 text-xs text-mute">
-            {t("search.results", { n: data.total })}
-          </p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {data.items.map((item) => (
-              <TitleCard key={item.id} item={item} eager={page === 1} />
+          {list.total != null && (
+            <p className="mb-3 text-xs text-mute">{t("search.results", { n: list.total })}</p>
+          )}
+          <div
+            className={`grid grid-cols-2 gap-3 transition-opacity duration-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${
+              list.busy ? "pointer-events-none opacity-60" : ""
+            }`}
+          >
+            {list.items.map((item, i) => (
+              <TitleCard key={item.id} item={item} eager={i < PAGE_SIZE} />
             ))}
           </div>
-          <Pagination
-            page={data.page}
-            total={data.total}
-            pageSize={data.pageSize}
-            onChange={setPage}
-          />
+          {list.busy && (
+            <div className="mt-4 flex items-center justify-center gap-2 py-3 text-sm text-mute">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              {t("common.loading")}
+            </div>
+          )}
+          {list.canMore && !list.busy && (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={list.showMore}
+                className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
+              >
+                {t("common.showMore")}
+              </button>
+            </div>
+          )}
+          <div ref={list.sentinelRef} aria-hidden className="h-px w-full" />
         </>
-      ) : unavailable ? (
-        <EmptyState icon={emptyIcon} title={t(emptyKey)} />
-      ) : null}
+      )}
     </div>
   );
 }

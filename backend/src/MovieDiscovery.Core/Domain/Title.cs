@@ -7,6 +7,7 @@ public class Title
     public int? TmdbId { get; set; } // NULL для аніме/манги з зовнішніх джерел (mal/anilist/shikimori)
     public string Type { get; set; } = "movie"; // movie | series | show | anime | manga
     public string? TitleUk { get; set; }
+    public string? TitleRu { get; set; } // фолбек-назва (Wikidata/IMDb akas) — рішення власника 09.11: uk → ru → en
     public string TitleEn { get; set; } = "";
     public string? OverviewUk { get; set; }
     public string? OverviewEn { get; set; }

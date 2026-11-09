@@ -723,6 +723,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("title_en");
 
+                    b.Property<string>("TitleRu")
+                        .HasColumnType("text")
+                        .HasColumnName("title_ru");
+
                     b.Property<string>("TitleUk")
                         .HasColumnType("text")
                         .HasColumnName("title_uk");

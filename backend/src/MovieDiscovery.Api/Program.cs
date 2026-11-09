@@ -21,6 +21,7 @@ using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watchability;
+using MovieDiscovery.Infrastructure.Wikidata;
 using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Api;
@@ -53,6 +54,8 @@ public class Program
         builder.Services.Configure<ImdbOptions>(builder.Configuration.GetSection("Imdb"));
         builder.Services.Configure<ImdbAkasOptions>(builder.Configuration.GetSection("Imdb"));
         builder.Services.Configure<ImdbCrewOptions>(builder.Configuration.GetSection("Imdb"));
+        // Назви/постери з Wikidata (uk + ru-фолбек; рішення власника 09.11).
+        builder.Services.Configure<WikidataNamesOptions>(builder.Configuration.GetSection("Wikidata"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
         builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
         // FR-16/17/18: ваги профілю смаку + опції discover
@@ -200,6 +203,11 @@ public class Program
             c.BaseAddress = new Uri("https://datasets.imdbws.com/");
             c.Timeout = TimeSpan.FromMinutes(60);
         });
+        // Назви/постери з Wikidata Query Service (SPARQL, текст/CSV — короткі запити)
+        builder.Services.AddHttpClient<WikidataNamesService>(c =>
+        {
+            c.Timeout = TimeSpan.FromMinutes(10);
+        });
         // FR-20: YouTube Data API v3 (base з опцій; ключ YOUTUBE_API_KEY через MapEnvDefaults)
         builder.Services.AddHttpClient<YoutubeClient>((sp, c) =>
         {
@@ -233,6 +241,7 @@ public class Program
         builder.Services.AddSingleton<WatchSyncQueue>();
         builder.Services.AddSingleton<ImdbAkasSyncQueue>();
         builder.Services.AddSingleton<ImdbCrewSyncQueue>();
+        builder.Services.AddSingleton<WikidataNamesSyncQueue>();
         builder.Services.AddSingleton<YoutubeSyncQueue>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
@@ -261,6 +270,7 @@ public class Program
         builder.Services.AddScoped<GuestProfileService>(); // MD-01: designated guest profile
         builder.Services.AddScoped<CollectionsService>();
         builder.Services.AddScoped<DiscoverService>();
+        builder.Services.AddScoped<OnboardingPostersService>(); // FR-18: постери варіантів онбордингу
         builder.Services.AddScoped<BotIdentityService>(); // MD-05: telegram-ідентичність → профіль списків
 
         // Тестове середовище (WebApplicationFactory): фонові сервіси не потрібні — інакше
@@ -275,6 +285,7 @@ public class Program
             builder.Services.AddHostedService<WatchSyncBackgroundService>();
             builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
             builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
+            builder.Services.AddHostedService<WikidataNamesSyncBackgroundService>();
             builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
         }
 

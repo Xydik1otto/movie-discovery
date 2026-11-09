@@ -107,6 +107,7 @@ export const en: Dict = {
   "lists.remove": "Remove",
 
   "common.loading": "Loading…",
+  "common.showMore": "Show more",
   "common.error": "Error",
   "common.prev": "Back",
   "common.next": "Next",

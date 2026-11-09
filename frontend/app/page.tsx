@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nContext";
 import { guardedBySeedsEx, guardedSearch } from "@/lib/fallback";
+import { useProgressiveSearch } from "@/lib/useProgressiveSearch";
 import {
   AUDIO_LANG_OPTIONS,
   CATEGORY_OPTIONS,
@@ -14,12 +15,11 @@ import {
   SORTS,
   TITLE_TYPES,
 } from "@/lib/constants";
-import type { Paged, SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
+import type { SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
-import Pagination from "@/components/Pagination";
 import SeedsBuilder from "@/components/SeedsBuilder";
 import { Chip, ChipGroup } from "@/components/FilterChips";
 
@@ -122,11 +122,22 @@ export default function HomePage() {
   const [minQuality, setMinQuality] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [applied, setApplied] = useState<Applied>(EMPTY);
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<Paged<TitleCardType> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [unavailable, setUnavailable] = useState(false);
-  const [error, setError] = useState(false);
+
+  // Прогресивне завантаження: перша сторінка одразу, решта — інфініт-скролом;
+  // під час нового запиту попередні результати лишаються видимими (opacity).
+  const fetchPage = useCallback(
+    (pg: number) =>
+      guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE }, lang).then((r) => {
+        if (r.unavailable) {
+          const e = new Error("api_unavailable");
+          e.name = "ApiUnavailableError";
+          throw e;
+        }
+        return r.data;
+      }),
+    [applied, lang],
+  );
+  const list = useProgressiveSearch(fetchPage, JSON.stringify(applied) + "|" + lang);
 
   function apply() {
     const q = qForm.trim();
@@ -157,7 +168,6 @@ export default function HomePage() {
       minQuality: numOrNull(minQuality),
       sort: q ? "relevance" : "popularity",
     });
-    setPage(1);
   }
 
   function reset() {
@@ -186,29 +196,7 @@ export default function HomePage() {
     setAudioLang("");
     setMinQuality("");
     setApplied(EMPTY);
-    setPage(1);
   }
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    setError(false);
-    guardedSearch({ ...applied, page, pageSize: PAGE_SIZE }, lang)
-      .then((r) => {
-        if (!alive) return;
-        setData(r.data);
-        setUnavailable(r.unavailable);
-      })
-      .catch(() => {
-        if (alive) setError(true);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [applied, page, lang]);
 
   // --- Вкладка «Схоже на...» ---
   const [seeds, setSeeds] = useState<TitleCardType[]>([]);
@@ -688,32 +676,48 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Результати */}
-          {unavailable && <ApiBanner />}
-          {loading ? (
+          {/* Результати — прогресивно: перша сторінка одразу, решта догружається скролом */}
+          {list.unavailable && <ApiBanner />}
+          {list.firstLoad ? (
             <LoadingSkeleton />
-          ) : error ? (
+          ) : list.error ? (
             <EmptyState icon="⚠️" title={t("common.error")} />
-          ) : data && data.items.length === 0 ? (
+          ) : list.items.length === 0 && !list.busy ? (
             <EmptyState title={t("search.noResults")} />
-          ) : data ? (
+          ) : (
             <>
-              <p className="mb-3 text-xs text-mute">
-                {t("search.results", { n: data.total })}
-              </p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                {data.items.map((item) => (
-                  <TitleCard key={item.id} item={item} eager={page === 1} />
+              {list.total != null && (
+                <p className="mb-3 text-xs text-mute">{t("search.results", { n: list.total })}</p>
+              )}
+              <div
+                className={`grid grid-cols-2 gap-3 transition-opacity duration-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${
+                  list.busy ? "pointer-events-none opacity-60" : ""
+                }`}
+              >
+                {list.items.map((item, i) => (
+                  <TitleCard key={item.id} item={item} eager={i < PAGE_SIZE} />
                 ))}
               </div>
-              <Pagination
-                page={data.page}
-                total={data.total}
-                pageSize={data.pageSize}
-                onChange={setPage}
-              />
+              {list.busy && (
+                <div className="mt-4 flex items-center justify-center gap-2 py-3 text-sm text-mute">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  {t("common.loading")}
+                </div>
+              )}
+              {list.canMore && !list.busy && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={list.showMore}
+                    className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
+                  >
+                    {t("common.showMore")}
+                  </button>
+                </div>
+              )}
+              <div ref={list.sentinelRef} aria-hidden className="h-px w-full" />
             </>
-          ) : null}
+          )}
         </section>
       ) : (
         <section>

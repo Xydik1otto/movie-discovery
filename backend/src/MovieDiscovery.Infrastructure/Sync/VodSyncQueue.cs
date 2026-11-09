@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Imdb;
 using MovieDiscovery.Infrastructure.Watchability;
+using MovieDiscovery.Infrastructure.Wikidata;
 using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Infrastructure.Sync;
@@ -292,6 +293,60 @@ public sealed class YoutubeSyncBackgroundService(
             catch (Exception ex)
             {
                 log.LogWarning(ex, "Помилка youtube-синхронізації (limit={Limit})", job.Limit);
+            }
+        }
+    }
+}
+
+// ─── Назви/постери з Wikidata (uk + ru-фолбек, рішення власника 09.11) ───
+
+/// <summary>Джоба wikidata-names sync: uk/ru labels + P18 → titles.title_uk/title_ru/poster_path.</summary>
+public sealed record WikidataNamesSyncJob(int? MaxRows);
+
+/// <summary>Черга wikidata-names-синхронізації.</summary>
+public sealed class WikidataNamesSyncQueue
+{
+    private readonly System.Threading.Channels.Channel<WikidataNamesSyncJob> _channel =
+        System.Threading.Channels.Channel.CreateBounded<WikidataNamesSyncJob>(
+            new System.Threading.Channels.BoundedChannelOptions(10)
+            {
+                SingleReader = true,
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+            });
+
+    public int Count => _channel.Reader.Count;
+
+    public bool TryEnqueue(WikidataNamesSyncJob job) => _channel.Writer.TryWrite(job);
+
+    public IAsyncEnumerable<WikidataNamesSyncJob> ReadAllAsync(CancellationToken ct) => _channel.Reader.ReadAllAsync(ct);
+}
+
+/// <summary>Фонова обробка wikidata-names-джоб (SPARQL-бакети → staging → UPDATE titles).</summary>
+public sealed class WikidataNamesSyncBackgroundService(
+    IServiceScopeFactory scopeFactory,
+    ILogger<WikidataNamesSyncBackgroundService> log)
+    : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var queue = scopeFactory.CreateScope().ServiceProvider.GetRequiredService<WikidataNamesSyncQueue>();
+        await foreach (var job in queue.ReadAllAsync(stoppingToken))
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<WikidataNamesService>();
+                var result = await service.RunAsync(job.MaxRows, stoppingToken);
+                log.LogInformation("Wikidata-names джоба завершена: staged={Staged}, updated={Updated}, buckets={Buckets}",
+                    result.Staged, result.Updated, result.Buckets);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Помилка wikidata-names-синхронізації (maxRows={MaxRows})", job.MaxRows);
             }
         }
     }

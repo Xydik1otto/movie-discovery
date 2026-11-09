@@ -2,13 +2,33 @@ using MovieDiscovery.Infrastructure.Tmdb;
 
 namespace MovieDiscovery.Infrastructure.Services;
 
+/// <summary>Варіант онбординг-питання (onboarding FR-18). PosterUrl заповнює OnboardingPostersService.</summary>
+public sealed class OnboardingOptionDto
+{
+    public string Key { get; set; } = "";
+    public string NameUk { get; set; } = "";
+    public string NameEn { get; set; } = "";
+    public string? PosterUrl { get; set; }
+}
+
+/// <summary>Питання онбордингу (FR-18): posters/mood/era — мультивибір, titles — пошук-автокомпліт.</summary>
+public sealed class OnboardingQuestionDto
+{
+    public string Id { get; set; } = "";
+    public string Type { get; set; } = ""; // posters | mood | era | titles
+    public string PromptUk { get; set; } = "";
+    public string PromptEn { get; set; } = "";
+    public List<OnboardingOptionDto> Options { get; set; } = [];
+}
+
 /// <summary>
-/// Онбординг (FR-18): статичні 10 питань — 3 постери-мультивибір жанрів, 2 настрій, 2 ера,
-/// 3 «обери тайтл» (підказки; вибір через пошук, без карток). Варіанти — жанрові ключі uk/en назви.
+/// Онбординг (FR-18): статичні 10 питань — 3 постери-мультивибір жанрів, 2 настрій (жанри),
+/// 2 ера (десятиліття), 3 «назви тайтл» (type=titles, вибір через пошук-автокомпліт).
+/// Постери варіантів резолвить OnboardingPostersService (топ-популярний тайтл жанру/десятиліття).
 /// </summary>
 public static class OnboardingQuestions
 {
-    public static object[] Build() =>
+    public static List<OnboardingQuestionDto> Build() =>
     [
         Poster("posters-1",
             "Які постери відгукуються? (обери скільки завгодно)",
@@ -46,50 +66,58 @@ public static class OnboardingQuestions
             "Назви аніме/мангу, яку ти любиш (якщо є)", "Name an anime/manga you love (if any)"),
     ];
 
-    private static object Poster(string id, string promptUk, string promptEn, params string[] genreKeys) => new
-    {
-        id,
-        type = "posters",
-        promptUk,
-        promptEn,
-        options = genreKeys.Select(key => new
+    private static OnboardingQuestionDto Poster(string id, string promptUk, string promptEn, params string[] genreKeys) =>
+        new()
         {
-            key,
-            nameUk = TmdbGenres.ToUk(key),
-            nameEn = key,
-        }).ToArray(),
-    };
+            Id = id,
+            Type = "posters",
+            PromptUk = promptUk,
+            PromptEn = promptEn,
+            Options = genreKeys.Select(key => new OnboardingOptionDto
+            {
+                Key = key,
+                NameUk = TmdbGenres.ToUk(key),
+                NameEn = key,
+            }).ToList(),
+        };
 
-    private static object Mood(string id, string promptUk, string promptEn, params string[] genreKeys) => new
-    {
-        id,
-        type = "mood",
-        promptUk,
-        promptEn,
-        options = genreKeys.Select(key => new
+    private static OnboardingQuestionDto Mood(string id, string promptUk, string promptEn, params string[] genreKeys) =>
+        new()
         {
-            key,
-            nameUk = TmdbGenres.ToUk(key),
-            nameEn = key,
-        }).ToArray(),
-    };
+            Id = id,
+            Type = "mood",
+            PromptUk = promptUk,
+            PromptEn = promptEn,
+            Options = genreKeys.Select(key => new OnboardingOptionDto
+            {
+                Key = key,
+                NameUk = TmdbGenres.ToUk(key),
+                NameEn = key,
+            }).ToList(),
+        };
 
-    private static object Era(string id, string promptUk, string promptEn, params string[] decades) => new
-    {
-        id,
-        type = "era",
-        promptUk,
-        promptEn,
-        options = decades.Select(d => new { key = d, nameUk = EraUk(d), nameEn = d }).ToArray(),
-    };
+    private static OnboardingQuestionDto Era(string id, string promptUk, string promptEn, params string[] decades) =>
+        new()
+        {
+            Id = id,
+            Type = "era",
+            PromptUk = promptUk,
+            PromptEn = promptEn,
+            Options = decades.Select(d => new OnboardingOptionDto
+            {
+                Key = d,
+                NameUk = EraUk(d),
+                NameEn = d,
+            }).ToList(),
+        };
 
-    private static object Titles(string id, string promptUk, string promptEn) => new
+    private static OnboardingQuestionDto Titles(string id, string promptUk, string promptEn) => new()
     {
-        id,
-        type = "titles",
-        promptUk,
-        promptEn,
-        options = Array.Empty<object>(), // вибір тайтла — через пошук-автокомпліт
+        Id = id,
+        Type = "titles",
+        PromptUk = promptUk,
+        PromptEn = promptEn,
+        Options = [], // вибір тайтла — через пошук-автокомпліт
     };
 
     private static string EraUk(string decade) => decade switch

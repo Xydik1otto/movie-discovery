@@ -105,6 +105,7 @@ export const uk = {
   "lists.remove": "Видалити",
 
   "common.loading": "Завантаження…",
+  "common.showMore": "Показати ще",
   "common.error": "Помилка",
   "common.prev": "Назад",
   "common.next": "Далі",

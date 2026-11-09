@@ -201,6 +201,97 @@ export default function OnboardingPage() {
 
   const progress = totalSteps > 0 ? Math.min(100, ((step + 1) / totalSteps) * 100) : 0;
 
+  // Спільний пошуковий бокс улюблених тайтлів (кроки 8–10 і фінальний крок 11):
+  // живе автодоповнення з постерами; Enter додає першу підказку.
+  const searchBox = (
+    <div ref={boxRef} className="relative mt-4">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => options.length > 0 && setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter" && options.length > 0 && open) {
+            e.preventDefault();
+            addFavorite(options[0]);
+          }
+        }}
+        placeholder={t("onboarding.searchPlaceholder")}
+        disabled={favorites.length >= MAX_FAVORITES}
+        className="w-full rounded-xl border border-line bg-bg px-4 py-2.5 text-sm text-ink placeholder:text-mute/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
+      />
+      {open && options.length > 0 && (
+        <ul className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-line bg-panel shadow-xl">
+          {options.map((o) => {
+            const picked = favorites.some((f) => f.id === o.id);
+            const thumb = posterUrlFull(o.posterUrl, "w200");
+            return (
+              <li key={o.id}>
+                <button
+                  type="button"
+                  disabled={picked}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    addFavorite(o);
+                  }}
+                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                    picked ? "cursor-default text-mute opacity-50" : "text-ink hover:bg-panel-2"
+                  }`}
+                >
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt=""
+                      className="h-14 w-10 flex-none rounded object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex h-14 w-10 flex-none items-center justify-center rounded bg-panel-2 text-lg"
+                    >
+                      🎞️
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate">
+                    {o.title}
+                    {o.year != null ? ` (${o.year})` : ""}
+                  </span>
+                  {picked && <span aria-hidden>✓</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+
+  // Вибрані улюблені тайтли (чіпи) — спільні для всіх titles-кроків.
+  const favoriteChips =
+    favorites.length > 0 ? (
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {favorites.map((f) => (
+          <span
+            key={f.id}
+            className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-3 pr-1.5 text-xs font-medium text-accent-2"
+          >
+            {f.title}
+            {f.year != null ? ` (${f.year})` : ""}
+            <button
+              type="button"
+              aria-label={`${t("lists.remove")}: ${f.title}`}
+              onClick={() => setFavorites((prev) => prev.filter((x) => x.id !== f.id))}
+              className="rounded-full px-1 text-accent-2/70 hover:bg-accent/20 hover:text-accent-2"
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+    ) : null;
+
   const addFavorite = (item: TitleCard) => {
     if (favorites.length >= MAX_FAVORITES) return;
     if (favorites.some((f) => f.id === item.id)) return;
@@ -246,7 +337,7 @@ export default function OnboardingPage() {
       )}
 
       {/* Крок-питання (постери/настрій/ера) */}
-      {currentQ && (
+      {currentQ && currentQ.type !== "titles" && (
         <section className="rounded-3xl border border-line bg-panel p-5 sm:p-6">
           <h2 className="text-lg font-bold">
             {currentQ.type === "posters"
@@ -303,6 +394,21 @@ export default function OnboardingPage() {
         </section>
       )}
 
+      {/* Крок-питання «назви тайтл» (кроки 8–10): той самий живий автокомпліт з постерами */}
+      {currentQ && currentQ.type === "titles" && (
+        <section className="rounded-3xl border border-line bg-panel p-5 sm:p-6">
+          <h2 className="text-lg font-bold">
+            {lang === "uk" ? currentQ.promptUk : currentQ.promptEn}
+          </h2>
+          <p className="mt-1 text-xs text-mute">{t("onboarding.titlesHint")}</p>
+          <p className="mt-1 text-xs text-mute">
+            {t("onboarding.selected", { n: favorites.length })}
+          </p>
+          {searchBox}
+          {favorites.length > 0 && favoriteChips}
+        </section>
+      )}
+
       {/* Крок «3 улюблених тайтли» */}
       {!currentQ && (
         <section className="rounded-3xl border border-line bg-panel p-5 sm:p-6">
@@ -312,77 +418,8 @@ export default function OnboardingPage() {
             {t("onboarding.selected", { n: favorites.length })}
           </p>
 
-          <div ref={boxRef} className="relative mt-4">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => options.length > 0 && setOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setOpen(false);
-                if (e.key === "Enter" && options.length > 0 && open) {
-                  e.preventDefault();
-                  addFavorite(options[0]);
-                }
-              }}
-              placeholder={t("onboarding.searchPlaceholder")}
-              disabled={favorites.length >= MAX_FAVORITES}
-              className="w-full rounded-xl border border-line bg-bg px-4 py-2.5 text-sm text-ink placeholder:text-mute/60 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
-            />
-            {open && options.length > 0 && (
-              <ul className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-line bg-panel shadow-xl">
-                {options.map((o) => {
-                  const picked = favorites.some((f) => f.id === o.id);
-                  return (
-                    <li key={o.id}>
-                      <button
-                        type="button"
-                        disabled={picked}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          addFavorite(o);
-                        }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                          picked
-                            ? "cursor-default text-mute opacity-50"
-                            : "text-ink hover:bg-panel-2"
-                        }`}
-                      >
-                        <span aria-hidden>🎞️</span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {o.title}
-                          {o.year != null ? ` (${o.year})` : ""}
-                        </span>
-                        {picked && <span aria-hidden>✓</span>}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          {favorites.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {favorites.map((f) => (
-                <span
-                  key={f.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-3 pr-1.5 text-xs font-medium text-accent-2"
-                >
-                  {f.title}
-                  {f.year != null ? ` (${f.year})` : ""}
-                  <button
-                    type="button"
-                    aria-label={`${t("lists.remove")}: ${f.title}`}
-                    onClick={() => setFavorites((prev) => prev.filter((x) => x.id !== f.id))}
-                    className="rounded-full px-1 text-accent-2/70 hover:bg-accent/20 hover:text-accent-2"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          {searchBox}
+          {favoriteChips}
         </section>
       )}
 

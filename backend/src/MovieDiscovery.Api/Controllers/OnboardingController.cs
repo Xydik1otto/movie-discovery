@@ -10,10 +10,15 @@ namespace MovieDiscovery.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/onboarding")]
-public sealed class OnboardingController(TasteProfileService taste) : ControllerBase
+public sealed class OnboardingController(TasteProfileService taste, OnboardingPostersService posters) : ControllerBase
 {
     [HttpGet("questions")]
-    public IActionResult Questions() => Ok(new { questions = OnboardingQuestions.Build() });
+    public async Task<IActionResult> Questions(CancellationToken ct)
+    {
+        var questions = OnboardingQuestions.Build();
+        await posters.EnrichAsync(questions, ct);
+        return Ok(new { questions });
+    }
 
     public sealed record AnswersRequest(
         string[]? Picks,
