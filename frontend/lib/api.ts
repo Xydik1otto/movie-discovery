@@ -215,8 +215,11 @@ export async function similarBySeedsEx(
   try {
     return await request<{ items: SimilarItem[] }>(`/api/similar/by-seeds?${sp.toString()}`);
   } catch (e) {
-    // MD-03: 404 з error=titles_not_found — ЧЕСНА відповідь «еталони не знайдено».
-    // Фолбек на legacy POST би підмінив її рекомендаціями для іншого тайтла.
+    // CR-02: ЖОДНОГО legacy-fallback POST {tmdbIds} — він підміняв внутрішні id на tmdb
+    // (колізія A.id==B.tmdb_id давала РІЗНІ еталони: direct [3,5] vs fallback [4]) і губив filters.
+    // 404 з error=titles_not_found — чесна відповідь «еталони не знайдено»;
+    // 404/405 без цього коду = GET-маршруту нема (старіший бекенд) — чесна помилка
+    // «версія бекенду не підтримує GET by-seeds», а не мовчазна підміна еталона.
     if (
       e instanceof ApiError &&
       e.status === 404 &&
@@ -224,11 +227,12 @@ export async function similarBySeedsEx(
     ) {
       throw e;
     }
-    // 404/405 БЕЗ цього коду = GET-маршруту ще нема (бекенд старішої версії) —
-    // м'який фолбек на legacy POST {tmdbIds}: його змішаний resolver приймає
-    // й внутрішні id, тож результати коректні, лише студійні рамки не застосувались.
     if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
-      return similarBySeeds(internalIds, lang, limit);
+      throw new ApiError(
+        e.status,
+        "GET /api/similar/by-seeds не підтримується цим бекендом — оновіть бекенд.",
+        { error: "similar_by_seeds_get_unsupported" },
+      );
     }
     throw e;
   }
@@ -422,12 +426,19 @@ export async function getListStats(): Promise<ListStats> {
   return r ?? {};
 }
 
-// MD-04: POST /api/lists/migrate-guest → 200 {moved, skipped}. У тілі — лише
-// поля контракту бекенду (kind/titleId/rating); tmdbId не надсилаємо.
+// MD-04: POST /api/lists/migrate-guest. CR-03: відповідь містить per-entry статуси
+// (entries[].status: moved|duplicate|invalid_kind|invalid_rating|unknown_title);
+// skipped = ЛИШЕ справжні дублікати, відхилені записи окремо в entries.
+export interface MigrateEntryResult {
+  titleId: number;
+  kind: string;
+  status: string;
+}
+
 export async function migrateGuestLists(
   items: GuestListItem[],
-): Promise<{ moved?: number; skipped?: number }> {
-  const r = await request<{ moved?: number; skipped?: number } | null>(
+): Promise<{ moved?: number; skipped?: number; entries?: MigrateEntryResult[] }> {
+  const r = await request<{ moved?: number; skipped?: number; entries?: MigrateEntryResult[] } | null>(
     "/api/lists/migrate-guest",
     {
       method: "POST",

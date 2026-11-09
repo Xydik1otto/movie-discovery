@@ -354,4 +354,79 @@ public class ApiClientTests
         Assert.False(res.Ok);
         Assert.Equal("deserialization", res.Error);
     }
+
+    // ------------------------------------------------- CR-01: fail-closed без BOT_API_KEY
+
+    [Fact]
+    public async Task NoBotKey_GetLists_FailsClosed_WithoutHttpCall()
+    {
+        var handler = new StubHandler(_ => Json(200, ListsJson));
+        var client = Create(handler, botApiKey: null); // BOT_API_KEY не налаштований
+        Assert.False(client.HasBotKey);
+
+        var res = await client.GetListsAsync("watched", 777);
+        Assert.False(res.Ok);
+        Assert.Equal(ApiClient.BotKeyNotConfiguredError, res.Error);
+        Assert.Empty(handler.Requests); // жодного HTTP — персональні дані не чіпаємо
+    }
+
+    [Fact]
+    public async Task NoBotKey_AddToList_FailsClosed_WithoutHttpCall()
+    {
+        var handler = new StubHandler(_ => Json(201, "{}"));
+        var client = Create(handler, botApiKey: null);
+
+        var res = await client.AddToListAsync("watchlist", titleId: 5, telegramUserId: 777);
+        Assert.False(res.Ok);
+        Assert.Equal(ApiClient.BotKeyNotConfiguredError, res.Error);
+        Assert.Empty(handler.Requests); // інакше запис пішов би в спільний guest profile
+    }
+
+    [Fact]
+    public async Task NoBotKey_Search_StillWorks_AnonymousCapable()
+    {
+        // Пошук/схожість не персональні — працюють і без ключа (не fail-closed).
+        var handler = new StubHandler(_ => Json(200, SearchJson));
+        var client = Create(handler, botApiKey: null);
+        var res = await client.SearchAsync("друзі", 777);
+        Assert.True(res.Ok);
+        Assert.Single(handler.Requests);
+    }
+
+    // ------------------------------------------------- CR-06: паритет фільтрів (MD-06)
+
+    [Fact]
+    public async Task Search_Filters_IncludeCountryRuntimeStatus()
+    {
+        var handler = new StubHandler(_ => Json(200, SearchJson));
+        var client = Create(handler);
+        await client.SearchAsync("дюна", 777, new SearchFilters
+        {
+            Type = "movie",
+            Country = "UA,KR",
+            MinRuntime = 60,
+            MaxRuntime = 120,
+            Status = "airing",
+        });
+
+        var url = handler.Requests[0].RequestUri!.ToString();
+        Assert.Contains("country=UA%2CKR", url);
+        Assert.Contains("minRuntime=60", url);
+        Assert.Contains("maxRuntime=120", url);
+        Assert.Contains("status=airing", url);
+    }
+
+    [Fact]
+    public async Task Search_FiltersEmpty_NewFields_NotSent()
+    {
+        var handler = new StubHandler(_ => Json(200, SearchJson));
+        var client = Create(handler);
+        await client.SearchAsync("дюна", 777, new SearchFilters());
+
+        var url = handler.Requests[0].RequestUri!.ToString();
+        Assert.DoesNotContain("country=", url);
+        Assert.DoesNotContain("minRuntime=", url);
+        Assert.DoesNotContain("maxRuntime=", url);
+        Assert.DoesNotContain("status=", url);
+    }
 }

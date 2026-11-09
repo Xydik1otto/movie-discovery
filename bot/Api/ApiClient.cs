@@ -28,11 +28,19 @@ public sealed class ApiClient
     private readonly HttpClient _http;
     private readonly string? _botApiKey;
 
+    /// <summary>CR-01 fail-closed: персональні операції (списки юзера) без налаштованого
+    /// BOT_API_KEY відмовляються локально (без HTTP) — інакше API обробив би їх як анонімні
+    /// і записав у СПІЛЬНИЙ гостьовий профіль (усі telegram-юзери в одному профілі).</summary>
+    public const string BotKeyNotConfiguredError = "bot_key_not_configured";
+
     public ApiClient(HttpClient http, string? botApiKey = null)
     {
         _http = http;
         _botApiKey = string.IsNullOrWhiteSpace(botApiKey) ? null : botApiKey.Trim();
     }
+
+    /// <summary>true, якщо X-Bot-Key налаштований (персональні операції дозволені).</summary>
+    public bool HasBotKey => _botApiKey is not null;
 
     public ApiClient(string baseUrl, string? botApiKey = null)
         : this(new HttpClient
@@ -65,6 +73,15 @@ public sealed class ApiClient
                 sb.Append("&yearTo=").Append(yt.ToString(CultureInfo.InvariantCulture));
             if (filters.MinRating is { } mr)
                 sb.Append("&minRating=").Append(mr.ToString(CultureInfo.InvariantCulture));
+            // CR-06: паритет фільтрів з web (країна/тривалість/статус)
+            if (!string.IsNullOrWhiteSpace(filters.Country))
+                sb.Append("&country=").Append(Uri.EscapeDataString(filters.Country));
+            if (filters.MinRuntime is { } mn)
+                sb.Append("&minRuntime=").Append(mn.ToString(CultureInfo.InvariantCulture));
+            if (filters.MaxRuntime is { } mx)
+                sb.Append("&maxRuntime=").Append(mx.ToString(CultureInfo.InvariantCulture));
+            if (!string.IsNullOrWhiteSpace(filters.Status))
+                sb.Append("&status=").Append(Uri.EscapeDataString(filters.Status));
         }
 
         sb.Append("&page=").Append(page)
@@ -91,10 +108,13 @@ public sealed class ApiClient
         return Unwrap(res);
     }
 
-    /// <summary>GET /api/lists?kind=watchlist|watched&amp;lang= — профіль резолвиться на бекенді з заголовків.</summary>
+    /// <summary>GET /api/lists?kind=watchlist|watched&amp;lang= — профіль резолвиться на бекенді з заголовків.
+    /// CR-01 fail-closed: без BOT_API_KEY — локальна відмова (персональні дані не чіпаємо).</summary>
     public async Task<ApiResult<IReadOnlyList<TitleCard>>> GetListsAsync(
         string kind, long telegramUserId, string lang = "uk", CancellationToken ct = default)
     {
+        if (_botApiKey is null)
+            return ApiResult<IReadOnlyList<TitleCard>>.Failure(null, BotKeyNotConfiguredError);
         var res = await SendAsync<ItemsResponse>(HttpMethod.Get,
             $"api/lists?kind={Uri.EscapeDataString(kind)}&lang={Uri.EscapeDataString(lang)}", null, telegramUserId, ct);
         return Unwrap(res);
@@ -103,9 +123,13 @@ public sealed class ApiClient
     /// <summary>
     /// POST /api/lists/{kind} { titleId } — ідемпотентний upsert за ВНУТРІШНІМ id тайтла.
     /// 201 успіх; 409 already_in_list; 404 title_not_found. Тіло відповіді не читаємо — важливий лише статус.
+    /// CR-01 fail-closed: без BOT_API_KEY — локальна відмова (без HTTP; інакше запис пішов би
+    /// у спільний гостьовий профіль).
     /// </summary>
     public async Task<ApiResult<bool>> AddToListAsync(string kind, int titleId, long telegramUserId, CancellationToken ct = default)
     {
+        if (_botApiKey is null)
+            return ApiResult<bool>.Failure(null, BotKeyNotConfiguredError);
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, $"api/lists/{Uri.EscapeDataString(kind)}");

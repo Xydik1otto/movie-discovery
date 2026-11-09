@@ -317,6 +317,7 @@ export const en: Dict = {
   "migrate.error": "Could not move them — try again",
   // MD-04: exact partial-migration stats + retry (snapshot is kept).
   "migrate.partial": "Moved: {moved}, skipped: {skipped}. Try again — repeating the migration does not duplicate entries.",
+  "migrate.rejected": "Could not migrate {n} entr(ies) — the title is missing from the catalog or the data is invalid. They remain in your guest list.",
 
   // MD-04: guest lists in localStorage (FR-16)
   "lists.guestNotice": "Guest mode: lists are kept in this browser only. Log in to save them to your account.",

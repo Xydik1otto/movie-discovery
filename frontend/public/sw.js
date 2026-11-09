@@ -2,6 +2,9 @@
 // Кешуємо лише статику (_next/static, іконки) і постери TMDB + навігації для офлайн-фолбеку.
 // /api/* НЕ кешуємо (живі дані). POST/інші методи не перехоплюємо.
 const CACHE = "mvdc-v1";
+// CR-06: очищаємо в activate ЛИШЕ кеші СВОГО префікса (mvdc-*) — чужі кеші
+// origin (інші застосунки/PWA на тому ж домені) не чіпаємо.
+const CACHE_PREFIX = "mvdc-";
 const OFFLINE_URL = "/offline";
 
 self.addEventListener("install", (event) => {
@@ -22,7 +25,13 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      // CR-06: видаляємо лише застарілі кеші свого префікса mvdc-*;
+      // кеші інших додатків на цьому origin залишаються недоторканими.
+      await Promise.all(
+        keys
+          .filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE)
+          .map((k) => caches.delete(k)),
+      );
       await self.clients.claim();
     })(),
   );

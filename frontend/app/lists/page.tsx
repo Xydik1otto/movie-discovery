@@ -17,6 +17,7 @@ import {
   guestSnapshot,
   hasMigrationMarker,
   loadGuestLists,
+  removeGuestEntries,
   removeGuestItem,
   setMigrationMarker,
   storageAvailable,
@@ -65,9 +66,11 @@ export default function ListsPage() {
   const [guestCount, setGuestCount] = useState<number | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [migrated, setMigrated] = useState(false);
-  const [migrateResult, setMigrateResult] = useState<{ moved: number; skipped: number } | null>(
-    null,
-  );
+  const [migrateResult, setMigrateResult] = useState<{
+    moved: number;
+    skipped: number;
+    rejected: { kind: string; titleId: number; status: string }[];
+  } | null>(null);
   const [migrateError, setMigrateError] = useState(false);
   // Перезавантаження серверних списків після міграції.
   const [reload, setReload] = useState(0);
@@ -184,8 +187,13 @@ export default function ListsPage() {
     setActionError(false);
     if (isGuest) {
       // MD-04: гість — оцінка в localStorage (ідемпотентний upsert).
-      await rateListEntry(false, kind, { id: item.id, tmdbId: item.tmdbId ?? null }, rating);
-      setGuestEntries(loadGuestLists());
+      // CR-04: відмова запису (quota/privacy) — чесний банер, не «успіх».
+      try {
+        await rateListEntry(false, kind, { id: item.id, tmdbId: item.tmdbId ?? null }, rating);
+        setGuestEntries(loadGuestLists());
+      } catch {
+        setActionError(true);
+      }
       return;
     }
     const prevItems = items;
@@ -205,7 +213,9 @@ export default function ListsPage() {
   }
 
   // MD-04: міграція ЛИШЕ за дією користувача, знімок — з localStorage.
-  // Маркер і очищення знімка — тільки коли moved+skipped покрили весь знімок.
+  // CR-03: per-entry статуси (moved|duplicate|invalid_kind|invalid_rating|unknown_title);
+  // зі знімка прибираємо ЛИШЕ підтверджені записи — rejected лишаються для retry,
+  // нові entries інших вкладок не стираються (версійно-безпечне видалення).
   async function doMigrate() {
     if (!user || user.id == null) return;
     const snap = guestSnapshot();
@@ -219,10 +229,22 @@ export default function ListsPage() {
     try {
       const r = await migrateGuestLists(snap);
       const moved = r.moved ?? 0;
-      const skipped = r.skipped ?? 0;
-      if (moved + skipped === snap.length) {
-        // Повне підтверджене перенесення: маркер scoped за акаунтом+знімком,
-        // знімок чистимо. Повторна міграція не дублює (бекенд ідемпотентний).
+      const skipped = r.skipped ?? 0; // ЛИШЕ дублікати (alreadyExisting)
+      const entries = r.entries ?? [];
+      const confirmed = entries.filter((e) => e.status === "moved" || e.status === "duplicate");
+      const rejected = entries
+        .filter((e) => e.status !== "moved" && e.status !== "duplicate")
+        .map((e) => ({ kind: e.kind, titleId: e.titleId, status: e.status }));
+      const dropConfirmed = () => {
+        // Прибираємо з localStorage лише підтверджені пари (kind,titleId):
+        // записи, додані іншою вкладкою під час міграції, лишаються.
+        removeGuestEntries(confirmed.map((e) => ({ kind: e.kind, titleId: e.titleId })));
+        const rest = loadGuestLists();
+        setGuestEntries(rest);
+        setGuestCount(rest.length > 0 ? rest.length : null);
+      };
+      if (entries.length === 0 && moved + skipped === snap.length) {
+        // Legacy-бекенд без per-entry статусів (стара семантика).
         setMigrationMarker(user.id, snap);
         clearGuestSnapshot();
         setGuestEntries([]);
@@ -230,9 +252,21 @@ export default function ListsPage() {
         setMigrated(true);
         setReload((x) => x + 1);
         loadStats();
+      } else if (confirmed.length === snap.length) {
+        // Повне підтверджене перенесення: маркер scoped за акаунтом+знімком.
+        setMigrationMarker(user.id, snap);
+        dropConfirmed();
+        setMigrated(true);
+        setReload((x) => x + 1);
+        loadStats();
+      } else if (confirmed.length > 0) {
+        // Частковий результат: підтверджені прибираємо, rejected лишаються у знімку.
+        dropConfirmed();
+        setMigrateResult({ moved, skipped, rejected });
+        setMigrateError(true);
       } else {
-        // Частковий результат: знімок і маркер недоторкані, чесна статистика + retry.
-        setMigrateResult({ moved, skipped });
+        // Нічого не підтверджено — знімок недоторканий, чесні причини.
+        setMigrateResult({ moved: 0, skipped: 0, rejected });
         setMigrateError(true);
       }
     } catch {
@@ -321,12 +355,19 @@ export default function ListsPage() {
         <div className="mb-4">
           <p className="text-sm text-amber-300">{t("migrate.error")}</p>
           {migrateResult && (
-            <p className="mt-1 text-sm text-amber-300">
-              {t("migrate.partial", {
-                moved: migrateResult.moved,
-                skipped: migrateResult.skipped,
-              })}
-            </p>
+            <>
+              <p className="mt-1 text-sm text-amber-300">
+                {t("migrate.partial", {
+                  moved: migrateResult.moved,
+                  skipped: migrateResult.skipped,
+                })}
+              </p>
+              {migrateResult.rejected.length > 0 && (
+                <p className="mt-1 text-sm text-amber-300">
+                  {t("migrate.rejected", { n: migrateResult.rejected.length })}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

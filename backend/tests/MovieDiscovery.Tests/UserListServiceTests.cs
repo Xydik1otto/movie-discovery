@@ -94,23 +94,48 @@ public class UserListServiceTests
         {
             new(ListKinds.Watched, 1, 8),
             new(ListKinds.Liked, 2, null),
-            new(ListKinds.Disliked, 999, null), // неіснуючий тайтл → skipped
+            new(ListKinds.Disliked, 999, null), // неіснуючий тайтл → rejected (CR-03, НЕ skipped)
         };
 
-        var (firstMoved, firstSkipped) = await lists.MigrateGuestAsync("u1", items);
-        Assert.Equal(2, firstMoved);
-        Assert.Equal(1, firstSkipped);
+        var first = await lists.MigrateGuestAsync("u1", items);
+        Assert.Equal(2, first.Moved);
+        Assert.Equal(0, first.Skipped); // дублікатів нема; missing-title → rejected, не skipped
+        var rej = Assert.Single(first.Entries.Where(e => e.Status == "unknown_title"));
+        Assert.Equal(999, rej.TitleId);
+        Assert.Equal(2, first.Entries.Count(e => e.Status == "moved"));
 
-        // повторний перенос: нічого не дублює (UNIQUE-семантика)
-        var (secondMoved, secondSkipped) = await lists.MigrateGuestAsync("u1", items);
-        Assert.Equal(0, secondMoved);
-        Assert.Equal(3, secondSkipped);
+        // повторний перенос: нічого не дублює (UNIQUE-семантика); усі 3 → duplicate/rejected
+        var second = await lists.MigrateGuestAsync("u1", items);
+        Assert.Equal(0, second.Moved);
+        Assert.Equal(2, second.Skipped); // лише справжні дублікати
+        Assert.Equal(3, second.Entries.Count(e => e.Status is "duplicate" or "unknown_title"));
         Assert.Equal(2, await db.ListEntries.CountAsync());
 
         // перенос згенерував профільний сигнал: негативних жанрів нема, позитивні є
         var taste = new TasteProfileService(db, Options.Create(new ProfileOptions()));
         var up = await taste.ResolveAsync("u1");
         Assert.NotEmpty(MovieDiscovery.Core.Taste.TasteJson.Parse(up.TasteGenres));
+    }
+
+    [Fact]
+    public async Task Migrate_Guest_Rejects_Invalid_Kind_And_Rating_Separately()
+    {
+        var (db, _, lists, _) = New("lists-migrate-invalid");
+        db.Titles.Add(NewTitle(1, ["drama"]));
+        await db.SaveChangesAsync();
+
+        var res = await lists.MigrateGuestAsync("u1",
+        [
+            new("bogus_kind", 1, null),      // invalid_kind
+            new(ListKinds.Watched, 1, 42),   // invalid_rating
+        ]);
+
+        Assert.Equal(0, res.Moved);
+        Assert.Equal(0, res.Skipped);
+        Assert.Equal(2, res.Entries.Count);
+        Assert.Contains(res.Entries, e => e.Status == "invalid_kind");
+        Assert.Contains(res.Entries, e => e.Status == "invalid_rating");
+        Assert.Equal(0, await db.ListEntries.CountAsync());
     }
 
     [Fact]

@@ -15,6 +15,15 @@ export interface ListRef {
 // Куди ляг запис: "server" (акаунт) або "guest" (лише цей браузер).
 export type ListTarget = "server" | "guest";
 
+// CR-04: відмова localStorage (quota/приватний режим) — ЧЕСНА помилка,
+// а не «успіх» без запису. UI ловить через catch і показує банер.
+export class GuestStorageError extends Error {
+  constructor() {
+    super("guest_storage_failed");
+    this.name = "GuestStorageError";
+  }
+}
+
 // Ідемпотентний upsert: POST /api/lists/{kind} {titleId, rating?} або
 // addGuestItem за (kind, titleId). rating опційний (watchlist без оцінки).
 export async function addListItem(
@@ -28,7 +37,11 @@ export async function addListItem(
     await addToList(ref, kind, rating ?? null);
     return "server";
   }
-  addGuestItem(kind, { id: ref.id, tmdbId: ref.tmdbId }, rating ?? null, meta ?? null);
+  // CR-04: addGuestItem повертає false, коли запис НЕ зберігся (quota/privacy) —
+  // ігнорувати не можна: «додано» без збереження = false success.
+  if (!addGuestItem(kind, { id: ref.id, tmdbId: ref.tmdbId }, rating ?? null, meta ?? null)) {
+    throw new GuestStorageError();
+  }
   return "guest";
 }
 
@@ -43,6 +56,8 @@ export async function rateListEntry(
     await rateListItem(kind, ref, rating);
     return "server";
   }
-  rateGuestItem(kind, ref.id, rating);
+  if (!rateGuestItem(kind, ref.id, rating)) {
+    throw new GuestStorageError();
+  }
   return "guest";
 }

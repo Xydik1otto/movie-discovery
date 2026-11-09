@@ -54,8 +54,17 @@ public sealed record SearchFilters
     public int? YearFrom { get; init; }
     public int? YearTo { get; init; }
     public int? MinRating { get; init; }
+    // CR-06 (MD-06 паритет): країна (кома-коди ISO-2), тривалість (хв), статус тайтла.
+    public string? Country { get; init; } // UA | US | KR | JP … (кома-список)
+    public int? MinRuntime { get; init; } // хвилини
+    public int? MaxRuntime { get; init; }
+    public string? Status { get; init; }  // airing | finished (значення як у БД)
 
     public bool IsEmpty => Type is null
         && (Genres is null || Genres.Count == 0)
-        && YearFrom is null && YearTo is null && MinRating is null;
+        && YearFrom is null && YearTo is null
+        && MinRating is null
+        && string.IsNullOrWhiteSpace(Country)
+        && MinRuntime is null && MaxRuntime is null
+        && string.IsNullOrWhiteSpace(Status);
 }

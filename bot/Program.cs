@@ -16,7 +16,7 @@ catch
 
 var config = BotConfig.FromEnvironment();
 if (string.IsNullOrWhiteSpace(config.BotApiKey))
-    Log.Error("BOT_API_KEY порожній — заголовок X-Bot-Key не надсилатиметься (авторизація API вимкнена).");
+    Log.Error("BOT_API_KEY порожній — X-Bot-Key не надсилається; персональні операції (списки/оцінки) fail-closed: помилка bot_key_not_configured замість запису в спільний гостьовий профіль.");
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {

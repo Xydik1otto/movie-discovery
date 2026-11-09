@@ -38,6 +38,9 @@ services:
       # YouTube (FR-20): пошук легальних повних викладок
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       JIKAN_URL: ${JIKAN_URL:-https://api.jikan.moe/v4}
+      # MD-05/CR-01: спільний ключ бота (той самий у bot). Порожній → bot-header
+      # авторизація вимкнена на API (X-Bot-Key запити → 403).
+      BOT_API_KEY: ${BOT_API_KEY:-}
     ports:
       - "${API_PORT:-5200}:5200"
     depends_on:
@@ -83,6 +86,10 @@ services:
     environment:
       API_URL: http://api:5200
       TG_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+      # MD-05/CR-01: той самий ключ, що й у api. Порожній → бот НЕ надсилає X-Bot-Key,
+      # а персональні операції (списки/оцінки) fail-closed: помилка bot_key_not_configured
+      # замість мовчазного запису в спільний гостьовий профіль.
+      BOT_API_KEY: ${BOT_API_KEY:-}
     depends_on:
       - api
     volumes:

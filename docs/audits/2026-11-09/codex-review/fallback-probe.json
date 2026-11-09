@@ -1,0 +1,18 @@
+{
+  "calls": [
+    {
+      "url": "/api/similar/by-seeds?ids=1&genres=science+fiction&limit=10&lang=uk"
+    },
+    {
+      "url": "/api/similar/by-seeds",
+      "body": "{\"tmdbIds\":[1],\"limit\":10,\"lang\":\"uk\"}"
+    }
+  ],
+  "expectedInternalResultIds": [
+    3,
+    5
+  ],
+  "actualFallbackResultIds": [
+    4
+  ]
+}

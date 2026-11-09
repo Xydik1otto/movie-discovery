@@ -143,11 +143,21 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             topGenres);
     }
 
+    /// <summary>CR-03: результат міграції гостьових items — лічильники + per-entry статуси.
+    /// Skipped = дублікати (alreadyExisting); rejected — окремо, з причиною (не змішувати!).</summary>
+    public sealed record MigrateGuestResult(
+        int Moved, int Skipped, IReadOnlyList<MigratedEntry> Entries);
+
+    /// <summary>Per-entry статус: titleId+kind ідентифікують запис значенням (не індексом),
+    /// status: moved | duplicate | invalid_kind | invalid_rating | unknown_title.</summary>
+    public sealed record MigratedEntry(int TitleId, string Kind, string Status);
+
     /// <summary>
     /// Перенести гостьові items у профіль юзера (FR-16): ідемпотентно — дублікати (kind,title)
-    /// і невалідні записи пропускаються; після перенесення — RecomputeAsync.
+    /// пропускаються як duplicate; невалідні/невідомі тайтли — rejected з причиною (CR-03:
+    /// не змішувати з duplicates). Після перенесення — RecomputeAsync.
     /// </summary>
-    public async Task<(int Moved, int Skipped)> MigrateGuestAsync(
+    public async Task<MigrateGuestResult> MigrateGuestAsync(
         string userId, IReadOnlyList<GuestListItem> items, CancellationToken ct = default)
     {
         var up = await taste.ResolveAsync(userId, ct);
@@ -163,15 +173,21 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .ToHashSet();
 
         int moved = 0, skipped = 0;
+        var entries = new List<MigratedEntry>(items.Count);
         var now = DateTime.UtcNow;
         foreach (var item in items)
         {
-            var valid = ListKinds.IsValid(item.Kind)
-                        && ListKinds.IsValidRating(item.Rating)
-                        && titles.TryGetValue(item.TitleId, out var t);
-            if (!valid || existing.Contains((item.Kind, item.TitleId)))
+            var status = ListKinds.IsValid(item.Kind)
+                ? ListKinds.IsValidRating(item.Rating)
+                    ? titles.TryGetValue(item.TitleId, out var t)
+                        ? existing.Contains((item.Kind, item.TitleId)) ? "duplicate" : null
+                        : "unknown_title"
+                    : "invalid_rating"
+                : "invalid_kind";
+            if (status is not null)
             {
-                skipped++;
+                if (status == "duplicate") skipped++;
+                entries.Add(new MigratedEntry(item.TitleId, item.Kind, status));
                 continue;
             }
 
@@ -188,12 +204,13 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             });
             existing.Add((item.Kind, item.TitleId));
             moved++;
+            entries.Add(new MigratedEntry(title.Id, item.Kind, "moved"));
         }
 
         await db.SaveChangesAsync(ct);
         if (moved > 0)
             await taste.RecomputeAsync(userId, ct);
-        return (moved, skipped);
+        return new MigrateGuestResult(moved, skipped, entries);
     }
 
     private async Task<Core.Domain.Title?> FindTitleAsync(int? titleId, int? tmdbId, CancellationToken ct)

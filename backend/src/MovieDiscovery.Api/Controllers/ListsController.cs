@@ -249,8 +249,16 @@ public sealed class ListsController(
     {
         if (!TryUserId(out var userId))
             return Unauthorized(new { error = "unauthorized", message = "Потрібен вхід" });
-        var (moved, skipped) = await userLists.MigrateGuestAsync(userId, req.Items ?? [], ct);
-        return Ok(new { moved, skipped });
+        var res = await userLists.MigrateGuestAsync(userId, req.Items ?? [], ct);
+        // CR-03: per-entry статуси (moved|duplicate|invalid_kind|invalid_rating|unknown_title);
+        // skipped = лише дублікати, rejected окремо в entries — клієнт чистить snapshot
+        // тільки по підтверджених записах.
+        return Ok(new
+        {
+            moved = res.Moved,
+            skipped = res.Skipped,
+            entries = res.Entries.Select(e => new { titleId = e.TitleId, kind = e.Kind, status = e.Status }),
+        });
     }
 
     /// <summary>Оновити оцінку запису списку. MD-01/MD-05: власник — bot-профіль, cookie-юзер

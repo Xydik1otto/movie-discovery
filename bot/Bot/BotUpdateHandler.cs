@@ -187,6 +187,7 @@ public sealed class BotUpdateHandler
             var res = await _api.AddToListAsync(kind, titleId, userId, ct);
             var answer = res.Ok
                 ? Strings.S(lang, kind == "watchlist" ? "add.done.watchlist" : "add.done.watched")
+                : res.Error == ApiClient.BotKeyNotConfiguredError ? Strings.S(lang, "err.botKey")
                 : res.Status == 409 ? Strings.S(lang, "add.already")
                 : res.IsNotFound ? Strings.S(lang, "err.notfound")
                 : res.Status == 403 ? Strings.S(lang, "err.api")
@@ -322,6 +323,33 @@ public sealed class BotUpdateHandler
                     : draft with { MinRating = null };
                 break;
 
+            case "country" when parts.Length > 2:
+                // CR-06: одиночний вибір; повторний клік по вибраній країні скидає.
+                draft = Keyboards.FilterCountries.Contains(parts[2])
+                    ? draft with { Country = draft.Country == parts[2] ? null : parts[2] }
+                    : draft with { Country = null };
+                break;
+
+            case "runtime" when parts.Length > 2:
+            {
+                var (min, max, ok) = ParseRuntimeRange(parts[2]);
+                if (!ok)
+                {
+                    await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), showAlert: true, cancellationToken: ct);
+                    return;
+                }
+
+                var same = draft.RuntimeMin == min && draft.RuntimeMax == max;
+                draft = draft with { RuntimeMin = same ? null : min, RuntimeMax = same ? null : max };
+                break;
+            }
+
+            case "status" when parts.Length > 2:
+                draft = Keyboards.FilterStatuses.Contains(parts[2])
+                    ? draft with { Status = draft.Status == parts[2] ? null : parts[2] }
+                    : draft with { Status = null };
+                break;
+
             case "go":
                 // чернетку спожито; пошук іде з фільтрами, пагінація збереже їх у SearchState
                 _state.ClearFilter(chatId);
@@ -361,6 +389,19 @@ public sealed class BotUpdateHandler
         return (from == 0 ? null : from, to == 0 ? null : to, true);
     }
 
+    /// <summary>CR-06: пресет тривалості "min-max" (0 = без межі) → (min?, max?, ok).</summary>
+    private static (int? Min, int? Max, bool Ok) ParseRuntimeRange(string raw)
+    {
+        var bounds = raw.Split('-');
+        if (bounds.Length != 2
+            || !int.TryParse(bounds[0], out var min)
+            || !int.TryParse(bounds[1], out var max)
+            || min < 0 || max < 0)
+            return (null, null, false);
+
+        return (min == 0 ? null : min, max == 0 ? null : max, true);
+    }
+
     private string FilterBuilderText(long chatId, string lang)
     {
         var draft = _state.GetFilter(chatId)!;
@@ -378,6 +419,18 @@ public sealed class BotUpdateHandler
 
         if (draft.MinRating is { } mr)
             summary.Add(Strings.F(lang, "fi.ratingSummary", mr));
+
+        // CR-06: країна/тривалість/статус у summary
+        if (!string.IsNullOrWhiteSpace(draft.Country))
+            summary.Add(Strings.F(lang, "fi.countrySummary", draft.Country));
+        if (draft.RuntimeMin is { } rmin || draft.RuntimeMax is { } rmax)
+        {
+            var from = draft.RuntimeMin?.ToString() ?? "…";
+            var to = draft.RuntimeMax?.ToString() ?? "…";
+            summary.Add(Strings.F(lang, "fi.runtimeSummary", from, to));
+        }
+        if (!string.IsNullOrWhiteSpace(draft.Status))
+            summary.Add(Strings.S(lang, $"fi.status.{draft.Status}"));
 
         var state = summary.Count == 0
             ? Strings.S(lang, "find.state.none")
@@ -607,7 +660,8 @@ public sealed class BotUpdateHandler
     // ------------------------------------------------------------------ помилки API
 
     private static string DescribeApiError<T>(ApiResult<T> res, string lang)
-        => res.IsNotFound ? Strings.S(lang, "err.notfound")
+        => res.Error == ApiClient.BotKeyNotConfiguredError ? Strings.S(lang, "err.botKey")
+            : res.IsNotFound ? Strings.S(lang, "err.notfound")
             : res.IsServiceUnavailable ? Strings.S(lang, "err.semantic")
             : res.IsTimeout ? Strings.S(lang, "err.timeout")
             : Strings.S(lang, "err.api");

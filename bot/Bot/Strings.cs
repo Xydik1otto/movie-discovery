@@ -79,6 +79,13 @@ public static class Strings
         ["fi.btnCancel"] = "✖️ Скасувати",
         ["fi.yearsSummary"] = "роки: {0}–{1}",
         ["fi.ratingSummary"] = "рейтинг ≥{0}",
+        ["fi.countrySummary"] = "країна: {0}",
+        ["fi.runtimeSummary"] = "тривалість: {0}–{1} хв",
+        ["fi.runtime.short"] = "<60 хв",
+        ["fi.runtime.feature"] = "60–120 хв",
+        ["fi.runtime.long"] = "120+ хв",
+        ["fi.status.airing"] = "виходить",
+        ["fi.status.finished"] = "завершений",
 
         ["search.usage"] = "🔍 Використання: /search &lt;назва&gt;",
         ["search.header"] = "🔍 Результати за «{0}» — сторінка {1}/{2} · знайдено: {3}",
@@ -119,6 +126,7 @@ public static class Strings
         ["err.api"] = "😵 Сервіс недоступний. Спробуйте пізніше.",
         ["err.timeout"] = "⏳ Сервер не відповів вчасно. Спробуйте ще раз.",
         ["err.generic"] = "Щось пішло не так. Спробуйте ще раз.",
+        ["err.botKey"] = "🔐 Персональні списки недоступні: бот не налаштований (немає ключа доступу до API). Зверніться до адміністратора — ваші дані не записано.",
 
         ["add.done.watchlist"] = "➕ Додано в «Хочу подивитись»",
         ["add.done.watched"] = "✅ Додано в «Переглянуте»",
@@ -201,6 +209,13 @@ public static class Strings
         ["fi.btnCancel"] = "✖️ Cancel",
         ["fi.yearsSummary"] = "years: {0}–{1}",
         ["fi.ratingSummary"] = "rating ≥{0}",
+        ["fi.countrySummary"] = "country: {0}",
+        ["fi.runtimeSummary"] = "runtime: {0}–{1} min",
+        ["fi.runtime.short"] = "<60 min",
+        ["fi.runtime.feature"] = "60–120 min",
+        ["fi.runtime.long"] = "120+ min",
+        ["fi.status.airing"] = "airing",
+        ["fi.status.finished"] = "finished",
 
         ["search.usage"] = "🔍 Usage: /search &lt;title&gt;",
         ["search.header"] = "🔍 Results for «{0}» — page {1}/{2} · total: {3}",
@@ -241,6 +256,7 @@ public static class Strings
         ["err.api"] = "😵 Service unavailable. Try again later.",
         ["err.timeout"] = "⏳ The server didn't respond in time. Please try again.",
         ["err.generic"] = "Something went wrong. Please try again.",
+        ["err.botKey"] = "🔐 Personal lists are unavailable: the bot is not configured (missing API access key). Ask the administrator — your data was NOT saved.",
 
         ["add.done.watchlist"] = "➕ Added to Watchlist",
         ["add.done.watched"] = "✅ Added to Watched",

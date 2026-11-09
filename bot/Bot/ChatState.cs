@@ -21,6 +21,11 @@ public sealed record FilterDraft(string Query)
     public int? YearFrom { get; init; }
     public int? YearTo { get; init; }
     public int? MinRating { get; init; }
+    // CR-06: паритет фільтрів з web (MD-06)
+    public string? Country { get; init; }     // ISO-2 код (одне значення; повторний клік скидає)
+    public int? RuntimeMin { get; init; }     // хвилини (пресети)
+    public int? RuntimeMax { get; init; }
+    public string? Status { get; init; }      // airing | finished
 
     /// <summary>Перемкнути жанр: був у списку — прибрати, не було — додати.</summary>
     public FilterDraft ToggleGenre(string genre)
@@ -29,7 +34,10 @@ public sealed record FilterDraft(string Query)
             : this with { Genres = [.. Genres, genre] };
 
     public bool HasSelection => Type is not null || Genres.Count > 0
-        || YearFrom is not null || YearTo is not null || MinRating is not null;
+        || YearFrom is not null || YearTo is not null || MinRating is not null
+        || !string.IsNullOrWhiteSpace(Country)
+        || RuntimeMin is not null || RuntimeMax is not null
+        || !string.IsNullOrWhiteSpace(Status);
 
     public SearchFilters ToApiFilters() => new()
     {
@@ -38,6 +46,10 @@ public sealed record FilterDraft(string Query)
         YearFrom = YearFrom,
         YearTo = YearTo,
         MinRating = MinRating,
+        Country = string.IsNullOrWhiteSpace(Country) ? null : Country,
+        MinRuntime = RuntimeMin,
+        MaxRuntime = RuntimeMax,
+        Status = string.IsNullOrWhiteSpace(Status) ? null : Status,
     };
 }
 

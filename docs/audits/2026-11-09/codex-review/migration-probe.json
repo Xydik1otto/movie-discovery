@@ -1,0 +1,11 @@
+{
+  "register": 200,
+  "missingTitleMigration": {
+    "status": 200,
+    "body": {
+      "moved": 0,
+      "skipped": 1
+    }
+  },
+  "meaning": "Frontend clears snapshot when moved+skipped == input length, including rejected missing titles."
+}

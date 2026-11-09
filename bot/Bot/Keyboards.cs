@@ -22,6 +22,15 @@ public static class Keyboards
     /// <summary>Пресети мінімального рейтингу.</summary>
     public static readonly IReadOnlyList<int> FilterRatings = [6, 7, 8, 9];
 
+    /// <summary>CR-06: пресети країн (ISO-2 коди, як у FR-19 web-фільтрів).</summary>
+    public static readonly IReadOnlyList<string> FilterCountries = ["UA", "US", "GB", "KR", "JP"];
+
+    /// <summary>CR-06: пресети тривалості (min, max у хвилинах); 0 = без межі. Callback: fi:runtime:min-max.</summary>
+    public static readonly IReadOnlyList<(int Min, int Max)> FilterRuntimes = [(0, 59), (60, 120), (121, 0)];
+
+    /// <summary>CR-06: статуси тайтла (значення як у БД: airing/finished).</summary>
+    public static readonly IReadOnlyList<string> FilterStatuses = ["airing", "finished"];
+
     /// <summary>Головне меню /start: підказки-команди як callback-кнопки.</summary>
     public static InlineKeyboardMarkup MainMenu(string lang) => new(new[]
     {
@@ -123,6 +132,23 @@ public static class Keyboards
         // рейтинг
         rows.Add(FilterRatings.Select(r =>
             BtnRaw($"fi:rating:{r}", Marked(draft.MinRating == r, Strings.F(lang, "fi.rating.n", r)))));
+
+        // CR-06: країни (одиночний вибір; повторний клік по вибраній — скидає)
+        rows.Add(FilterCountries.Select(c =>
+            BtnRaw($"fi:country:{c}", Marked(draft.Country == c, c))));
+        // CR-06: тривалість (пресети хвилин)
+        var runtimeLabels = new[] { "fi.runtime.short", "fi.runtime.feature", "fi.runtime.long" };
+        var runtimeRow = new List<InlineKeyboardButton>();
+        for (var i = 0; i < FilterRuntimes.Count; i++)
+        {
+            var (min, max) = FilterRuntimes[i];
+            var selected = draft.RuntimeMin == (min == 0 ? null : min) && draft.RuntimeMax == (max == 0 ? null : max);
+            runtimeRow.Add(BtnRaw($"fi:runtime:{min}-{max}", Marked(selected, Strings.S(lang, runtimeLabels[i]))));
+        }
+        rows.Add(runtimeRow);
+        // CR-06: статус тайтла (airing/finished)
+        rows.Add(FilterStatuses.Select(s =>
+            BtnRaw($"fi:status:{s}", Marked(draft.Status == s, Strings.S(lang, $"fi.status.{s}")))));
 
         // керування
         rows.Add(new[]

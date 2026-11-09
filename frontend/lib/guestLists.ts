@@ -180,3 +180,15 @@ export function clearGuestSnapshot(): void {
     // ignore
   }
 }
+
+// CR-03: прибрати зі знімка ЛИШЕ підтверджені записи (moved|duplicate) — по парі
+// (kind,titleId) ЗНАЧЕННЯМ, без повного wipe ключа. Нові entries, додані іншою
+// вкладкою під час міграції (версія сховища змінилася), лишаються на місці.
+export function removeGuestEntries(confirmed: readonly { kind: string; titleId: number }[]): boolean {
+  if (confirmed.length === 0) return true;
+  const drop = new Set(confirmed.map((c) => `${c.kind}:${c.titleId}`));
+  const store = readStore();
+  const items = store.items.filter((i) => !drop.has(`${i.kind}:${i.titleId}`));
+  if (items.length === store.items.length) return true; // нічого прибирати
+  return writeStore({ version: store.version, items });
+}

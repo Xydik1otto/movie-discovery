@@ -1,0 +1,26 @@
+[
+  {
+    "id": "f9d1775e6b7ad25bfc00c39287883764af518c04e8006ba99a9146feed567262",
+    "name": "/moviediscovery-test-db",
+    "project": "codex-md-review-20261109",
+    "mounts": [
+      {
+        "type": "volume",
+        "name": "ea3aa2e3bfc2180db79a1c79d4d93eba6578e449b9cf7554262411f4e9867c97",
+        "destination": "/var/lib/postgresql/data"
+      }
+    ]
+  },
+  {
+    "id": "334e0e54730ca3b9a5410028e84267cc8919d110a33009d982d2c886781a5c10",
+    "name": "/moviediscovery-test-api",
+    "project": "codex-md-review-20261109",
+    "mounts": []
+  },
+  {
+    "id": "4276fa3a9e39cd97a3e477998b401e4ab530980f7fcac9cf42f26d3fdcbfb090",
+    "name": "/moviediscovery-test-web",
+    "project": "codex-md-review-20261109",
+    "mounts": []
+  }
+]
