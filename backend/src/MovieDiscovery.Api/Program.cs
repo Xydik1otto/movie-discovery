@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -101,6 +102,19 @@ public class Program
                 };
             });
         builder.Services.AddAuthorization();
+
+        // За тунелем/проксі реальна адреса клієнта приходить у X-Forwarded-For
+        // (cloudflared → Next-проксі передає заголовок далі). Без цього
+        // RemoteIpAddress = IP проксі, і auth-ліміти (login 5/хв, register 3/год)
+        // стають СПІЛЬНИМИ для всіх зовнішніх користувачів — перші ж спроби
+        // вичерпують квоту на всіх (429 для всіх). Приймаємо XFF від будь-якого
+        // проксі (docker-мережа динамічна); api опублікований лише в LAN.
+        builder.Services.Configure<ForwardedHeadersOptions>(o =>
+        {
+            o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            o.KnownNetworks.Clear();
+            o.KnownProxies.Clear();
+        });
 
         // FR-16: RateLimiter — login 5/хв/IP, register 3/год/IP (429 при перевищенні).
         builder.Services.AddRateLimiter(o =>
@@ -273,6 +287,8 @@ public class Program
         }
 
         app.UseCors();
+        // XFF → RemoteIpAddress ДО auth-лімітів (інакше спільний бакет на всіх).
+        app.UseForwardedHeaders();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();

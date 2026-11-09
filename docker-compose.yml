@@ -51,7 +51,13 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # NEXT_PUBLIC_* печеться в бандл ПІД ЧАС БІЛДУ: без args тут Dockerfile-дефолт
+      # http://localhost:5200 потрапляє в браузерний JS і за тунелем API «недоступний»
+      # (браузер стукає у власний localhost). Порожній → relative /api/* same-origin.
+      args:
+        NEXT_PUBLIC_API_URL: ""
     container_name: moviediscovery-web
     environment:
       NODE_ENV: production
