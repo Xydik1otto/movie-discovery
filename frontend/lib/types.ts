@@ -23,7 +23,8 @@ export type AudioLangCode =
   | "original"
   | "multi";
 export type DubCode = "ukr" | "russ" | "eng" | "original" | "multi";
-export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free";
+// "ads" — безкоштовний перегляд з рекламою (уніфікований watch-ендпоінт 09.11).
+export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free" | "ads";
 // FR-17: liked/disliked розширюють системні списки.
 export type ListKind = "watchlist" | "watched" | "read" | "liked" | "disliked";
 
@@ -74,6 +75,9 @@ export interface WatchProvider {
   audioLang?: string | null;
   quality?: number | null;
   dub?: string | null;
+  // Уніфікований watch-ендпоінт (09.11): джерело рядка
+  // (sweettv|megogo|plex|youtube|internet-archive|justwatch|…).
+  source?: string | null;
 }
 
 export interface TitleDetail extends TitleCard {

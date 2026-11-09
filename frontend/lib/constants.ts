@@ -122,6 +122,7 @@ export const PROVIDER_KIND_STYLE: Record<ProviderKind, string> = {
   rent: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   buy: "bg-violet-500/15 text-violet-300 border-violet-500/30",
   free: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  ads: "bg-orange-500/15 text-orange-300 border-orange-500/30",
 };
 
 // Кольори маленьких бейджів watchProviders у кутку картки (FR-14):
@@ -132,6 +133,7 @@ export const WATCH_KIND_BADGE_STYLE: Record<ProviderKind, string> = {
   rent: "border-amber-400/40 bg-black/60 text-amber-200",
   buy: "border-violet-400/40 bg-black/60 text-violet-200",
   free: "border-sky-400/40 bg-black/60 text-sky-200",
+  ads: "border-orange-400/40 bg-black/60 text-orange-200",
 };
 
 // Формати аніме (tv/movie/ova/ona/special) та манги (manga/manhwa/one_shot/novel)

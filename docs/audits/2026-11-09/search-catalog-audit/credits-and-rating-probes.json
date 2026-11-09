@@ -1,0 +1,38 @@
+[
+  {
+    "params": {
+      "q": "Array Director"
+    },
+    "status": 200,
+    "ids": [],
+    "expected": [
+      113
+    ]
+  },
+  {
+    "params": {
+      "director": "Array Director"
+    },
+    "status": 200,
+    "ids": [],
+    "expected": [
+      113
+    ]
+  },
+  {
+    "params": {
+      "type": "anime",
+      "minRating": 9
+    },
+    "status": 200,
+    "ids": [],
+    "expected": [
+      105
+    ]
+  },
+  {
+    "case": "director_array_detail",
+    "director": null,
+    "expected": "Array Director"
+  }
+]

@@ -6,6 +6,7 @@ using MovieDiscovery.Infrastructure.Embeddings;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.Watch;
 using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Api.Controllers;
@@ -23,6 +24,9 @@ public sealed class AdminController(
     WikidataNamesSyncQueue wikidataNamesSyncQueue,
     YoutubeSyncQueue youtubeSyncQueue,
     WatchSyncQueue watchSyncQueue,
+    JustWatchSyncQueue justWatchSyncQueue,
+    MegogoSyncQueue megogoSyncQueue,
+    PlexSyncQueue plexSyncQueue,
     Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
     Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions,
     Microsoft.Extensions.Options.IOptions<TmdbOptions> tmdbOptions) : ControllerBase
@@ -294,6 +298,60 @@ public sealed class AdminController(
             return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
 
         return Accepted(new { queued = true, source = "sweettv" });
+    }
+
+    /// <summary>JustWatch (усі провайдери «де подивитись», рішення власника 09.11): 202 {queued:true, source:"justwatch"}.</summary>
+    [HttpPost("sync/justwatch")]
+    public IActionResult SyncJustWatch([FromBody] JustWatchSyncJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxPages = req?.MaxPages ?? 10;
+        if (maxPages is < 1 or > 100)
+            return BadRequest(new { error = "invalid_request", message = "maxPages має бути 1–100" });
+        var limit = req?.Limit ?? 100;
+        if (limit is < 0 or > 100_000)
+            return BadRequest(new { error = "invalid_request", message = "limit має бути 0–100 000" });
+
+        if (!justWatchSyncQueue.TryEnqueue(new JustWatchSyncJob(maxPages, limit)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "justwatch" });
+    }
+
+    /// <summary>Megogo free-каталог UA (pages — на КОЖНУ колекцію): 202 {queued:true, source:"megogo"}.</summary>
+    [HttpPost("sync/megogo")]
+    public IActionResult SyncMegogo([FromBody] SyncPagesRequest? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var pages = req?.Pages ?? 50;
+        if (pages is < 1 or > 50)
+            return BadRequest(new { error = "invalid_request", message = "pages має бути 1–50 (на колекцію)" });
+
+        if (!megogoSyncQueue.TryEnqueue(new MegogoSyncJob(pages)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "megogo" });
+    }
+
+    /// <summary>Plex free-каталог (movie-database роки): 202 {queued:true, source:"plex"}.</summary>
+    [HttpPost("sync/plex")]
+    public IActionResult SyncPlex([FromBody] PlexSyncJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var job = req ?? new PlexSyncJob(null, null, null);
+        if (job.MaxPages is { } mp && (mp < 1 || mp > 120))
+            return BadRequest(new { error = "invalid_request", message = "maxPages має бути 1–120" });
+
+        if (!plexSyncQueue.TryEnqueue(job))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "plex" });
     }
 
     /// <summary>

@@ -27,7 +27,9 @@ public sealed class AuthController(
         [Required, MinLength(3)] string Username,
         [Required, MinLength(8)] string Password);
 
-    public sealed record LoginRequest([Required] string Email, [Required] string Password);
+    // FR-PERSIST: RememberMe опційний (дефолт false) — старі клієнти та фіксстури,
+    // що шлють лише {email, password}, не ламаються; true → persistent-cookie 30 діб.
+    public sealed record LoginRequest([Required] string Email, [Required] string Password, bool RememberMe = false);
 
     /// <summary>200 {userId} | 400 {errors:{поле:[помилки Identity]}}.</summary>
     [HttpPost("register")]
@@ -77,7 +79,9 @@ public sealed class AuthController(
         }
 
         await users.ResetAccessFailedCountAsync(user);
-        await SignInCookieAsync(user);
+        // FR-PERSIST: rememberMe → persistent-cookie (ExpireTimeSpan 30 діб у Program.cs);
+        // без rememberMe — сесійна cookie, як раніше.
+        await SignInCookieAsync(user, req.RememberMe);
 
         var up = await taste.ResolveAsync(user.Id, ct);
         return Ok(new
@@ -130,7 +134,7 @@ public sealed class AuthController(
         _ => "other",
     };
 
-    private async Task SignInCookieAsync(ApplicationUser user)
+    private async Task SignInCookieAsync(ApplicationUser user, bool isPersistent = false)
     {
         var identity = new ClaimsIdentity(
         [
@@ -138,7 +142,10 @@ public sealed class AuthController(
             new Claim(ClaimTypes.Name, user.UserName ?? ""),
             new Claim(ClaimTypes.Email, user.Email ?? ""),
         ], CookieAuthenticationDefaults.AuthenticationScheme);
+        // isPersistent (login + rememberMe) → persistent-cookie на ExpireTimeSpan (30 діб);
+        // без нього — session-cookie: авто-сесія реєстрації та звичайний логін, як раніше.
+        var props = new AuthenticationProperties { IsPersistent = isPersistent };
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(identity));
+            new ClaimsPrincipal(identity), props);
     }
 }

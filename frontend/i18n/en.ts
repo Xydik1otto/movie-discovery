@@ -371,4 +371,18 @@ export const en: Dict = {
   "series.watchlist": "In watchlist",
   "series.current": "This title",
   "series.badge": "In series",
+
+  // --- watch options badges ---
+  "watch.kind.free": "Free",
+  "watch.kind.stream": "Subscription",
+  "watch.kind.rent": "Rent",
+  "watch.kind.buy": "Buy",
+  "watch.kind.ads": "With ads",
+  "watch.showPaid": "Show paid",
+  "watch.hidePaid": "Free only",
+
+  // --- auth remember + password visibility ---
+  "auth.showPassword": "Show password",
+  "auth.hidePassword": "Hide password",
+  "auth.rememberMe": "Remember me",
 };

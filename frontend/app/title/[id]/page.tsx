@@ -9,7 +9,6 @@ import { useAuth } from "@/lib/auth";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
 import {
   dubGroupLabelKey,
-  freeOnly,
   groupWatchByDub,
   hasDubMetadata,
   qualityLabel,
@@ -44,6 +43,9 @@ export default function TitleDetailPage() {
   // Повна форма провайдерів з GET /api/titles/{id}/watch (FR-14).
   // null = ендпоінт недоступний → fallback на компактні detail.providers.
   const [watchList, setWatchList] = useState<WatchProvider[] | null>(null);
+  // Рішення власника (09.11): платні варіанти приховані за замовчуванням;
+  // перемикач «Показати платні» розкриває їх (стан лише клієнтський).
+  const [showPaid, setShowPaid] = useState(false);
 
   // FR: франшиза/сага з GET /api/titles/{id}/series — підтягуємо ПІСЛЯ основного
   // detail (не блокує рендер); помилка/відсутність серії — блок просто не з'явиться.
@@ -111,6 +113,7 @@ export default function TitleDetailPage() {
   // фільтруємо за вибраним регіоном на клієнті ("*" = усі регіони).
   useEffect(() => {
     setWatchList(null);
+    setShowPaid(false); // новий тайтл — знову безкоштовний вигляд за замовчуванням
     if (!detail || unavailable || !Number.isFinite(id)) return;
     let alive = true;
     getWatch(id)
@@ -204,13 +207,18 @@ export default function TitleDetailPage() {
     );
   }
 
-  // FR-14: спершу повні провайдери з /watch, інакше компактні з detail
-  // (легасі/демо); регіон фільтруємо на клієнті. Рішення власника: лише
-  // безкоштовні варіанти — платні сайти (передплата/оренда/купівля) не показуємо.
+  // FR-14: спершу повні провайдери з /watch (уніфіковані: watch_links + providers,
+  // kind free|stream|rent|buy|ads), інакше компактні з detail (легасі/демо); регіон
+  // фільтруємо на клієнті. Рішення власника (09.11): ЗА ЗАМОВЧУВАННЯМ лише
+  // безкоштовні варіанти (ads — теж безкоштовний перегляд), платні (підписка/
+  // оренда/купівля) — за перемикачем «Показати платні».
   const watchPool: WatchProvider[] = watchList ?? detail.providers ?? [];
-  const providers = freeOnly(
-    watchPool.filter((p) => !p.region || p.region === "*" || p.region === region),
+  const regionFiltered = watchPool.filter(
+    (p) => !p.region || p.region === "*" || p.region === region,
   );
+  const isFreeish = (p: WatchProvider) => p.kind === "free" || p.kind === "ads";
+  const hasPaid = regionFiltered.some((p) => !isFreeish(p));
+  const providers = showPaid ? regionFiltered : regionFiltered.filter(isFreeish);
   const isAnime = detail.type === "anime";
   const isManga = detail.type === "manga";
   // FR: бейдж «У серії» на картках «Схожих» — лише коли група осмислена (≥2 тайтли).
@@ -481,12 +489,14 @@ export default function TitleDetailPage() {
           )}
         </div>
 
-        {/* Де подивитись (FR-14) — рендеримо лише коли є доступні провайдери.
+        {/* Де подивитись (FR-14) — рендеримо лише коли є варіанти перегляду.
             FR-19: якщо є метадані озвучки/якості — групуємо за dub+audioLang
-            з бейджем якості; інакше — плоский список «як зараз». */}
-        {(providers.length > 0 || !!detail.keywords?.length) && (
+            з бейджем якості; інакше — плоский список «як зараз».
+            Рішення власника (09.11): за замовчуванням лише безкоштовні,
+            перемикач розкриває платні (підписка/оренда/купівля). */}
+        {(regionFiltered.length > 0 || !!detail.keywords?.length) && (
           <aside className="space-y-5">
-            {providers.length > 0 && (
+            {regionFiltered.length > 0 && (
               <section className="rounded-2xl border border-line bg-panel p-4">
                 <h2 className="mb-3 text-base font-bold">{t("title.watch.where")}</h2>
                 {hasDubMetadata(providers) ? (
@@ -524,6 +534,15 @@ export default function TitleDetailPage() {
                       <ProviderBadge key={`${p.provider}-${p.kind}-${i}`} watch={p} />
                     ))}
                   </div>
+                )}
+                {hasPaid && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPaid((v) => !v)}
+                    className="mt-3 rounded-full border border-line bg-panel-2 px-3 py-1 text-xs font-semibold text-mute transition-colors hover:border-accent/60 hover:text-accent-2"
+                  >
+                    {showPaid ? t("watch.hidePaid") : t("watch.showPaid")}
+                  </button>
                 )}
               </section>
             )}

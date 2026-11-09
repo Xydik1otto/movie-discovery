@@ -239,8 +239,9 @@ export async function similarBySeedsEx(
   }
 }
 
-// Повна форма провайдерів перегляду (FR-14):
-// {providers: [{provider, kind, region, url, isAvailable}]}.
+// Повна форма провайдерів перегляду (FR-14, уніфіковано 09.11):
+// {providers: [{provider, kind: free|stream|rent|buy|ads, region, url, isAvailable, source}]}
+// — злиття watch_links + providers на бекенді (WatchOptionsMerger).
 export async function getWatch(
   id: number | string,
 ): Promise<{ providers: WatchProvider[] }> {
@@ -341,10 +342,14 @@ export async function registerUser(
 export async function loginUser(
   email: string,
   password: string,
+  // «Запам'ятати мене»: поле летить завжди. Старший бекенд невідоме поле
+  // ігнорує (несумісності немає), новший — робить cookie персистентною.
+  // Дефолт = галочка у формі входу (ввімкнена).
+  rememberMe = true,
 ): Promise<{ user?: AuthUser }> {
   const r = await request<{ user?: AuthUser } | null>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, rememberMe }),
   });
   return r ?? {};
 }

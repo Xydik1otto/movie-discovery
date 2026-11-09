@@ -31,7 +31,11 @@ interface AuthContextValue {
   // користувач лишається залогіненим локально, UI показує чесне повідомлення.
   logoutFailed: boolean;
   refresh: () => Promise<void>;
-  login: (email: string, password: string) => Promise<AuthFailure | null>;
+  login: (
+    email: string,
+    password: string,
+    rememberMe?: boolean,
+  ) => Promise<AuthFailure | null>;
   register: (
     email: string,
     username: string,
@@ -102,9 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(
-    async (email: string, password: string): Promise<AuthFailure | null> => {
+    async (email: string, password: string, rememberMe = true): Promise<AuthFailure | null> => {
       try {
-        const r = await loginUser(email, password);
+        const r = await loginUser(email, password, rememberMe);
         if (r.user) setUser(r.user);
         else await refresh();
         setApiUp(true);

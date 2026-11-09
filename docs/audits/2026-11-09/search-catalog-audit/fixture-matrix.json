@@ -1,0 +1,1124 @@
+[
+  {
+    "name": "type_movie",
+    "pass": true,
+    "status": 200,
+    "ms": 141,
+    "expected": [
+      101,
+      108,
+      111,
+      112
+    ],
+    "expectedFirst": null,
+    "ids": [
+      112,
+      101,
+      108,
+      111
+    ],
+    "total": 4
+  },
+  {
+    "name": "type_series",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      102,
+      109,
+      110
+    ],
+    "expectedFirst": null,
+    "ids": [
+      102,
+      109,
+      110
+    ],
+    "total": 3
+  },
+  {
+    "name": "type_show",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      103
+    ],
+    "expectedFirst": null,
+    "ids": [
+      103
+    ],
+    "total": 1
+  },
+  {
+    "name": "type_anime",
+    "pass": true,
+    "status": 200,
+    "ms": 32,
+    "expected": [
+      104,
+      105
+    ],
+    "expectedFirst": null,
+    "ids": [
+      104,
+      105
+    ],
+    "total": 2
+  },
+  {
+    "name": "type_manga",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      106,
+      107
+    ],
+    "expectedFirst": null,
+    "ids": [
+      106,
+      107
+    ],
+    "total": 2
+  },
+  {
+    "name": "anime_format_movie",
+    "pass": false,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      105
+    ],
+    "expectedFirst": null,
+    "ids": [
+      104,
+      105
+    ],
+    "total": 2
+  },
+  {
+    "name": "anime_format_tv",
+    "pass": false,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      104
+    ],
+    "expectedFirst": null,
+    "ids": [
+      104,
+      105
+    ],
+    "total": 2
+  },
+  {
+    "name": "manga_format_novel",
+    "pass": false,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      107
+    ],
+    "expectedFirst": null,
+    "ids": [
+      106,
+      107
+    ],
+    "total": 2
+  },
+  {
+    "name": "anime_score_sort",
+    "pass": false,
+    "status": 200,
+    "ms": 16,
+    "expected": null,
+    "expectedFirst": 105,
+    "ids": [
+      104,
+      105
+    ],
+    "total": 2
+  },
+  {
+    "name": "manga_score_sort",
+    "pass": false,
+    "status": 200,
+    "ms": 15,
+    "expected": null,
+    "expectedFirst": 107,
+    "ids": [
+      106,
+      107
+    ],
+    "total": 2
+  },
+  {
+    "name": "uk_title",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "actor",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "director",
+    "pass": true,
+    "status": 200,
+    "ms": 31,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "keyword",
+    "pass": true,
+    "status": 200,
+    "ms": 31,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "genre_uk",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "exclude_genre",
+    "pass": true,
+    "status": 200,
+    "ms": 31,
+    "expected": [
+      105
+    ],
+    "expectedFirst": null,
+    "ids": [
+      105
+    ],
+    "total": 1
+  },
+  {
+    "name": "country_ua",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      103
+    ],
+    "expectedFirst": null,
+    "ids": [
+      103
+    ],
+    "total": 1
+  },
+  {
+    "name": "country_array",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      109,
+      110
+    ],
+    "expectedFirst": null,
+    "ids": [
+      109,
+      110
+    ],
+    "total": 2
+  },
+  {
+    "name": "language",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      104,
+      105,
+      106,
+      107
+    ],
+    "expectedFirst": null,
+    "ids": [
+      104,
+      105,
+      106,
+      107
+    ],
+    "total": 4
+  },
+  {
+    "name": "rating",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      101,
+      102
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101,
+      102
+    ],
+    "total": 2
+  },
+  {
+    "name": "year",
+    "pass": true,
+    "status": 200,
+    "ms": 32,
+    "expected": [
+      101,
+      102
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101,
+      102
+    ],
+    "total": 2
+  },
+  {
+    "name": "runtime_series",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      102
+    ],
+    "expectedFirst": null,
+    "ids": [
+      102
+    ],
+    "total": 1
+  },
+  {
+    "name": "runtime_category_series",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      102
+    ],
+    "expectedFirst": null,
+    "ids": [
+      102
+    ],
+    "total": 1
+  },
+  {
+    "name": "status_anime",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      104
+    ],
+    "expectedFirst": null,
+    "ids": [
+      104
+    ],
+    "total": 1
+  },
+  {
+    "name": "votes",
+    "pass": true,
+    "status": 200,
+    "ms": 46,
+    "expected": [
+      101,
+      102
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101,
+      102
+    ],
+    "total": 2
+  },
+  {
+    "name": "seasons",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      102,
+      103
+    ],
+    "expectedFirst": null,
+    "ids": [
+      102,
+      103
+    ],
+    "total": 2
+  },
+  {
+    "name": "trailer",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "providers",
+    "pass": true,
+    "status": 200,
+    "ms": 31,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101
+    ],
+    "total": 1
+  },
+  {
+    "name": "watchable",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      101,
+      111
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101,
+      111
+    ],
+    "total": 2
+  },
+  {
+    "name": "audio_quality_same_link",
+    "pass": false,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      101
+    ],
+    "expectedFirst": null,
+    "ids": [
+      101,
+      111
+    ],
+    "total": 2
+  },
+  {
+    "name": "category_dorama",
+    "pass": false,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      109,
+      110
+    ],
+    "expectedFirst": null,
+    "ids": [
+      105,
+      107,
+      109
+    ],
+    "total": 3
+  },
+  {
+    "name": "category_cartoon",
+    "pass": true,
+    "status": 200,
+    "ms": 15,
+    "expected": [
+      108
+    ],
+    "expectedFirst": null,
+    "ids": [
+      108
+    ],
+    "total": 1
+  },
+  {
+    "name": "category_tvshow",
+    "pass": true,
+    "status": 200,
+    "ms": 16,
+    "expected": [
+      103
+    ],
+    "expectedFirst": null,
+    "ids": [
+      103
+    ],
+    "total": 1
+  },
+  {
+    "name": "invalid_type",
+    "pass": true,
+    "status": 400,
+    "ms": 16,
+    "expected": null,
+    "expectedFirst": null,
+    "ids": [],
+    "total": null
+  },
+  {
+    "name": "invalid_genres",
+    "pass": true,
+    "status": 400,
+    "ms": 15,
+    "expected": null,
+    "expectedFirst": null,
+    "ids": [],
+    "total": null
+  },
+  {
+    "name": "invalid_reversed_year",
+    "pass": false,
+    "status": 200,
+    "ms": 0,
+    "expected": null,
+    "expectedFirst": null,
+    "ids": [],
+    "total": 0
+  },
+  {
+    "name": "page_overflow",
+    "pass": false,
+    "status": 500,
+    "ms": 47,
+    "expected": null,
+    "expectedFirst": null,
+    "ids": [],
+    "total": null
+  },
+  {
+    "name": "country_in_detail",
+    "pass": false,
+    "status": 200,
+    "countries": []
+  },
+  {
+    "name": "episode_runtime_in_detail",
+    "pass": false,
+    "status": 200,
+    "runtimeMin": null
+  },
+  {
+    "name": "fixture_register",
+    "pass": true,
+    "status": 200
+  },
+  {
+    "name": "discover_1",
+    "pass": true,
+    "status": 200,
+    "count": 1,
+    "ids": [
+      102
+    ]
+  },
+  {
+    "name": "discover_10",
+    "pass": true,
+    "status": 200,
+    "count": 6,
+    "ids": [
+      102,
+      101,
+      109,
+      108,
+      1,
+      103
+    ]
+  },
+  {
+    "name": "discover_50",
+    "pass": true,
+    "status": 200,
+    "count": 6,
+    "ids": [
+      102,
+      101,
+      109,
+      108,
+      1,
+      103
+    ]
+  },
+  {
+    "name": "discover_skip_not_repeated",
+    "pass": false,
+    "skipped": 102,
+    "afterIds": [
+      102,
+      101,
+      109,
+      108,
+      1,
+      103
+    ],
+    "actionStatus": 200
+  },
+  {
+    "name": "/api/collections/presets",
+    "pass": true,
+    "status": 200,
+    "body": {
+      "presets": [
+        {
+          "key": "preset.mood",
+          "items": [
+            {
+              "id": 108,
+              "tmdbId": null,
+              "type": "movie",
+              "title": "Audit Cartoon",
+              "originalTitle": "Audit Cartoon",
+              "year": 2005,
+              "genres": [
+                "Мультфільм",
+                "Комедія"
+              ],
+              "countries": [
+                "US"
+              ],
+              "ratingTmdb": null,
+              "ratingImdb": 7.5,
+              "posterUrl": null,
+              "runtimeMin": 90,
+              "seasons": null,
+              "overview": null,
+              "format": null,
+              "episodes": null,
+              "chapters": null,
+              "volumes": null,
+              "studios": null,
+              "authors": null,
+              "scoreMal": null,
+              "scoreAnilist": null,
+              "scoreShikimori": null,
+              "watchProviders": []
+            }
+          ]
+        },
+        {
+          "key": "preset.evening",
+          "items": [
+            {
+              "id": 111,
+              "tmdbId": null,
+              "type": "movie",
+              "title": "Audit Cross Links",
+              "originalTitle": "Audit Cross Links",
+              "year": 2017,
+              "genres": [
+                "Триллер"
+              ],
+              "countries": [
+                "US"
+              ],
+              "ratingTmdb": null,
+              "ratingImdb": 6,
+              "posterUrl": null,
+              "runtimeMin": 95,
+              "seasons": null,
+              "overview": null,
+              "format": null,
+              "episodes": null,
+              "chapters": null,
+              "volumes": null,
+              "studios": null,
+              "authors": null,
+              "scoreMal": null,
+              "scoreAnilist": null,
+              "scoreShikimori": null,
+              "watchProviders": []
+            }
+          ]
+        },
+        {
+          "key": "preset.duration",
+          "items": [
+            {
+              "id": 108,
+              "tmdbId": null,
+              "type": "movie",
+              "title": "Audit Cartoon",
+              "originalTitle": "Audit Cartoon",
+              "year": 2005,
+              "genres": [
+                "Мультфільм",
+                "Комедія"
+              ],
+              "countries": [
+                "US"
+              ],
+              "ratingTmdb": null,
+              "ratingImdb": 7.5,
+              "posterUrl": null,
+              "runtimeMin": 90,
+              "seasons": null,
+              "overview": null,
+              "format": null,
+              "episodes": null,
+              "chapters": null,
+              "volumes": null,
+              "studios": null,
+              "authors": null,
+              "scoreMal": null,
+              "scoreAnilist": null,
+              "scoreShikimori": null,
+              "watchProviders": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "/api/similar/by-seeds?ids=101,104&limit=10",
+    "pass": true,
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "score": 0.483,
+          "reasons": [
+            "shared_genres:action",
+            "shared_genres:fantasy",
+            "decade:2010s"
+          ],
+          "id": 5,
+          "tmdbId": null,
+          "type": "anime",
+          "title": "Void Blade E",
+          "originalTitle": "Void Blade E",
+          "year": 2019,
+          "genres": [
+            "Бойовик",
+            "Фентезі"
+          ],
+          "countries": [
+            "JP"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 7.2,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.4362,
+          "reasons": [
+            "shared_genres:action",
+            "shared_genres:science fiction",
+            "decade:2010s"
+          ],
+          "id": 1,
+          "tmdbId": null,
+          "type": "movie",
+          "title": "Collision Target A",
+          "originalTitle": "Collision Target A",
+          "year": 2010,
+          "genres": [
+            "Бойовик",
+            "Фантастика"
+          ],
+          "countries": [
+            "US"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 7.5,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.4307,
+          "reasons": [
+            "shared_genres:action"
+          ],
+          "id": 112,
+          "tmdbId": null,
+          "type": "movie",
+          "title": "Alpha Audit Remake",
+          "originalTitle": "Alpha Audit Remake",
+          "year": 2023,
+          "genres": [
+            "Бойовик"
+          ],
+          "countries": [
+            "US"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 5,
+          "posterUrl": null,
+          "runtimeMin": 101,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.3357,
+          "reasons": [
+            "shared_genres:fantasy",
+            "decade:2010s"
+          ],
+          "id": 106,
+          "tmdbId": null,
+          "type": "manga",
+          "title": "Audit Manga",
+          "originalTitle": "Audit Manga",
+          "year": 2019,
+          "genres": [
+            "Фентезі"
+          ],
+          "countries": [
+            "JP"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": null,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.299,
+          "reasons": [
+            "shared_genres:science fiction",
+            "decade:2010s"
+          ],
+          "id": 3,
+          "tmdbId": null,
+          "type": "movie",
+          "title": "Space Heist C",
+          "originalTitle": "Space Heist C",
+          "year": 2012,
+          "genres": [
+            "Фантастика",
+            "Пригоди"
+          ],
+          "countries": [
+            "US"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 6.8,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.1061,
+          "reasons": [
+            "shared_genres:fantasy"
+          ],
+          "id": 6,
+          "tmdbId": null,
+          "type": "manga",
+          "title": "Ink Scroll F",
+          "originalTitle": "Ink Scroll F",
+          "year": 2020,
+          "genres": [
+            "Фентезі"
+          ],
+          "countries": [
+            "JP"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 0,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "/api/title/105/similar?limit=5",
+    "pass": true,
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "score": 0.9357,
+          "reasons": [
+            "shared_genres:drama"
+          ],
+          "id": 107,
+          "tmdbId": null,
+          "type": "manga",
+          "title": "Audit Novel",
+          "originalTitle": "Audit Novel",
+          "year": 2018,
+          "genres": [
+            "Драма"
+          ],
+          "countries": [
+            "JP"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": null,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.888,
+          "reasons": [
+            "shared_genres:drama"
+          ],
+          "id": 4,
+          "tmdbId": null,
+          "type": "movie",
+          "title": "Drama Quiet D",
+          "originalTitle": "Drama Quiet D",
+          "year": 2015,
+          "genres": [
+            "Драма"
+          ],
+          "countries": [
+            "UK"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 6,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.8429,
+          "reasons": [
+            "shared_genres:drama"
+          ],
+          "id": 2,
+          "tmdbId": 1,
+          "type": "movie",
+          "title": "Collision Twin B",
+          "originalTitle": "Collision Twin B",
+          "year": 2011,
+          "genres": [
+            "Драма"
+          ],
+          "countries": [
+            "US"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 7,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": null,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.7282,
+          "reasons": [
+            "shared_genres:drama"
+          ],
+          "id": 109,
+          "tmdbId": null,
+          "type": "series",
+          "title": "Audit Dorama Country",
+          "originalTitle": "Audit Dorama Country",
+          "year": 2015,
+          "genres": [
+            "Драма"
+          ],
+          "countries": [],
+          "ratingTmdb": null,
+          "ratingImdb": 8,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": 1,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        },
+        {
+          "score": 0.7282,
+          "reasons": [
+            "shared_genres:drama"
+          ],
+          "id": 110,
+          "tmdbId": null,
+          "type": "series",
+          "title": "Audit Dorama Array",
+          "originalTitle": "Audit Dorama Array",
+          "year": 2015,
+          "genres": [
+            "Драма"
+          ],
+          "countries": [
+            "KR"
+          ],
+          "ratingTmdb": null,
+          "ratingImdb": 8,
+          "posterUrl": null,
+          "runtimeMin": null,
+          "seasons": 1,
+          "overview": null,
+          "format": null,
+          "episodes": null,
+          "chapters": null,
+          "volumes": null,
+          "studios": null,
+          "authors": null,
+          "scoreMal": null,
+          "scoreAnilist": null,
+          "scoreShikimori": null,
+          "watchProviders": []
+        }
+      ]
+    }
+  }
+]

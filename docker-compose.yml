@@ -26,6 +26,10 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5200
       ASPNETCORE_ENVIRONMENT: Production
+      # DataProtection-ключі НАЗОВНІ (owner 09.11: «кукі щоб при кожному
+      # перестворенні запоминався логін»): без volume кожен recreate генерує
+      # новий keyring → усі md_auth-кукі недійсні → всі логаути.
+      ASPNETKEYS_DIRECTORY: /data/keys
       ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-moviediscovery};Username=${POSTGRES_USER:-movie};Password=${POSTGRES_PASSWORD:-changeme_pg}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       OMDB_API_KEY: ${OMDB_API_KEY:-}
@@ -43,6 +47,9 @@ services:
       BOT_API_KEY: ${BOT_API_KEY:-}
     ports:
       - "${API_PORT:-5200}:5200"
+    volumes:
+      # Персистентний keyring DataProtection: логін переживає recreate контейнерів
+      - ./data/keys:/data/keys
     depends_on:
       db:
         condition: service_healthy

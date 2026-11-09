@@ -11,13 +11,16 @@ const PROVIDER_NAME_KEYS: Record<string, string> = {
   youtube: "provider.youtube",
 };
 
-// kind → ключ підпису в словнику. "stream" — легасі-форма detail.providers.
+// kind → ключ підпису в словнику. Ключі watch.kind.* — бейджі панелі «Де подивитись»
+// (рішення власника 09.11: усі варіанти з бейджем kind); "stream" — уніфікована форма
+// (subscription → stream на бекенді), "subscription" — легасі-рядки detail.providers.
 const KIND_LABEL_KEYS: Record<string, string> = {
-  free: "watch.free",
-  subscription: "watch.subscription",
-  rent: "watch.rent",
-  buy: "watch.buy",
-  stream: "providers.stream",
+  free: "watch.kind.free",
+  ads: "watch.kind.ads",
+  stream: "watch.kind.stream",
+  subscription: "watch.kind.stream",
+  rent: "watch.kind.rent",
+  buy: "watch.kind.buy",
 };
 
 // kind → ключ короткого підпису для бейджа в кутку картки.

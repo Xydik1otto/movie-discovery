@@ -1,0 +1,71 @@
+{
+  "actions": [
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "10",
+        "59f70cbcde349d337ff1d38c7e236047adedbde01f3902aa02a554f4e4e00a8a",
+        "3b85062b26a61fc66246d4c370df7b2f834a069345a12793265125b42757f610",
+        "e7908649475dac3fa3b75328a549a39b4dd81d0a5f0dce4cc0dd2514f35e364c"
+      ],
+      "code": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n59f70cbcde349d337ff1d38c7e236047adedbde01f3902aa02a554f4e4e00a8a\n3b85062b26a61fc66246d4c370df7b2f834a069345a12793265125b42757f610\ne7908649475dac3fa3b75328a549a39b4dd81d0a5f0dce4cc0dd2514f35e364c"
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "59f70cbcde349d337ff1d38c7e236047adedbde01f3902aa02a554f4e4e00a8a",
+        "3b85062b26a61fc66246d4c370df7b2f834a069345a12793265125b42757f610",
+        "e7908649475dac3fa3b75328a549a39b4dd81d0a5f0dce4cc0dd2514f35e364c"
+      ],
+      "code": 0,
+      "output": "59f70cbcde349d337ff1d38c7e236047adedbde01f3902aa02a554f4e4e00a8a\n3b85062b26a61fc66246d4c370df7b2f834a069345a12793265125b42757f610\ne7908649475dac3fa3b75328a549a39b4dd81d0a5f0dce4cc0dd2514f35e364c"
+    },
+    {
+      "command": [
+        "docker",
+        "volume",
+        "rm",
+        "4d13390d8b9e92fd42e91b4ad1bdeb21f190c445ad343bd5d9bed1f39c69b7d5"
+      ],
+      "code": 0,
+      "output": "4d13390d8b9e92fd42e91b4ad1bdeb21f190c445ad343bd5d9bed1f39c69b7d5"
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "codex-search-audit-20261109_default"
+      ],
+      "code": 0,
+      "output": "codex-search-audit-20261109_default"
+    },
+    {
+      "command": [
+        "docker",
+        "image",
+        "rm",
+        "codex-search-audit-20261109-api-test:latest",
+        "codex-search-audit-20261109-web-test:latest"
+      ],
+      "code": 0,
+      "output": "Untagged: codex-search-audit-20261109-api-test:latest\nDeleted: sha256:624e07a1c146e3685b87e08f22346eea812bd8d1f3b19a6fcaf82fe4ffe8708c\nUntagged: codex-search-audit-20261109-web-test:latest\nDeleted: sha256:d18a08772c560cca6ddc42e83d081ad15faf0ac4debc54fce83f196dc957bf88"
+    }
+  ],
+  "errors": [],
+  "remainingTaskContainers": "",
+  "preservedRunningServices": "7c77ceb6b395 scb-fc-pg-7cc0cf0c9f Up 45 minutes\n6cc7ee8372ae moviediscovery-web Up 5 hours\n5f8d1ea23331 moviediscovery-api Up 5 hours\n406c2ea0a0fa moviediscovery-bot Up 5 hours\nd5d40cd87764 moviediscovery-tunnel Up 5 hours\nae0addb940cc moviediscovery-db Up 5 hours (healthy)\n",
+  "userHealth": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "db": true,
+      "ollama": false,
+      "titlesCount": 2863652
+    }
+  }
+}

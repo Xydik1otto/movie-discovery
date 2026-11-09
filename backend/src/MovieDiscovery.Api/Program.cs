@@ -1,9 +1,11 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using MovieDiscovery.Api.Auth;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core;
 using MovieDiscovery.Core.Abstractions;
@@ -20,6 +22,7 @@ using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.Watch;
 using MovieDiscovery.Infrastructure.Watchability;
 using MovieDiscovery.Infrastructure.Wikidata;
 using MovieDiscovery.Infrastructure.Series;
@@ -59,6 +62,10 @@ public class Program
         builder.Services.Configure<WikidataNamesOptions>(builder.Configuration.GetSection("Wikidata"));
         // FR: франшизи/саги (P179) — синк title_series.
         builder.Services.Configure<TitleSeriesSyncOptions>(builder.Configuration.GetSection("TitleSeries"));
+        // «Де подивитись»: JustWatch (усі провайдери, рішення власника 09.11) + Megogo free (UA) + Plex free.
+        builder.Services.Configure<JustWatchSyncOptions>(builder.Configuration.GetSection("JustWatch"));
+        builder.Services.Configure<MegogoOptions>(builder.Configuration.GetSection("Megogo"));
+        builder.Services.Configure<PlexOptions>(builder.Configuration.GetSection("Plex"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
         builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
         // FR-16/17/18: ваги профілю смаку + опції discover
@@ -96,6 +103,10 @@ public class Program
                 o.Cookie.HttpOnly = true;
                 o.Cookie.SameSite = SameSiteMode.Lax;
                 o.Cookie.SecurePolicy = CookieSecurePolicy.None;
+                // FR-PERSIST: rememberMe → persistent-cookie на 30 діб замість сесійної;
+                // sliding продовжує активні сесії (перевидача після половини строку).
+                o.ExpireTimeSpan = TimeSpan.FromDays(30);
+                o.SlidingExpiration = true;
                 o.Events.OnRedirectToLogin = ctx =>
                 {
                     ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -108,6 +119,19 @@ public class Program
                 };
             });
         builder.Services.AddAuthorization();
+
+        // FR-PERSIST: key-ring DataProtection має ПЕРЕЖИВАТИ перестворення контейнера —
+        // інакше кожен recreate генерує нові ключі і ВСІ md_auth cookies стають
+        // недійсними (власник: «при кожному перестворенні вилітає логін»).
+        // Стабільне ApplicationName робить ключі незалежними від шляху збірки;
+        // файлове сховище вмикається лише коли ASPNETKEYS_DIRECTORY задана
+        // (docker compose мапить volume ./data/keys:/data/keys — задача оркестратора),
+        // бо шлях /root на Windows-хості інтеграційних тестів невалідний.
+        var dataProtection = builder.Services.AddDataProtection()
+            .SetApplicationName(CookieSetup.ApplicationName);
+        var keysDirectory = CookieSetup.ResolveKeysDirectory();
+        if (keysDirectory is not null)
+            dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
 
         // За тунелем/проксі реальна адреса клієнта приходить у X-Forwarded-For
         // (cloudflared → Next-проксі передає заголовок далі). Без цього
@@ -216,6 +240,28 @@ public class Program
         {
             c.Timeout = TimeSpan.FromMinutes(10);
         });
+        // JustWatch GraphQL (провайдери «де подивитись»): батчі популярних + пошук по каталогу
+        builder.Services.AddHttpClient<JustWatchSyncService>(c =>
+        {
+            c.Timeout = TimeSpan.FromSeconds(60);
+        });
+        // Megogo free-каталог UA: тротлінг 700 мс у сервісі; авто-редіекти вимкнено —
+        // 302 → /ua означає КІНЕЦЬ видачі колекції, з редіректом синк змішав би картки головної
+        builder.Services.AddHttpClient<MegogoClient>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MegogoOptions>>().Value;
+            c.BaseAddress = new Uri(opt.BaseUrl.TrimEnd('/') + "/");
+            c.Timeout = TimeSpan.FromSeconds(60);
+            if (!string.IsNullOrWhiteSpace(opt.UserAgent))
+                c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", opt.UserAgent);
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        // Plex movie-database: важкі year-сторінки (5MB+) → довгий таймаут
+        builder.Services.AddHttpClient<PlexSyncService>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlexOptions>>().Value;
+            c.BaseAddress = new Uri(opt.BaseUrl.TrimEnd('/') + "/");
+            c.Timeout = TimeSpan.FromSeconds(120);
+        });
         // FR-20: YouTube Data API v3 (base з опцій; ключ YOUTUBE_API_KEY через MapEnvDefaults)
         builder.Services.AddHttpClient<YoutubeClient>((sp, c) =>
         {
@@ -252,6 +298,10 @@ public class Program
         builder.Services.AddSingleton<WikidataNamesSyncQueue>();
         builder.Services.AddSingleton<TitleSeriesSyncQueue>();
         builder.Services.AddSingleton<YoutubeSyncQueue>();
+        builder.Services.AddSingleton<JustWatchSyncQueue>();
+        builder.Services.AddSingleton<MegogoSyncQueue>();
+        builder.Services.AddSingleton<PlexSyncQueue>();
+        builder.Services.AddSingleton<MegogoThrottle>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
         builder.Services.AddSingleton<ShikimoriThrottle>();
@@ -297,6 +347,9 @@ public class Program
             builder.Services.AddHostedService<WikidataNamesSyncBackgroundService>();
             builder.Services.AddHostedService<TitleSeriesSyncBackgroundService>();
             builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
+            builder.Services.AddHostedService<JustWatchSyncBackgroundService>();
+            builder.Services.AddHostedService<MegogoSyncBackgroundService>();
+            builder.Services.AddHostedService<PlexSyncBackgroundService>();
         }
 
         var app = builder.Build();

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "59f70cbcde349d337ff1d38c7e236047adedbde01f3902aa02a554f4e4e00a8a",
+    "name": "/moviediscovery-test-db",
+    "project": "codex-search-audit-20261109",
+    "mounts": [
+      {
+        "type": "volume",
+        "name": "4d13390d8b9e92fd42e91b4ad1bdeb21f190c445ad343bd5d9bed1f39c69b7d5",
+        "destination": "/var/lib/postgresql/data"
+      }
+    ]
+  },
+  {
+    "id": "3b85062b26a61fc66246d4c370df7b2f834a069345a12793265125b42757f610",
+    "name": "/moviediscovery-test-api",
+    "project": "codex-search-audit-20261109",
+    "mounts": []
+  },
+  {
+    "id": "e7908649475dac3fa3b75328a549a39b4dd81d0a5f0dce4cc0dd2514f35e364c",
+    "name": "/moviediscovery-test-web",
+    "project": "codex-search-audit-20261109",
+    "mounts": []
+  }
+]

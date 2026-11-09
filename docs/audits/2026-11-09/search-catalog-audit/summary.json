@@ -1,0 +1,33 @@
+{
+  "liveRequests": 85,
+  "live200": 75,
+  "live400": 2,
+  "live401": 3,
+  "live500": 1,
+  "liveTimeouts": 4,
+  "liveSlowOver1Sec": [
+    "health",
+    "type_movie",
+    "type_series",
+    "category_movie",
+    "category_series",
+    "category_tvshow",
+    "category_cartoon",
+    "category_dorama",
+    "genre_uk",
+    "year_range",
+    "rating_imdb",
+    "country_ua",
+    "runtime_series",
+    "actor_filter",
+    "seasons",
+    "trailer",
+    "bad_year_range",
+    "bad_page",
+    "large_page",
+    "wildcard_percent"
+  ],
+  "fixtureChecks": 47,
+  "fixturePassed": 35,
+  "fixtureDeviations": 12
+}

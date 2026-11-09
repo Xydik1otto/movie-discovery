@@ -1,0 +1,176 @@
+{
+  "identityChecks": [
+    {
+      "feed": "type_movie",
+      "id": 257390,
+      "title": "The Shawshank Redemption",
+      "type": "movie",
+      "pass": true,
+      "detailId": 257390,
+      "detailType": "movie"
+    },
+    {
+      "feed": "type_movie",
+      "id": 777791,
+      "title": "The Dark Knight",
+      "type": "movie",
+      "pass": true,
+      "detailId": 777791,
+      "detailType": "movie"
+    },
+    {
+      "feed": "type_series",
+      "id": 845164,
+      "title": "Breaking Bad",
+      "type": "series",
+      "pass": true,
+      "detailId": 845164,
+      "detailType": "series"
+    },
+    {
+      "feed": "type_series",
+      "id": 853316,
+      "title": "Game of Thrones",
+      "type": "series",
+      "pass": true,
+      "detailId": 853316,
+      "detailType": "series"
+    },
+    {
+      "feed": "type_anime",
+      "id": 528,
+      "title": "ONE PIECE",
+      "type": "anime",
+      "pass": true,
+      "detailId": 528,
+      "detailType": "anime"
+    },
+    {
+      "feed": "type_anime",
+      "id": 526,
+      "title": "HUNTER×HUNTER (2011)",
+      "type": "anime",
+      "pass": true,
+      "detailId": 526,
+      "detailType": "anime"
+    },
+    {
+      "feed": "type_manga",
+      "id": 769,
+      "title": "Chainsaw Man",
+      "type": "manga",
+      "pass": true,
+      "detailId": 769,
+      "detailType": "manga"
+    },
+    {
+      "feed": "type_manga",
+      "id": 773,
+      "title": "ONE PIECE",
+      "type": "manga",
+      "pass": true,
+      "detailId": 773,
+      "detailType": "manga"
+    },
+    {
+      "feed": "category_cartoon",
+      "id": 846605,
+      "title": "WALL·E",
+      "type": "movie",
+      "pass": true,
+      "detailId": 846605,
+      "detailType": "movie"
+    },
+    {
+      "feed": "category_cartoon",
+      "id": 256630,
+      "title": "The Lion King",
+      "type": "movie",
+      "pass": true,
+      "detailId": 256630,
+      "detailType": "movie"
+    },
+    {
+      "feed": "category_dorama",
+      "id": 745885,
+      "title": "V for Vendetta",
+      "type": "movie",
+      "pass": true,
+      "detailId": 745885,
+      "detailType": "movie"
+    },
+    {
+      "feed": "category_dorama",
+      "id": 788592,
+      "title": "I Am Legend",
+      "type": "movie",
+      "pass": true,
+      "detailId": 788592,
+      "detailType": "movie"
+    }
+  ],
+  "aliasAndCaseChecks": [
+    {
+      "query": "Attack on Titan",
+      "type": "anime",
+      "total": 0,
+      "ids": []
+    },
+    {
+      "query": "Shingeki no Kyojin",
+      "type": "anime",
+      "total": 8,
+      "ids": [
+        521,
+        544,
+        538,
+        530,
+        536,
+        590,
+        721,
+        442
+      ]
+    },
+    {
+      "query": "Naruto",
+      "type": "anime",
+      "total": 2,
+      "ids": [
+        545,
+        532
+      ]
+    },
+    {
+      "query": "NARUTO",
+      "type": "anime",
+      "total": 2,
+      "ids": [
+        545,
+        532
+      ]
+    }
+  ],
+  "semanticFixture": [
+    {
+      "text": "фантастика",
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    {
+      "text": "драма детектив",
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    {
+      "text": "щось про піратів та дружбу",
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    }
+  ]
+}

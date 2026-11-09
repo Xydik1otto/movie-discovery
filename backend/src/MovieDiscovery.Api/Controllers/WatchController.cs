@@ -2,13 +2,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Watchability;
 using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Api.Controllers;
 
 /// <summary>
-/// «Де подивитись» (FR-14): усі провайдери тайтла з watch_links.
-/// FR-19: на кожному провайдері audioLang/quality/dub (nullable).
+/// «Де подивитись» (FR-14): УНІФІКОВАНИЙ список варіантів перегляду — злиття watch_links
+/// (перевірені лінки + метадані FR-19) і providers (каталог JustWatch/TMDB) — рішення
+/// власника 09.11: усі провайдери (безкоштовні + платні), фронт ховає платні за перемикачем.
+/// kind нормалізується до free|stream|rent|buy|ads (subscription → stream); дедуп за
+/// (provider+url); порядок: спочатку free/ads, далі за пріоритетом джерела
+/// (sweettv, megogo, plex, youtube, internet-archive, justwatch) — див. WatchOptionsMerger.
 /// FR-20: ?enrich=youtube — on-demand пошук YouTube для ТОГО тайтла, якщо youtube-лінку нема
 /// (1 search/запит, кеш 24 год; без ключа або з наявним лінком — тихий no-op).
 /// </summary>
@@ -32,11 +37,27 @@ public sealed class WatchController(
         var links = await db.WatchLinks.AsNoTracking()
             .Where(w => w.TitleId == id)
             .OrderBy(w => w.Provider).ThenBy(w => w.Kind)
-            .Select(w => new WatchProviderInfo(
-                w.Provider, w.Kind, w.Region, w.Url, w.IsAvailable,
-                w.AudioLang, w.Quality, w.Dub))
+            .Select(w => new { w.Provider, w.Kind, w.Url, w.Region, w.IsAvailable, w.AudioLang, w.Quality, w.Dub })
             .ToListAsync(ct);
 
-        return Ok(new TitleWatchResponse { Providers = links });
+        var catalog = await db.Providers.AsNoTracking()
+            .Where(p => p.TitleId == id)
+            .Select(p => new { Provider = p.ProviderName, p.Kind, p.Url, p.Source, p.Region })
+            .ToListAsync(ct);
+
+        var merged = WatchOptionsMerger.Merge(
+            links.Select(w => new WatchOptionRow(
+                w.Provider, w.Kind, w.Url, null, w.Region, w.IsAvailable, w.AudioLang, w.Quality, w.Dub)),
+            catalog.Select(p => new WatchOptionRow(
+                p.Provider, p.Kind, p.Url, p.Source, p.Region)));
+
+        return Ok(new TitleWatchResponse
+        {
+            Providers = [.. merged.Select(o => new WatchProviderInfo(
+                o.Provider, o.Kind, o.Region, o.Url, o.IsAvailable ?? true, o.AudioLang, o.Quality, o.Dub)
+            {
+                Source = o.Source,
+            })],
+        });
     }
 }

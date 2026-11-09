@@ -369,6 +369,20 @@ export const uk = {
   "series.watchlist": "У списку",
   "series.current": "Цей фільм",
   "series.badge": "У серії",
+
+  // --- watch options badges ---
+  "watch.kind.free": "Безкоштовно",
+  "watch.kind.stream": "Підписка",
+  "watch.kind.rent": "Оренда",
+  "watch.kind.buy": "Купівля",
+  "watch.kind.ads": "З рекламою",
+  "watch.showPaid": "Показати платні",
+  "watch.hidePaid": "Лише безкоштовні",
+
+  // --- auth remember + password visibility ---
+  "auth.showPassword": "Показати пароль",
+  "auth.hidePassword": "Приховати пароль",
+  "auth.rememberMe": "Запам'ятати мене",
 } as const;
 
 export type Dict = Record<keyof typeof uk, string>;

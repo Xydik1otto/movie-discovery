@@ -21,6 +21,9 @@ export default function AuthForm({ mode }: { mode: Mode }) {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // Показ/приховання пароля (око) і «Запам'ятати мене» (галочка ввімкнена за замовчуванням).
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [busy, setBusy] = useState(false);
   // Помилки клієнтської валідації та бекенду — окремо, бекендові сильніші.
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
@@ -51,7 +54,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
     try {
       const failure =
         mode === "login"
-          ? await login(email.trim(), password)
+          ? await login(email.trim(), password, rememberMe)
           : await register(email.trim(), username.trim(), password);
       if (failure) {
         setServerErrors(failure);
@@ -160,14 +163,29 @@ export default function AuthForm({ mode }: { mode: Mode }) {
           >
             {t("auth.password")}
           </label>
-          <input
-            id="auth-password"
-            type="password"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={inputCls("password")}
-          />
+          {/* Поле пароля з кнопкою показу/приховання: текст не підповзає під
+              кнопку (pr-11), кнопка всередині поля (absolute right). */}
+          <div className="relative">
+            <input
+              id="auth-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`${inputCls("password")} pr-11`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+              aria-pressed={showPassword}
+              title={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+              className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-base text-mute transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
           {fieldError("password") ? (
             <p className="mt-1 text-xs text-red-400">{fieldError("password")}</p>
           ) : (
@@ -176,6 +194,19 @@ export default function AuthForm({ mode }: { mode: Mode }) {
             )
           )}
         </div>
+
+        {mode === "login" && (
+          // «Запам'ятати мене»: за замовчуванням ввімкнено — сесія персистентна.
+          <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-mute">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 accent-[var(--color-accent)]"
+            />
+            {t("auth.rememberMe")}
+          </label>
+        )}
 
         {generalError && (
           <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
