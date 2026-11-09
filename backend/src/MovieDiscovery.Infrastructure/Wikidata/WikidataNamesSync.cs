@@ -11,11 +11,14 @@ using NpgsqlTypes;
 
 namespace MovieDiscovery.Infrastructure.Wikidata;
 
-/// <summary>Рядок Wikidata-синку: IMDb-ід (P345) → українська/російська назва + зображення (P18).</summary>
-public sealed record WikidataNameRow(string ImdbId, string? Uk, string? Ru, string? Image);
+/// <summary>
+/// Рядок Wikidata-синку: IMDb-ід (P345) → українська/російська назва + зображення (P18)
+/// + короткий опис schema:description (uk/ru) для карток discover/search.
+/// </summary>
+public sealed record WikidataNameRow(string ImdbId, string? Uk, string? Ru, string? Image, string? DescUk, string? DescRu);
 
 /// <summary>
-/// Staging wikidata_names_raw + батчевий UPDATE titles.title_uk/title_ru/poster_path.
+/// Staging wikidata_names_raw + батчевий UPDATE titles (назви, постер, описи overview_uk/overview_ru).
 /// SQL-константи — єдине джерело правди для міграції (DDL) і сервісу (COPY/UPDATE);
 /// UNLOGGED ставить сервіс. Рішення власника 09.11: російська назва — ДОЗВОЛЕНИЙ
 /// фолбек, коли офіційної української немає (пріоритет відображення uk → ru → en).
@@ -24,16 +27,18 @@ public static class WikidataNamesStaging
 {
     public const string TableName = "wikidata_names_raw";
 
-    /// <summary>Порядок колонок для COPY — ЗБІГАЄТЬСЯ з DDL. poster_url — ГОТОВИЙ Commons-URL (thumbnail 500px).</summary>
-    public static readonly string[] Columns = ["imdb_id", "uk", "ru", "poster_url"];
+    /// <summary>Порядок колонок для COPY — ЗБІГАЄТЬСЯ з DDL. poster_url — ГОТОВИЙ Commons-URL (thumbnail 500px); desc_* — schema:description.</summary>
+    public static readonly string[] Columns = ["imdb_id", "uk", "ru", "poster_url", "desc_uk", "desc_ru"];
 
-    /// <summary>DDL staging-таблиці (у міграції; тут — для smoke/тестів і довідки).</summary>
+    /// <summary>DDL staging-таблиці (у міграції; тут — для smoke/тестів і довідки). Нові колонки desc_* додає міграція через ALTER (для наявних БД).</summary>
     public const string CreateTableSql = """
         CREATE TABLE IF NOT EXISTS wikidata_names_raw (
             imdb_id text NOT NULL,
             uk text NULL,
             ru text NULL,
-            poster_url text NULL
+            poster_url text NULL,
+            desc_uk text NULL,
+            desc_ru text NULL
         );
         """;
 
@@ -42,19 +47,24 @@ public static class WikidataNamesStaging
     /// <summary>
     /// UPDATE titles за imdb_id (ідемпотентно): title_uk/title_ru перезаписуються Wikidata-значеннями
     /// (канонічні інтернет-назви, рішення власника), poster_path — ЛИШЕ якщо порожній (P18 не гірший
-    /// за наявний постер TMDB/sweet.tv). JOIN за imdb_id — індекс ix_titles_imdb_id.
+    /// за наявний постер TMDB/sweet.tv), overview_uk/overview_ru — ЛИШЕ заповнення порожніх
+    /// (не перебиваємо повні описи TMDB/Аніліст; overview_en не чіпаємо). JOIN за imdb_id — індекс ix_titles_imdb_id.
     /// </summary>
     public const string UpdateSql = """
         UPDATE titles t SET
             title_uk = COALESCE(NULLIF(s.uk, ''), t.title_uk),
             title_ru = COALESCE(NULLIF(s.ru, ''), t.title_ru),
             poster_path = COALESCE(t.poster_path, s.poster_url),
+            overview_uk = COALESCE(NULLIF(t.overview_uk, ''), s.desc_uk),
+            overview_ru = COALESCE(NULLIF(t.overview_ru, ''), s.desc_ru),
             updated_at = now()
         FROM wikidata_names_raw s
         WHERE t.imdb_id = s.imdb_id
           AND (   (s.uk IS NOT NULL AND (t.title_uk IS NULL OR t.title_uk <> s.uk))
                OR (s.ru IS NOT NULL AND (t.title_ru IS NULL OR t.title_ru <> s.ru))
-               OR (s.poster_url IS NOT NULL AND t.poster_path IS NULL))
+               OR (s.poster_url IS NOT NULL AND t.poster_path IS NULL)
+               OR (s.desc_uk IS NOT NULL AND (t.overview_uk IS NULL OR t.overview_uk = ''))
+               OR (s.desc_ru IS NOT NULL AND (t.overview_ru IS NULL OR t.overview_ru = '')))
         """;
 
     /// <summary>URL зображення Commons з імені файлу (thumbnail ?width=500 — під розмір карток).</summary>
@@ -90,7 +100,8 @@ public sealed record WikidataNamesSyncResult(int Staged, int Updated, int Bucket
 /// <summary>
 /// Назви і постери локального каталогу з ВІЛЬНОГО офіційного джерела — Wikidata Query
 /// Service (без ключів). Пакетний SPARQL по префіксах tt00..tt39: елементи з P345 (IMDb id),
-/// uk label, ru label (фолбек за рішенням власника), P18 (зображення) → staging COPY →
+/// uk label, ru label (фолбек за рішенням власника), P18 (зображення), schema:description
+/// (uk/ru — короткі описи для карток) → staging COPY →
 /// UPDATE titles (ідемпотентно, батчами; дроблення бакету при переповненні сторінки).
 /// </summary>
 public sealed class WikidataNamesService(
@@ -106,16 +117,19 @@ public sealed class WikidataNamesService(
     /// <summary>
     /// SPARQL з VALUES-батчем наших imdb_id (точкові пошуки по P345 — швидкі й надійні;
     /// префіксні скани TT QS відкидає 403/504 — перевірено живцем). $$-префікс: { } літеральні.
+    /// schema: — дефолтний префікс Query Service (як wdt:/rdfs:), тому оголошень PREFIX не потрібні.
     /// </summary>
     public static string SparqlValues(IReadOnlyCollection<string> ids)
     {
-        var sb = new StringBuilder(ids.Count * 14 + 240);
-        sb.Append("SELECT ?imdb ?uk ?ru ?img WHERE {\n  VALUES ?imdb { ");
+        var sb = new StringBuilder(ids.Count * 14 + 300);
+        sb.Append("SELECT ?imdb ?uk ?ru ?img ?dukk ?dr WHERE {\n  VALUES ?imdb { ");
         foreach (var id in ids)
             sb.Append('"').Append(id.Replace("\"", "")).Append("\" ");
         sb.Append("}\n  ?item wdt:P345 ?imdb .\n");
         sb.Append("  OPTIONAL { ?item rdfs:label ?uk . FILTER(LANG(?uk) = \"uk\") }\n");
         sb.Append("  OPTIONAL { ?item rdfs:label ?ru . FILTER(LANG(?ru) = \"ru\") }\n");
+        sb.Append("  OPTIONAL { ?item schema:description ?dukk . FILTER(LANG(?dukk) = \"uk\") }\n");
+        sb.Append("  OPTIONAL { ?item schema:description ?dr . FILTER(LANG(?dr) = \"ru\") }\n");
         sb.Append("  OPTIONAL { ?item wdt:P18 ?img . }\n");
         sb.Append("  FILTER(BOUND(?uk) || BOUND(?ru))\n}");
         return sb.ToString();
@@ -235,6 +249,8 @@ public sealed class WikidataNamesService(
         var ukIdx = header.FindIndex(h => h.Trim() == "uk");
         var ruIdx = header.FindIndex(h => h.Trim() == "ru");
         var imgIdx = header.FindIndex(h => h.Trim() == "img");
+        var dukkIdx = header.FindIndex(h => h.Trim() == "dukk");
+        var drIdx = header.FindIndex(h => h.Trim() == "dr");
         if (imdbIdx < 0) return rows;
 
         List<string>? fields;
@@ -248,7 +264,10 @@ public sealed class WikidataNamesService(
             if (uk.Length == 0 && ru.Length == 0) continue; // немає жодної потрібної назви
 
             var file = ExtractCommonsFile(Field(fields, imgIdx).Trim());
-            rows.Add(new WikidataNameRow(imdb, uk.Length > 0 ? uk : null, ru.Length > 0 ? ru : null, file));
+            var dukk = Field(fields, dukkIdx).Trim();
+            var dr = Field(fields, drIdx).Trim();
+            rows.Add(new WikidataNameRow(imdb, uk.Length > 0 ? uk : null, ru.Length > 0 ? ru : null, file,
+                dukk.Length > 0 ? dukk : null, dr.Length > 0 ? dr : null));
             if (maxRows is { } cap && rows.Count >= cap) break;
         }
         return rows;
@@ -299,6 +318,8 @@ public sealed class WikidataNamesService(
                         WriteNullable(writer, r.Uk, ct);
                         WriteNullable(writer, r.Ru, ct);
                         WriteNullable(writer, WikidataNamesStaging.PosterUrl(r.Image), ct);
+                        WriteNullable(writer, r.DescUk, ct);
+                        WriteNullable(writer, r.DescRu, ct);
                     }
                     await writer.CompleteAsync(ct);
                 }

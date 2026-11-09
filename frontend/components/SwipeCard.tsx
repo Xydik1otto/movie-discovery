@@ -23,6 +23,12 @@ export default function SwipeCard({
 }) {
   const { t } = useI18n();
   const url = posterUrlFull(item.posterUrl);
+  // Discover: трейлер приходить окремим id від бекенду (може бути відсутній —
+  // тоді кнопки на картці не має і лейаут не змінюється). Відкриваємо
+  // watch-посилання YouTube у новій вкладці.
+  const trailerUrl = item.trailerYtId
+    ? `https://www.youtube.com/watch?v=${encodeURIComponent(item.trailerYtId)}`
+    : null;
 
   return (
     <div
@@ -78,16 +84,34 @@ export default function SwipeCard({
           </div>
         )}
 
-        {/* Кнопка «Відкрити картку» — свідомо поза зоною drag-обробника */}
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onOpen}
-          title={t("discover.openTitle")}
-          className="absolute right-3 top-3 rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
-        >
-          ↗
-        </button>
+        {/* Дії у верхньому правому куті: «Трейлер» (коли є) + «Відкрити картку».
+            Свідомо поза зоною drag-обробника: stopPropagation на pointerdown,
+            щоб тап/клік по кнопці не зсував картку (не стартує свайп). */}
+        <div className="absolute right-3 top-3 flex items-center gap-2">
+          {trailerUrl && (
+            <a
+              href={trailerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              title={t("discover.trailer")}
+              aria-label={t("discover.trailer")}
+              className="flex items-center rounded-full border border-white/20 bg-black/50 px-2.5 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
+            >
+              ▶ {t("discover.trailer")}
+            </a>
+          )}
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onOpen}
+            title={t("discover.openTitle")}
+            className="rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
+          >
+            ↗
+          </button>
+        </div>
       </div>
     </div>
   );

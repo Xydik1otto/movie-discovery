@@ -26,6 +26,7 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<BotIdentity> BotIdentities => Set<BotIdentity>();
     public DbSet<UserCollection> UserCollections => Set<UserCollection>();
     public DbSet<UserCollectionItem> UserCollectionItems => Set<UserCollectionItem>();
+    public DbSet<TitleSeries> TitleSeries => Set<TitleSeries>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -253,6 +254,25 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
                 .WithMany(c => c.Items)
                 .HasForeignKey(x => x.CollectionId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // FR: франшизи/саги (Wikidata P179) — title_series: imdb_id (PK) → серія
+        // (QID + назви uk/ru/en) + prev/next частини. Групування на читанні — за SeriesQid.
+        // FK на titles НЕ потрібні: imdb_id може посилатися на тайтли поза каталогом.
+        mb.Entity<TitleSeries>(e =>
+        {
+            e.ToTable("title_series");
+            e.HasKey(x => x.ImdbId);
+            e.Property(x => x.ImdbId).HasMaxLength(16);
+            e.Property(x => x.SeriesQid).HasMaxLength(16);
+            // Колонки БЕЗ префікса series_: синк (TitleSeriesSync.UpsertSql/COPY) пише
+            // голий SQL з label_uk/label_ru/label_en — назви колонок мають збігатись.
+            e.Property(x => x.SeriesLabelUk).HasColumnName("label_uk");
+            e.Property(x => x.SeriesLabelRu).HasColumnName("label_ru");
+            e.Property(x => x.SeriesLabelEn).HasColumnName("label_en");
+            e.Property(x => x.PrevImdb).HasMaxLength(16);
+            e.Property(x => x.NextImdb).HasMaxLength(16);
+            e.HasIndex(x => x.SeriesQid);
         });
 
         // Тестовий InMemory-провайдер не вміє jsonb/vector — наприкінці (після всіх конфігурацій),

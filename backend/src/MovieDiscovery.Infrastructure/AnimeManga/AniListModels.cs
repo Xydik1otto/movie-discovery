@@ -51,6 +51,8 @@ public sealed class AniListMedia
 {
     [JsonPropertyName("id")] public int Id { get; set; }
     [JsonPropertyName("title")] public AniListTitle? Title { get; set; }
+    // Опис приходить з HTML (<br>, <i>) — санітизується в AniListMapper.CleanDescription → OverviewEn
+    [JsonPropertyName("description")] public string? Description { get; set; }
     [JsonPropertyName("coverImage")] public AniListCover? CoverImage { get; set; }
     [JsonPropertyName("episodes")] public int? Episodes { get; set; }
     [JsonPropertyName("chapters")] public int? Chapters { get; set; }

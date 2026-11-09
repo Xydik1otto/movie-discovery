@@ -43,6 +43,7 @@ public sealed class AniListClient(
                   id
                   title { romaji english }
                   coverImage { large }
+                  description
                   episodes
                   chapters
                   volumes
@@ -74,6 +75,7 @@ public sealed class AniListClient(
                   id
                   title { romaji english }
                   coverImage { large }
+                  description
                   episodes
                   chapters
                   volumes
@@ -173,6 +175,7 @@ public sealed class AniListClient(
     /// <summary>
     /// Каталог-запит (sync аніме/манги): Page(perPage:50, page:N), sort=POPULARITY_DESC.
     /// title.ukrainian НЕ запитуємо — поля в API не існує (GraphQL-валідація відхиляє весь запит).
+    /// description запитуємо завжди: HTML-опис → OverviewEn (санітизація в AniListMapper.CleanDescription).
     /// </summary>
     public const string CatalogQuery = """
         query ($page: Int, $perPage: Int, $type: MediaType) {
@@ -181,6 +184,7 @@ public sealed class AniListClient(
               id
               title { romaji english }
               coverImage { large }
+              description
               episodes
               chapters
               volumes

@@ -22,6 +22,7 @@ using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watchability;
 using MovieDiscovery.Infrastructure.Wikidata;
+using MovieDiscovery.Infrastructure.Series;
 using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Api;
@@ -56,6 +57,8 @@ public class Program
         builder.Services.Configure<ImdbCrewOptions>(builder.Configuration.GetSection("Imdb"));
         // Назви/постери з Wikidata (uk + ru-фолбек; рішення власника 09.11).
         builder.Services.Configure<WikidataNamesOptions>(builder.Configuration.GetSection("Wikidata"));
+        // FR: франшизи/саги (P179) — синк title_series.
+        builder.Services.Configure<TitleSeriesSyncOptions>(builder.Configuration.GetSection("TitleSeries"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
         builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
         // FR-16/17/18: ваги профілю смаку + опції discover
@@ -208,6 +211,11 @@ public class Program
         {
             c.Timeout = TimeSpan.FromMinutes(10);
         });
+        // FR: франшизи/саги — SPARQL VALUES-батчі у Query Service (той самий короткий патерн)
+        builder.Services.AddHttpClient<TitleSeriesSyncService>(c =>
+        {
+            c.Timeout = TimeSpan.FromMinutes(10);
+        });
         // FR-20: YouTube Data API v3 (base з опцій; ключ YOUTUBE_API_KEY через MapEnvDefaults)
         builder.Services.AddHttpClient<YoutubeClient>((sp, c) =>
         {
@@ -242,6 +250,7 @@ public class Program
         builder.Services.AddSingleton<ImdbAkasSyncQueue>();
         builder.Services.AddSingleton<ImdbCrewSyncQueue>();
         builder.Services.AddSingleton<WikidataNamesSyncQueue>();
+        builder.Services.AddSingleton<TitleSeriesSyncQueue>();
         builder.Services.AddSingleton<YoutubeSyncQueue>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
@@ -286,6 +295,7 @@ public class Program
             builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
             builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
             builder.Services.AddHostedService<WikidataNamesSyncBackgroundService>();
+            builder.Services.AddHostedService<TitleSeriesSyncBackgroundService>();
             builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
         }
 

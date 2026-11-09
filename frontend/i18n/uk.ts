@@ -274,6 +274,7 @@ export const uk = {
   "discover.skip": "Not now",
   "discover.watchlist": "Хочу подивитись",
   "discover.openTitle": "Відкрити картку",
+  "discover.trailer": "Трейлер",
   "discover.modeLabel": "Режим",
   "discover.mode.exploit": "для тебе",
   "discover.mode.safe": "перевірене",
@@ -360,6 +361,14 @@ export const uk = {
   "collections.mineEmpty": "Ти ще не зберігав добірок",
   "collections.loginHint": "Увійди, щоб зберігати добірки",
   "collections.itemsCount": "{n} тайтлів",
+
+  // --- title series (FR franchise block) ---
+  "series.title": "Фільми з тієї ж лінійки",
+  "series.order": "Порядок перегляду",
+  "series.watched": "Переглянуто",
+  "series.watchlist": "У списку",
+  "series.current": "Цей фільм",
+  "series.badge": "У серії",
 } as const;
 
 export type Dict = Record<keyof typeof uk, string>;

@@ -10,6 +10,7 @@ public class Title
     public string? TitleRu { get; set; } // фолбек-назва (Wikidata/IMDb akas) — рішення власника 09.11: uk → ru → en
     public string TitleEn { get; set; } = "";
     public string? OverviewUk { get; set; }
+    public string? OverviewRu { get; set; } // фолбек-опис з Wikidata (schema:description ru) — лише заповнення порожніх
     public string? OverviewEn { get; set; }
     public int? Year { get; set; }
     public string[] Countries { get; set; } = [];

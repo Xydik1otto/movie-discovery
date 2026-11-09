@@ -276,6 +276,7 @@ export const en: Dict = {
   "discover.skip": "Not now",
   "discover.watchlist": "Watchlist",
   "discover.openTitle": "Open title page",
+  "discover.trailer": "Trailer",
   "discover.modeLabel": "Mode",
   "discover.mode.exploit": "for you",
   "discover.mode.safe": "safe picks",
@@ -362,4 +363,12 @@ export const en: Dict = {
   "collections.mineEmpty": "No saved collections yet",
   "collections.loginHint": "Log in to save collections",
   "collections.itemsCount": "{n} titles",
+
+  // --- title series (FR franchise block) ---
+  "series.title": "Movies from the same saga",
+  "series.order": "Watch order",
+  "series.watched": "Watched",
+  "series.watchlist": "In watchlist",
+  "series.current": "This title",
+  "series.badge": "In series",
 };

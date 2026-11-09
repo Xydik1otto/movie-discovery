@@ -219,6 +219,29 @@ public sealed class AdminController(
     }
 
     /// <summary>
+    /// FR: франшизи/саги (Wikidata P179 + P155/P156) → title_series: 202 {queued:true, source:"title-series"}.
+    /// maxRows — опційний smoke-ліміт рядків (смуок на одному батчі). Черга через [FromServices] —
+    /// конструктор і решта файлу не змінюються.
+    /// </summary>
+    [HttpPost("sync/title-series")]
+    public IActionResult SyncTitleSeries(
+        [FromBody] MaxRowsRequest? req,
+        [FromServices] MovieDiscovery.Infrastructure.Series.TitleSeriesSyncQueue titleSeriesSyncQueue)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && mr is < 1 or > 100_000_000)
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–100 000 000" });
+
+        if (!titleSeriesSyncQueue.TryEnqueue(new MovieDiscovery.Infrastructure.Series.TitleSeriesSyncJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "title-series" });
+    }
+
+    /// <summary>
     /// FR-20: YouTube як джерело перегляду: топ-N тайтлів без youtube-лінку → пошук+матч
     /// → watch_links: 202 {queued:true, source:"youtube"}. Без YOUTUBE_API_KEY джоба
     /// пропускається з warn (dormant, нічого не ламається).

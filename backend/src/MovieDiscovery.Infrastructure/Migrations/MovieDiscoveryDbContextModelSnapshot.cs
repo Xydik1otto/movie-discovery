@@ -666,6 +666,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("overview_en");
 
+                    b.Property<string>("OverviewRu")
+                        .HasColumnType("text")
+                        .HasColumnName("overview_ru");
+
                     b.Property<string>("OverviewUk")
                         .HasColumnType("text")
                         .HasColumnName("overview_uk");
@@ -821,6 +825,54 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasFilter("type IN ('movie', 'series')");
 
                     b.ToTable("titles", (string)null);
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.TitleSeries", b =>
+                {
+                    b.Property<string>("ImdbId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("imdb_id");
+
+                    b.Property<string>("NextImdb")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("next_imdb");
+
+                    b.Property<string>("PrevImdb")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("prev_imdb");
+
+                    b.Property<string>("SeriesLabelEn")
+                        .HasColumnType("text")
+                        .HasColumnName("label_en");
+
+                    b.Property<string>("SeriesLabelRu")
+                        .HasColumnType("text")
+                        .HasColumnName("label_ru");
+
+                    b.Property<string>("SeriesLabelUk")
+                        .HasColumnType("text")
+                        .HasColumnName("label_uk");
+
+                    b.Property<string>("SeriesQid")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("series_qid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("ImdbId")
+                        .HasName("pk_title_series");
+
+                    b.HasIndex("SeriesQid")
+                        .HasDatabaseName("ix_title_series_series_qid");
+
+                    b.ToTable("title_series", (string)null);
                 });
 
             modelBuilder.Entity("MovieDiscovery.Core.Domain.UserCollection", b =>

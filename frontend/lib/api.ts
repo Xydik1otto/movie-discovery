@@ -23,6 +23,7 @@ import type {
   Paged,
   PresetCollection,
   SearchParams,
+  SeriesResponse,
   SimilarItem,
   SimilarSeedsFilters,
   TitleCard,
@@ -482,4 +483,11 @@ export async function createCollection(
 
 export async function deleteCollection(id: number): Promise<void> {
   await request<void>(`/api/collections/${id}`, { method: "DELETE" });
+}
+
+// --- FR: франшиза/сага тайтла (GET /api/titles/{id}/series) ---
+// Поза франшизою бекенд віддає 200 {seriesKey: null, items: []} — не помилка.
+
+export async function getTitleSeries(id: number, lang: Lang): Promise<SeriesResponse> {
+  return request<SeriesResponse>(`/api/titles/${id}/series${qs({ lang })}`);
 }

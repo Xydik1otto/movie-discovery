@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { addListItem } from "@/lib/listActions";
-import { getWatch } from "@/lib/api";
+import { getWatch, getTitleSeries } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
 import {
@@ -14,7 +14,7 @@ import {
   hasDubMetadata,
   qualityLabel,
 } from "@/lib/watch";
-import type { ListKind, SimilarItem, TitleDetail, WatchProvider } from "@/lib/types";
+import type { ListKind, SeriesResponse, SimilarItem, TitleDetail, WatchProvider } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
@@ -22,6 +22,7 @@ import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import RatingBadge from "@/components/RatingBadge";
 import ProviderBadge from "@/components/ProviderBadge";
+import SeriesBlock from "@/components/SeriesBlock";
 
 export default function TitleDetailPage() {
   const { t, lang } = useI18n();
@@ -43,6 +44,10 @@ export default function TitleDetailPage() {
   // Повна форма провайдерів з GET /api/titles/{id}/watch (FR-14).
   // null = ендпоінт недоступний → fallback на компактні detail.providers.
   const [watchList, setWatchList] = useState<WatchProvider[] | null>(null);
+
+  // FR: франшиза/сага з GET /api/titles/{id}/series — підтягуємо ПІСЛЯ основного
+  // detail (не блокує рендер); помилка/відсутність серії — блок просто не з'явиться.
+  const [series, setSeries] = useState<SeriesResponse | null>(null);
 
   const [added, setAdded] = useState<ListKind | null>(null);
   const [busyKind, setBusyKind] = useState<ListKind | null>(null);
@@ -126,6 +131,24 @@ export default function TitleDetailPage() {
     if (detail) document.title = `${detail.title} · КіноНавігатор`;
   }, [detail]);
 
+  // FR: серія тайтла — тільки коли основний detail завантажився (неблокуюче).
+  // Локаль: lang у запиті — назва серії локалізується на бекенді (uk → ru → en).
+  useEffect(() => {
+    setSeries(null);
+    if (!detail || unavailable || !Number.isFinite(id)) return;
+    let alive = true;
+    getTitleSeries(id, lang)
+      .then((r) => {
+        if (alive) setSeries(r);
+      })
+      .catch(() => {
+        // ендпоінт недоступний/тайтл поза серією → блок не рендеримо
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, lang, detail, unavailable]);
+
   async function add(kind: ListKind) {
     if (!detail) return;
     setBusyKind(kind);
@@ -190,6 +213,9 @@ export default function TitleDetailPage() {
   );
   const isAnime = detail.type === "anime";
   const isManga = detail.type === "manga";
+  // FR: бейдж «У серії» на картках «Схожих» — лише коли група осмислена (≥2 тайтли).
+  const showSeriesBadges = !!series?.seriesKey && series.items.length >= 2;
+  const seriesIds = new Set(series?.items.map((i) => i.id) ?? []);
   const doneKind: ListKind = isManga ? "read" : "watched";
   const poster = posterUrlFull(detail.posterUrl);
   const backdrop = detail.backdropUrl
@@ -521,6 +547,10 @@ export default function TitleDetailPage() {
         )}
       </div>
 
+      {/* FR: фільми з тієї ж лінійки — порядок перегляду саги (сховається сам,
+          коли тайтл поза серією або група < 2 тайтлів). */}
+      <SeriesBlock series={series} />
+
       {/* Схожі */}
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-bold">{t("title.similar")}</h2>
@@ -532,7 +562,18 @@ export default function TitleDetailPage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {similar.map((item) => (
-              <TitleCard key={item.id} item={item} score={item.score} />
+              <TitleCard
+                key={item.id}
+                item={item}
+                score={item.score}
+                footer={
+                  showSeriesBadges && seriesIds.has(item.id) ? (
+                    <span className="mt-1 inline-flex items-center gap-1 px-0.5 text-[11px] font-bold text-accent-2">
+                      🔖 {t("series.badge")}
+                    </span>
+                  ) : undefined
+                }
+              />
             ))}
           </div>
         )}

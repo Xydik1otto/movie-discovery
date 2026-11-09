@@ -465,4 +465,102 @@ public class YouTubeEnrichServiceTests
         Assert.Equal("enrich", state.Kind);
         Assert.Equal(2, state.LastCount);
     }
+
+    [Fact]
+    public async Task Official_Trailer_Recorded_Alongside_Watch_Link()
+    {
+        // фікстура: trailer1 «Se7en Official Trailer (1995)» + movie1 «Se7en (1995) Full Movie»
+        var env = MakeEnv();
+        var title = await SeedAsync(env.Db);
+
+        await env.Service.EnsureYoutubeLinkAsync(title.Id);
+
+        // трейлер записано попутно (SaveChanges в UpsertLinkAsync покриває обидві мутації)
+        var fresh = await env.Db.Titles.SingleAsync(t => t.Id == title.Id);
+        Assert.Equal("trailer1", fresh.TrailerYtId);
+        Assert.True(await env.Db.WatchLinks.AnyAsync(w => w.TitleId == title.Id && w.Provider == "youtube"));
+    }
+
+    [Fact]
+    public async Task Trailer_Only_Search_Still_Saves_Trailer_Id()
+    {
+        // лише офіційний трейлер (короткий) — watch-лінка нема, але trailer_yt_id збережено
+        var db = TestDb.Create("yte_" + Guid.NewGuid().ToString("N"));
+        var handler = new StubHttpHandler(req =>
+        {
+            var url = req.RequestUri?.ToString() ?? "";
+            if (url.Contains("search?"))
+                return StubHttp.Json(""" { "items": [ { "id": { "videoId": "tr1" }, "snippet": { "title": "Se7en Official Trailer (1995)" } } ] } """);
+            if (url.Contains("videos?"))
+                return StubHttp.Json(""" { "items": [ { "id": "tr1", "snippet": { "title": "Se7en Official Trailer (1995)" }, "contentDetails": { "duration": "PT2M", "definition": "hd" } } ] } """);
+            return null;
+        });
+        var opts = Options.Create(new YoutubeOptions { ApiKey = "KEY" });
+        var client = new YoutubeClient(new HttpClient(handler) { BaseAddress = new Uri("https://test.local/") }, opts, Logs.Null<YoutubeClient>());
+        var service = new YouTubeEnrichService(client, db, new TestDb.CacheStub(), opts, Logs.Null<YouTubeEnrichService>());
+        var title = new Title { Type = "movie", TitleEn = "Se7en", Year = 1995 };
+        db.Titles.Add(title);
+        await db.SaveChangesAsync();
+
+        Assert.False(await service.EnsureYoutubeLinkAsync(title.Id)); // лінка не додано
+        Assert.Empty(await db.WatchLinks.ToListAsync());
+        // явний SaveChanges у FindAndUpsertAsync зберіг трейлер попри відсутність лінка
+        Assert.Equal("tr1", (await db.Titles.SingleAsync(t => t.Id == title.Id)).TrailerYtId);
+    }
+}
+
+/// <summary>
+/// FR-20+: чиста логіка «записувати чи відео як офіційний трейлер» (YoutubeEnrichLogic).
+/// </summary>
+public class YoutubeEnrichLogicTests
+{
+    private static Title Title(string titleEn = "Se7en", int? year = 1995) =>
+        new() { Type = "movie", TitleEn = titleEn, Year = year };
+
+    [Fact]
+    public void Official_Trailer_Would_Be_Recorded()
+    {
+        // «official» + «trailer» у назві, назва відео містить назву тайтла
+        Assert.True(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Trailer (1995)", "", null));
+        // «official» лише в описі — теж офіційний
+        Assert.True(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Trailer", "Official trailer by the studio", null));
+        // порожній/пробільний поточний id = «не заповнено»
+        Assert.True(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Trailer (1995)", "", "  "));
+    }
+
+    [Fact]
+    public void Already_Set_Not_Overwritten()
+    {
+        // наявний (не порожній) trailer_yt_id — жодне відео його не перезаписує
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Trailer (1995)", "", "existingId"));
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Teaser (1995)", "Official teaser", "existingId"));
+    }
+
+    [Fact]
+    public void NonOfficial_Mention_Not_Recorded()
+    {
+        // «trailer» випадково в описі, без «official»
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en (1995) Full Movie", "best trailer park scene", null));
+        // «official clip» без слова trailer
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Clip", "the box scene", null));
+        // взагалі не трейлер
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en (1995) Full Movie", "", null));
+    }
+
+    [Fact]
+    public void Foreign_Video_Or_Wrong_Year_Not_Recorded()
+    {
+        // офіційний трейлер ІНШОГО фільму — назва відео не містить назву тайтла
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Fight Club Official Trailer (1999)", "", null));
+        // рік відео суперечить року тайтла (сиквел/ремейк)
+        Assert.False(YoutubeEnrichLogic.TreatAsTrailer(Title(), "Se7en Official Trailer (2019)", "", null));
+    }
+
+    [Fact]
+    public void ToCard_Exposes_TrailerYtId()
+    {
+        var t = new Title { Type = "movie", TitleEn = "Se7en", TrailerYtId = "trailer1" };
+        Assert.Equal("trailer1", MovieDiscovery.Api.Contracts.TitleMapper.ToCard(t, "uk").TrailerYtId);
+        Assert.Null(MovieDiscovery.Api.Contracts.TitleMapper.ToCard(new Title { Type = "movie", TitleEn = "X" }, "en").TrailerYtId);
+    }
 }

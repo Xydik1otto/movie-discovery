@@ -43,6 +43,9 @@ export interface TitleCard {
   runtimeMin?: number | null;
   seasons?: number | null;
   overview?: string | null;
+  // Discover: id YouTube-трейлера (бекенд додає в TitleMapper; null/відсутнє —
+  // кнопка «Трейлер» на свайп-картці не показується).
+  trailerYtId?: string | null;
   // Аніме/манга-специфіка (PLAN §Аніме і манга; null для звичайних тайтлів).
   format?: string | null;
   episodes?: number | null;
@@ -286,4 +289,23 @@ export interface CollectionSummary {
 export interface PresetCollection {
   key: string;
   items: CollectionEntry[];
+}
+
+// --- FR: франшиза/сага (серія тайтла) — GET /api/titles/{id}/series ---
+
+export interface SeriesItem {
+  id: number;
+  title: string;
+  year?: number | null;
+  posterUrl?: string | null;
+  type: string;
+  watched: boolean;
+  watchlist: boolean;
+  isCurrent: boolean;
+}
+
+export interface SeriesResponse {
+  seriesKey?: string | null;
+  seriesName?: string | null;
+  items: SeriesItem[];
 }

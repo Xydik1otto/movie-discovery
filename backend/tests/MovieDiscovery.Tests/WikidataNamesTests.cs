@@ -7,7 +7,7 @@ using MovieDiscovery.Infrastructure.Wikidata;
 namespace MovieDiscovery.Tests;
 
 /// <summary>
-/// Тесты Wikidata-синку (uk + ru-фолбек за рішенням власника 09.11): CSV-парсер SPARQL,
+/// Тести Wikidata-синку (uk + ru-фолбек за рішенням власника 09.11): CSV-парсер SPARQL,
 /// ExtractCommonsFile, staging SQL-клаузи, бакети, ланцюжок назв uk → ru → en у TitleMapper.
 /// </summary>
 public class WikidataNamesTests
@@ -26,6 +26,32 @@ public class WikidataNamesTests
         Assert.Equal("Сім", row.Uk);
         Assert.Equal("Семь", row.Ru);
         Assert.Equal("Se7en poster.jpg", row.Image); // underscores → пробіли
+    }
+
+    [Fact]
+    public void ParseCsv_With_Descriptions_Maps_Desc_Columns()
+    {
+        // Порядок колонок = порядок SELECT у SparqlValues: imdb,uk,ru,img,dukk,dr
+        var csv = "imdb,uk,ru,img,dukk,dr\n" +
+                  "tt0114369,Сім,Семь,,\"Фільм про семеро\",\"Фильм о семи\"\n" +
+                  "tt0133093,Матриця,Матрица,,,";
+        var rows = ParseCsv(csv);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Фільм про семеро", rows[0].DescUk);
+        Assert.Equal("Фильм о семи", rows[0].DescRu);
+        Assert.Null(rows[0].Image);
+        Assert.Null(rows[1].DescUk);
+        Assert.Null(rows[1].DescRu);
+    }
+
+    [Fact]
+    public void ParseCsv_Old_Header_Without_Desc_Columns_Yields_Nulls()
+    {
+        // Захист від старого формату CSV (без dukk/dr) — парсер не падає, описи просто NULL
+        var csv = "imdb,uk,ru,img\ntt1,Сім,Семь,";
+        var row = Assert.Single(ParseCsv(csv));
+        Assert.Null(row.DescUk);
+        Assert.Null(row.DescRu);
     }
 
     [Fact]
@@ -85,15 +111,33 @@ public class WikidataNamesTests
     }
 
     [Fact]
+    public void Staging_UpdateSql_Fills_Only_Empty_Overviews_With_Descriptions()
+    {
+        var sql = WikidataNamesStaging.UpdateSql;
+        // описи — ЛИШЕ заповнення порожніх (не перебиваємо TMDB/Аніліст), '' теж вважаємо порожнім
+        Assert.Contains("overview_uk = COALESCE(NULLIF(t.overview_uk, ''), s.desc_uk)", sql);
+        Assert.Contains("overview_ru = COALESCE(NULLIF(t.overview_ru, ''), s.desc_ru)", sql);
+        // overview_en не чіпаємо (описи аніме — окремий AniList-синк)
+        Assert.DoesNotContain("overview_en", sql);
+        // ідемпотентність: Predicate перекриває обидва описи
+        Assert.Contains("s.desc_uk IS NOT NULL AND (t.overview_uk IS NULL OR t.overview_uk = '')", sql);
+        Assert.Contains("s.desc_ru IS NOT NULL AND (t.overview_ru IS NULL OR t.overview_ru = '')", sql);
+    }
+
+    [Fact]
     public void Staging_Columns_Match_Copy_And_Ddl()
     {
-        Assert.Equal(new[] { "imdb_id", "uk", "ru", "poster_url" }, WikidataNamesStaging.Columns);
-        Assert.Contains("wikidata_names_raw (imdb_id, uk, ru, poster_url)", WikidataNamesStaging.CopyFromStdinSql());
+        Assert.Equal(new[] { "imdb_id", "uk", "ru", "poster_url", "desc_uk", "desc_ru" }, WikidataNamesStaging.Columns);
+        Assert.Contains("wikidata_names_raw (imdb_id, uk, ru, poster_url, desc_uk, desc_ru)", WikidataNamesStaging.CopyFromStdinSql());
         Assert.Contains("imdb_id text NOT NULL", WikidataNamesStaging.CreateTableSql);
         Assert.Contains("ru text NULL", WikidataNamesStaging.CreateTableSql);
         Assert.Contains("poster_url text NULL", WikidataNamesStaging.CreateTableSql);
+        Assert.Contains("desc_uk text NULL", WikidataNamesStaging.CreateTableSql);
+        Assert.Contains("desc_ru text NULL", WikidataNamesStaging.CreateTableSql);
         // UpdateSql читає ту саму колонку, яку пише COPY (регрес на 42703)
         Assert.Contains("s.poster_url", WikidataNamesStaging.UpdateSql);
+        Assert.Contains("s.desc_uk", WikidataNamesStaging.UpdateSql);
+        Assert.Contains("s.desc_ru", WikidataNamesStaging.UpdateSql);
         Assert.DoesNotContain("s.image", WikidataNamesStaging.UpdateSql);
     }
 
@@ -116,6 +160,11 @@ public class WikidataNamesTests
         Assert.Contains("LANG(?uk) = \"uk\"", q);
         Assert.Contains("LANG(?ru) = \"ru\"", q);
         Assert.Contains("wdt:P18", q);
+        // короткі описи: schema:description (дефолтний префікс QS) з фільтрами обох мов
+        Assert.Contains("schema:description ?dukk . FILTER(LANG(?dukk) = \"uk\")", q);
+        Assert.Contains("schema:description ?dr . FILTER(LANG(?dr) = \"ru\")", q);
+        // порядок SELECT = порядок колонок CSV (парсер дивиться за іменами, контракт — у тесті)
+        Assert.StartsWith("SELECT ?imdb ?uk ?ru ?img ?dukk ?dr WHERE {", q);
         // лапки в id вирізаються (захист від ін'єкції в VALUES)
         var evil = WikidataNamesService.SparqlValues(["tt0\"0"]);
         Assert.DoesNotContain("tt0\"0", evil);

@@ -20,6 +20,7 @@ public class TitleCard
     public int? RuntimeMin { get; set; }
     public int? Seasons { get; set; }
     public string? Overview { get; set; }
+    public string? TrailerYtId { get; set; } // офіційний YouTube-трейлер (FR-20 sync); null → не знайдено
 
     // ── Аніме/манга-специфіка (null для звичайних тайтлів; FR-12) ──
     public string? Format { get; set; }
@@ -53,7 +54,7 @@ public sealed class TitleDetailResponse : TitleCard
     public List<string> Keywords { get; set; } = [];
     public string? OverviewFull { get; set; }
     public string? BackdropUrl { get; set; }
-    public string? TrailerYtId { get; set; }
+    // TrailerYtId успадковується з TitleCard — FR-20+: тепер на всіх картках, не лише в деталях
     public List<ProviderInfo> Providers { get; set; } = [];
     public string? Status { get; set; }
     public string? OriginalLanguage { get; set; }
@@ -83,7 +84,9 @@ public static class TitleMapper
             PosterUrl = ImgUrl(t.PosterPath, "w500"),
             RuntimeMin = t.RuntimeMin,
             Seasons = t.Seasons,
-            Overview = uk ? (FirstNonEmpty(t.OverviewUk) ?? t.OverviewEn) : t.OverviewEn,
+            // Описи: uk → ru → en (рішення власника 09.11 для назв/описів; ru — Wikidata schema:description)
+            Overview = uk ? (FirstNonEmpty(t.OverviewUk) ?? FirstNonEmpty(t.OverviewRu) ?? t.OverviewEn) : t.OverviewEn,
+            TrailerYtId = t.TrailerYtId,
             Format = isAnimeOrManga ? t.Format : null,
             Episodes = isAnimeOrManga ? t.Episodes : null,
             Chapters = isAnimeOrManga ? t.Chapters : null,

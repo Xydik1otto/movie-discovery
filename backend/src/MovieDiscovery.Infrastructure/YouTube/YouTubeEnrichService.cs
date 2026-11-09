@@ -239,17 +239,41 @@ public sealed class YouTubeEnrichService(
         var details = await client.DetailsAsync(items.Select(i => i.VideoId).ToList(), ct);
         var byId = details.ToDictionary(v => v.VideoId, StringComparer.Ordinal);
 
+        var trailerVideoId = (string?)null;
         foreach (var item in items) // порядок релевантності API
         {
             if (!byId.TryGetValue(item.VideoId, out var video)) continue;
-            if (YoutubeFilters.IsTrailer(video.Title, video.Description)) continue;
+
+            // FR-20+: трейлери пропускаємо, але попутно ловимо ОФІЦІЙНИЙ трейлер тайтла —
+            // titles.trailer_yt_id більше не залежить лише від TmdbMapper (TMDB не використовується).
+            if (YoutubeFilters.IsTrailer(video.Title, video.Description))
+            {
+                if (YoutubeEnrichLogic.TreatAsTrailer(title, video.Title, video.Description, title.TrailerYtId))
+                {
+                    title.TrailerYtId = video.VideoId;
+                    trailerVideoId = video.VideoId;
+                    log.LogInformation(
+                        "YouTube офіційний трейлер записано: title={TitleId}, video={VideoId}", title.Id, video.VideoId);
+                }
+                continue; // трейлер НЕ лінк для перегляду — пошук watch-лінка триває
+            }
             if (!YoutubeFilters.DurationOk(
                     YoutubeQueryBuilder.IsMovieLike(title),
                     YoutubeParser.ParseDuration(video.Duration)))
                 continue;
             if (!YoutubeMatcher.Matches(title, video.Title, video.Description)) continue;
 
+            // SaveChanges в UpsertLinkAsync зберігає і записаний тут TrailerYtId (title tracked) — один раз
             return await UpsertLinkAsync(title, video, ct);
+        }
+
+        // Лінка не знайдено: якщо трейлер записали — зберігаємо його самостійно
+        // (інакше мутація title залишилась би незбереженою в EnsureYoutubeLinkAsync/SyncAsync)
+        if (trailerVideoId is not null)
+        {
+            await db.SaveChangesAsync(ct);
+            log.LogInformation("YouTube трейлер збережено без watch-лінка: title={TitleId}, video={VideoId}",
+                title.Id, trailerVideoId);
         }
         return null;
     }

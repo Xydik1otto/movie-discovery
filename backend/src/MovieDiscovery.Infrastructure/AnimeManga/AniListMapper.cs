@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.RegularExpressions;
 using MovieDiscovery.Core.Domain;
 
 namespace MovieDiscovery.Infrastructure.AnimeManga;
@@ -5,6 +7,7 @@ namespace MovieDiscovery.Infrastructure.AnimeManga;
 /// <summary>
 /// AniList MediaListCollection entry → Title-патч. title_uk пишемо ЛИШЕ зі справжньої
 /// uk-назви (media.title.ukrainian); score_anilist — meanScore (в імпорті averageScore) (0–100) / 10.
+/// Опис (description) — лише en: HTML санітизуємо в OverviewEn (uk-описів в AniList немає).
 /// </summary>
 public static class AniListMapper
 {
@@ -34,6 +37,8 @@ public static class AniListMapper
         t.AnilistId = m.Id > 0 ? m.Id : null;
         t.TitleEn = JikanMediaMapper.FirstNonEmpty(m.Title?.Romaji, m.Title?.English) ?? t.TitleEn ?? "";
         t.TitleUk = JikanMediaMapper.FirstNonEmpty(m.Title?.Ukrainian) ?? t.TitleUk; // справжній uk, інакше null
+        // Опис — тільки en (uk-описів в AniList не буває); порожній/відсутній не затирає наявний
+        t.OverviewEn = CleanDescription(m.Description) ?? t.OverviewEn;
         t.Year = m.StartDate?.Year is > 1900 and < 3000 ? m.StartDate!.Year : null;
         t.Genres = (m.Genres ?? [])
             .Select(AnimeGenres.Canonical)
@@ -59,6 +64,32 @@ public static class AniListMapper
         var popRaw = m.Popularity is > 0 ? m.Popularity : m.Favourites;
         t.Popularity = popRaw is > 0 ? popRaw.Value / 10000d : t.Popularity;
         t.PosterPath = FirstNonEmpty(m.CoverImage?.Large) ?? t.PosterPath;
+    }
+
+    private static readonly Regex BrTagRegex =
+        new(@"<br\s*/?>", RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex HtmlTagRegex =
+        new(@"<[^>]*>", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex BlankLinesRegex =
+        new(@"\n{3,}", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// Опис AniList приходить з HTML: «br» → перенос рядка, решту тегів (i, b, a href)
+    /// прибираємо, HTML-сутності декодуємо (апостроф, амперсанд, тире), 3+ порожні рядки
+    /// стискаємо до одного абзацного відступу. Порожнє → null (Merge не затирає наявний опис).
+    /// </summary>
+    public static string? CleanDescription(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var s = raw.Replace("\r\n", "\n");
+        s = BrTagRegex.Replace(s, "\n");
+        s = HtmlTagRegex.Replace(s, string.Empty);
+        s = WebUtility.HtmlDecode(s); // сутності декодуємо ПІСЛЯ зняття тегів — декодований текст уже не стає тегом
+        s = BlankLinesRegex.Replace(s, "\n\n");
+        s = string.Join("\n", s.Split('\n').Select(l => l.Trim())).Trim();
+        return s.Length == 0 ? null : s;
     }
 
     private static string? FirstNonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
