@@ -1,10 +1,11 @@
 "use client";
 
 // Прогресивне завантаження списків (запит власника 09.11): фільтри застосовуються
-// одразу, перша сторінка показується негайно, решта догружається по мірі скролу
-// (IntersectionObserver + «Показати ще» як доступний фолбек). Поки йде новий
-// запит — попередні результати лишаються видимими (затемнення), без спустошення
-// екрана: stale-while-revalidate.
+// одразу, перша сторінка показується негайно, решта «підгружається з часом» сама
+// (таймер-дозавантаження перших AUTO_PAGES сторінок — приємний вигляд без скролу),
+// далі — по мірі скролу (IntersectionObserver) і кнопкою «Показати ще» як
+// доступний фолбек. Поки йде новий запит — попередні результати лишаються
+// видимими (затемнення), без спустошення екрана: stale-while-revalidate.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isUnavailable } from "./fallback";
@@ -38,13 +39,34 @@ export function useProgressiveSearch<T>(
   const reqRef = useRef(0);
   const keyRef = useRef(resetKey);
   const busyRef = useRef(false);
+  // Автодозавантаження: скільки сторінок долити таймером після завершення
+  // поточної (потім — лише скрол/кнопка, щоб не тягнути весь каталог у DOM).
+  const autoRef = useRef(AUTO_PAGES);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Актуальні total/items для рішень поза рендером (клозура useEffect відстає).
+  const totalRef = useRef<number | null>(null);
+  const itemsRef = useRef<T[]>([]);
+  totalRef.current = total;
+  itemsRef.current = items;
+
+  // Unmount: прибрати відкладений таймер дозавантаження.
+  useEffect(() => () => clearTimer(), []);
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
 
   // Зміна фільтрів → порожній список, сторінка 1; in-flight відповіді попереднього
-  // ключа скасовуються лічильником.
+  // ключа скасовуються лічильником; таймер старого ключа теж скасовується.
   useEffect(() => {
     if (keyRef.current === resetKey) return;
     keyRef.current = resetKey;
     reqRef.current++;
+    autoRef.current = AUTO_PAGES;
+    clearTimer();
     setItems([]);
     setTotal(null);
     setPage(1);
@@ -64,11 +86,18 @@ export function useProgressiveSearch<T>(
     fetchPage(page)
       .then((r) => {
         if (reqRef.current !== myReq) return;
-        setItems((prev) => {
-          if (page === 1) return r.items;
-          const seen = new Set(prev.map((x) => (x as { id: number }).id));
-          return [...prev, ...r.items.filter((x) => !seen.has((x as { id: number }).id))];
-        });
+        // refs оновлюємо ДО re-render: .finally читає їх одразу після .then
+        // (мікротаск), коли React ще не встиг перерендерити.
+        const merged =
+          page === 1
+            ? r.items
+            : (() => {
+                const seen = new Set(itemsRef.current.map((x) => (x as { id: number }).id));
+                return [...itemsRef.current, ...r.items.filter((x) => !seen.has((x as { id: number }).id))];
+              })();
+        itemsRef.current = merged;
+        totalRef.current = r.total;
+        setItems(merged);
         setTotal(r.total);
         setUnavailable(false);
         setFirstLoad(false);
@@ -83,6 +112,17 @@ export function useProgressiveSearch<T>(
         if (reqRef.current !== myReq) return;
         setBusy(false);
         busyRef.current = false;
+        // «Остальне підгружалось з часом»: після завершення сторінки — плануємо
+        // наступну через паузу, поки не вичерпаємо авто-ліміт сторінок. Скасується
+        // зміною ключа фільтрів, unmount або повним списком.
+        if (autoRef.current > 0 && totalRef.current != null && itemsRef.current.length < totalRef.current) {
+          autoRef.current -= 1;
+          clearTimer();
+          timerRef.current = setTimeout(() => {
+            timerRef.current = null;
+            if (keyRef.current === resetKey) setPage((p) => p + 1);
+          }, AUTO_DELAY_MS);
+        }
       });
     // fetchPage — стабільний useCallback викликача (залежить від фільтрів/мови)
   }, [page, resetKey, enabled, fetchPage]);
@@ -110,3 +150,8 @@ export function useProgressiveSearch<T>(
 
   return { items, total, busy, firstLoad, error, unavailable, sentinelRef, canMore, showMore };
 }
+
+// Автодозавантаження «решти сторінок з часом»: 8 сторінок (≈192 картки) доливаються
+// самі по ~1.1с; далі — за скролом/кнопкою. Ліміт — щоб не тягнути весь каталог у DOM.
+const AUTO_PAGES = 8;
+const AUTO_DELAY_MS = 1100;
