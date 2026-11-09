@@ -19,7 +19,7 @@ const NAV = [
 
 export default function Header() {
   const { t } = useI18n();
-  const { user, ready, logout } = useAuth();
+  const { user, ready, logoutFailed, logout } = useAuth();
   const pathname = usePathname();
 
   return (
@@ -61,6 +61,15 @@ export default function Header() {
         {ready &&
           (user ? (
             <div className="flex shrink-0 items-center gap-1.5">
+              {/* MD-07: сервер не підтвердив logout — чесне повідомлення, користувач лишається залогіненим. */}
+              {logoutFailed && (
+                <span
+                  role="alert"
+                  className="hidden max-w-56 text-[11px] leading-tight text-amber-300 md:inline"
+                >
+                  {t("auth.logoutUnavailable")}
+                </span>
+              )}
               {user.onboardingDone === false && (
                 <Link
                   href="/onboarding"

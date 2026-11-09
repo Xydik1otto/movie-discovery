@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nContext";
-import { guardedBySeeds, guardedSearch } from "@/lib/fallback";
+import { guardedBySeedsEx, guardedSearch } from "@/lib/fallback";
 import {
   AUDIO_LANG_OPTIONS,
   CATEGORY_OPTIONS,
@@ -219,18 +219,19 @@ export default function HomePage() {
 
   async function findSimilar() {
     if (!seeds.length) return;
-    // by-seeds приймає лише tmdbId — тайтли без нього (аніме/манга з імпорту) відкидаємо.
-    const seedIds = seeds
-      .map((s) => s.tmdbId)
-      .filter((x): x is number => x != null);
+    // MD-03: by-seeds резолвить ВНУТРІШНІ id — вони є в усіх тайтлів, тож
+    // аніме/мангу/IMDb-тайтли (tmdbId=null) більше не викидаємо з змішаної
+    // вибірки й нічого не втрачаємо мовчки.
+    const seedIds = seeds.map((s) => s.id).filter((n) => Number.isFinite(n));
     if (!seedIds.length) {
+      // Чесний стан: жодного валідного еталона замість генеричної «Помилки».
       setSimilarError(true);
       return;
     }
     setSimilarBusy(true);
     setSimilarError(false);
     try {
-      const r = await guardedBySeeds(seedIds, lang);
+      const r = await guardedBySeedsEx(seedIds, lang);
       setSimilarItems(r.data);
       setSimilarUnavailable(r.unavailable);
     } catch {

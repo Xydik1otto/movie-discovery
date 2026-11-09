@@ -1,6 +1,5 @@
 using MovieDiscovery.Bot.Api;
 using Telegram.Bot;
-using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -9,32 +8,35 @@ namespace MovieDiscovery.Bot;
 
 /// <summary>
 /// Обробник оновлень Telegram (long polling): команди, callback-кнопки, звичайний текст = пошуковий запит.
-/// Жодної власної логіки даних — все через REST API з PLAN.md. Профіль Е0/Е1 — єдиний, id = 1.
+/// Жодної власної логіки даних — все через REST API з PLAN.md. Профіль користувача бекенд резолвить
+/// із заголовків X-Bot-Key + X-Telegram-User-Id (MD-05) — бот не надсилає profileId і не знає його.
+/// Старі/зламані callback payload'и обробляються контрольовано: дружня відповідь, без виключень.
 /// </summary>
 public sealed class BotUpdateHandler
 {
     public const int PageSize = 10;
     public const int SimilarLimit = 10;
 
-    /// <summary>Е0/Е1: єдиний локальний профіль «Головний» (перший засіданий профіль, id = 1).</summary>
-    public const int ProfileId = 1;
-
     /// <summary>«Короткий опис ~300 символів» (за ТЗ).</summary>
     private const int OverviewMax = 300;
 
-    private static readonly LinkPreviewOptions NoPreview = new() { IsDisabled = true };
-
+    private readonly ITelegramSender _tg;
     private readonly ApiClient _api;
     private readonly ChatState _state;
     private readonly Action<string> _log;
-    private readonly TunnelService _tunnel;
 
-    public BotUpdateHandler(ApiClient api, ChatState state, Action<string>? log = null, TunnelService? tunnel = null)
+    public BotUpdateHandler(ITelegramSender sender, ApiClient api, ChatState state, Action<string>? log = null)
     {
+        _tg = sender;
         _api = api;
         _state = state;
         _log = log ?? (_ => { });
-        _tunnel = tunnel ?? new TunnelService();
+    }
+
+    /// <summary>Конструктор для прод-використання з реальним Telegram-клієнтом.</summary>
+    public BotUpdateHandler(ITelegramBotClient botClient, ApiClient api, ChatState state, Action<string>? log = null)
+        : this(new TelegramSender(botClient), api, state, log)
+    {
     }
 
     // ------------------------------------------------------------------ вхідні оновлення
@@ -46,11 +48,11 @@ public sealed class BotUpdateHandler
             switch (update)
             {
                 case { Message: { } msg } when msg.Text is not null:
-                    await HandleMessageAsync(botClient, msg, ct);
+                    await HandleMessageAsync(msg, ct);
                     break;
 
                 case { CallbackQuery: { } cb }:
-                    await HandleCallbackAsync(botClient, cb, ct);
+                    await HandleCallbackAsync(cb, ct);
                     break;
             }
         }
@@ -65,9 +67,9 @@ public sealed class BotUpdateHandler
             {
                 // принаймні зняти «годинник» / відповісти щось дружнє
                 if (update.CallbackQuery is { } cbq)
-                    await botClient.AnswerCallbackQuery(cbq.Id, cancellationToken: ct);
+                    await _tg.AnswerCallbackQueryAsync(cbq.Id, cancellationToken: ct);
                 else if (update.Message?.Chat is { } chat)
-                    await botClient.SendMessage(chat.Id, Strings.S(_state.GetLang(chat.Id), "err.generic"), cancellationToken: ct);
+                    await _tg.SendMessageAsync(chat.Id, Strings.S(_state.GetLang(chat.Id), "err.generic"), null, ct);
             }
             catch
             {
@@ -76,9 +78,10 @@ public sealed class BotUpdateHandler
         }
     }
 
-    private async Task HandleMessageAsync(ITelegramBotClient botClient, Message msg, CancellationToken ct)
+    private async Task HandleMessageAsync(Message msg, CancellationToken ct)
     {
         var chatId = msg.Chat.Id;
+        var userId = msg.From?.Id ?? 0;
         var lang = _state.GetLang(chatId);
         var text = msg.Text!.Trim();
 
@@ -86,41 +89,45 @@ public sealed class BotUpdateHandler
         if (cmd is null)
         {
             // текст без «/» — зручний пошук без команди
-            await RunSearchAsync(botClient, chatId, text, page: 1, editMessageId: null, ct);
+            await RunSearchAsync(chatId, userId, text, page: 1, editMessageId: null, filters: null, ct);
             return;
         }
 
         switch (cmd.Command)
         {
             case "start":
-                await SendText(botClient, chatId, Strings.S(lang, "start.greeting"), Keyboards.MainMenu(lang), ct);
+                await SendText(chatId, Strings.S(lang, "start.greeting"), Keyboards.MainMenu(lang), ct);
                 break;
 
             case "help":
-                await SendText(botClient, chatId, Strings.S(lang, "help.text"), null, ct);
+                await SendText(chatId, Strings.S(lang, "help.text"), null, ct);
                 break;
 
             case "search":
                 if (string.IsNullOrWhiteSpace(cmd.Args))
-                    await SendText(botClient, chatId, Strings.S(lang, "search.usage"), null, ct);
+                    await SendText(chatId, Strings.S(lang, "search.usage"), null, ct);
                 else
-                    await RunSearchAsync(botClient, chatId, cmd.Args.Trim(), page: 1, editMessageId: null, ct);
+                    await RunSearchAsync(chatId, userId, cmd.Args.Trim(), page: 1, editMessageId: null, filters: null, ct);
+                break;
+
+            case "find":
+                await StartFilterAsync(chatId, cmd.Args, lang, ct);
                 break;
 
             case "similar":
-                await RunSimilarAsync(botClient, chatId, cmd.Args, lang, ct);
+                await RunSimilarAsync(chatId, userId, cmd.Args, lang, ct);
                 break;
 
             case "text":
-                await RunTextAsync(botClient, chatId, cmd.Args, lang, ct);
+                await RunTextAsync(chatId, userId, cmd.Args, lang, ct);
                 break;
 
             case "watchlist":
-                await RunListAsync(botClient, chatId, "watchlist", PageParser.Parse(cmd.Args), editMessageId: null, lang, ct);
+                await RunListAsync(chatId, userId, "watchlist", PageParser.Parse(cmd.Args), editMessageId: null, lang, ct);
                 break;
 
             case "watched":
-                await RunListAsync(botClient, chatId, "watched", PageParser.Parse(cmd.Args), editMessageId: null, lang, ct);
+                await RunListAsync(chatId, userId, "watched", PageParser.Parse(cmd.Args), editMessageId: null, lang, ct);
                 break;
 
             case "lang":
@@ -128,61 +135,64 @@ public sealed class BotUpdateHandler
                 var newLang = LangParser.Parse(cmd.Args);
                 if (newLang is null)
                 {
-                    await SendText(botClient, chatId,
+                    await SendText(chatId,
                         Strings.S(lang, "lang.usage") + "\n" + Strings.S(lang, "lang.current"), null, ct);
                 }
                 else
                 {
                     _state.SetLang(chatId, newLang);
-                    await SendText(botClient, chatId, Strings.S(newLang, "lang.switched"), null, ct);
+                    await SendText(chatId, Strings.S(newLang, "lang.switched"), null, ct);
                 }
 
                 break;
             }
 
             case "tunnel":
-                await RunTunnelAsync(botClient, chatId, lang, ct);
+                await RunTunnelAsync(chatId, lang, ct);
                 break;
 
             default:
-                await SendText(botClient, chatId, Strings.S(lang, "cmd.unknown"), null, ct);
+                await SendText(chatId, Strings.S(lang, "cmd.unknown"), null, ct);
                 break;
         }
     }
 
     // ------------------------------------------------------------------ callback-кнопки
 
-    private async Task HandleCallbackAsync(ITelegramBotClient botClient, CallbackQuery cb, CancellationToken ct)
+    private async Task HandleCallbackAsync(CallbackQuery cb, CancellationToken ct)
     {
         var data = cb.Data ?? string.Empty;
         var msg = cb.Message;
         if (msg is null)
         {
-            await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+            await _tg.AnswerCallbackQueryAsync(cb.Id, cancellationToken: ct);
             return;
         }
 
         var chatId = msg.Chat.Id;
+        var userId = cb.From?.Id ?? 0;
         var lang = _state.GetLang(chatId);
 
-        // wl:{tmdbId} / wd:{tmdbId} — додати в watchlist / watched
+        // wl:{id} / wd:{id} — додати в watchlist / watched (id — ВНУТРІШНІЙ id тайтла)
         if (data.StartsWith("wl:", StringComparison.Ordinal) || data.StartsWith("wd:", StringComparison.Ordinal))
         {
             var kind = data.StartsWith("wl:", StringComparison.Ordinal) ? "watchlist" : "watched";
-            if (!int.TryParse(data[3..], out var tmdbId) || tmdbId <= 0)
+            if (!int.TryParse(data[3..], out var titleId) || titleId <= 0)
             {
-                await botClient.AnswerCallbackQuery(cb.Id, text: Strings.S(lang, "err.generic"), cancellationToken: ct);
+                // старий/зламаний/підроблений payload — дружня загальна відповідь, без дій
+                await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), showAlert: true, cancellationToken: ct);
                 return;
             }
 
-            var res = await _api.AddToListAsync(ProfileId, kind, tmdbId, ct);
+            var res = await _api.AddToListAsync(kind, titleId, userId, ct);
             var answer = res.Ok
                 ? Strings.S(lang, kind == "watchlist" ? "add.done.watchlist" : "add.done.watched")
                 : res.Status == 409 ? Strings.S(lang, "add.already")
                 : res.IsNotFound ? Strings.S(lang, "err.notfound")
+                : res.Status == 403 ? Strings.S(lang, "err.api")
                 : Strings.S(lang, "add.fail");
 
-            await botClient.AnswerCallbackQuery(cb.Id, text: answer, showAlert: false, cancellationToken: ct);
+            await _tg.AnswerCallbackQueryAsync(cb.Id, text: answer, showAlert: false, cancellationToken: ct);
             return;
         }
 
@@ -192,7 +202,7 @@ public sealed class BotUpdateHandler
             var state = _state.GetSearch(chatId);
             if (state is null)
             {
-                await botClient.AnswerCallbackQuery(cb.Id, text: Strings.S(lang, "search.needFirst"), showAlert: false, cancellationToken: ct);
+                await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "search.needFirst"), showAlert: false, cancellationToken: ct);
                 return;
             }
 
@@ -204,8 +214,8 @@ public sealed class BotUpdateHandler
                 _ => int.TryParse(arg, out var p) ? p : state.Page,
             };
 
-            await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
-            await RunSearchAsync(botClient, chatId, state.Query, newPage, msg.MessageId, ct);
+            await _tg.AnswerCallbackQueryAsync(cb.Id, cancellationToken: ct);
+            await RunSearchAsync(chatId, userId, state.Query, newPage, msg.MessageId, state.Filters, ct);
             return;
         }
 
@@ -218,12 +228,12 @@ public sealed class BotUpdateHandler
                 && int.TryParse(parts[2], out var page))
             {
                 var kind = parts[1] == "w" ? "watchlist" : "watched";
-                await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
-                await RunListAsync(botClient, chatId, kind, page, msg.MessageId, lang, ct);
+                await _tg.AnswerCallbackQueryAsync(cb.Id, cancellationToken: ct);
+                await RunListAsync(chatId, userId, kind, page, msg.MessageId, lang, ct);
                 return;
             }
 
-            await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+            await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), cancellationToken: ct);
             return;
         }
 
@@ -231,48 +241,187 @@ public sealed class BotUpdateHandler
         if (data.StartsWith("menu:", StringComparison.Ordinal))
         {
             var key = data[5..];
-            await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+            await _tg.AnswerCallbackQueryAsync(cb.Id, cancellationToken: ct);
             var textKey = key switch
             {
                 "search" => "menu.search",
                 "similar" => "menu.similar",
                 "text" => "menu.text",
+                "find" => "menu.find",
                 "lists" => "menu.lists",
                 "lang" => "menu.lang",
                 _ => "help.text",
             };
-            await SendText(botClient, chatId, Strings.S(lang, textKey), null, ct);
+            await SendText(chatId, Strings.S(lang, textKey), null, ct);
             return;
         }
 
-        await botClient.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+        // fi:* — конструктор фільтрів (MD-06)
+        if (data.StartsWith("fi:", StringComparison.Ordinal))
+        {
+            await HandleFilterCallbackAsync(cb, chatId, userId, msg, data, lang, ct);
+            return;
+        }
+
+        // невідомий/застарілий payload — дружня відповідь, жодних дій
+        await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), showAlert: true, cancellationToken: ct);
+    }
+
+    // ------------------------------------------------------------------ фільтри (MD-06)
+
+    private async Task StartFilterAsync(long chatId, string? args, string lang, CancellationToken ct)
+    {
+        var query = (args ?? string.Empty).Trim();
+        if (query.Length == 0)
+        {
+            await SendText(chatId, Strings.S(lang, "find.usage"), null, ct);
+            return;
+        }
+
+        _state.SetFilter(chatId, new FilterDraft(query));
+        await SendText(chatId, FilterBuilderText(chatId, lang), Keyboards.FilterBuilder(_state.GetFilter(chatId)!, lang), ct);
+    }
+
+    private async Task HandleFilterCallbackAsync(
+        CallbackQuery cb, long chatId, long userId, Message msg, string data, string lang, CancellationToken ct)
+    {
+        var draft = _state.GetFilter(chatId);
+        var parts = data.Split(':', 3);
+        if (draft is null || parts.Length < 2)
+        {
+            await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "find.needFirst"), showAlert: true, cancellationToken: ct);
+            return;
+        }
+
+        switch (parts[1])
+        {
+            case "type":
+                draft = draft with { Type = parts.Length > 2 && parts[2] != "off" ? parts[2] : null };
+                break;
+
+            case "genre" when parts.Length > 2:
+                draft = draft.ToggleGenre(parts[2]);
+                break;
+
+            case "year" when parts.Length > 2:
+            {
+                var (from, to, ok) = ParseYearRange(parts[2]);
+                if (!ok)
+                {
+                    await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), showAlert: true, cancellationToken: ct);
+                    return;
+                }
+
+                draft = draft with { YearFrom = from, YearTo = to };
+                break;
+            }
+
+            case "rating":
+                draft = parts.Length > 2 && int.TryParse(parts[2], out var r) && r is >= 1 and <= 10
+                    ? draft with { MinRating = draft.MinRating == r ? null : r }
+                    : draft with { MinRating = null };
+                break;
+
+            case "go":
+                // чернетку спожито; пошук іде з фільтрами, пагінація збереже їх у SearchState
+                _state.ClearFilter(chatId);
+                await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "find.searching"), showAlert: false, cancellationToken: ct);
+                await RunSearchAsync(chatId, userId, draft.Query, 1, editMessageId: null, filters: draft, ct);
+                return;
+
+            case "reset":
+                draft = new FilterDraft(draft.Query);
+                break;
+
+            case "cancel":
+                _state.ClearFilter(chatId);
+                await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "find.cancelled"), cancellationToken: ct);
+                await TryEditBuilder(chatId, msg.MessageId, Strings.S(lang, "find.cancelled"), null, ct);
+                return;
+
+            default:
+                await _tg.AnswerCallbackQueryAsync(cb.Id, text: Strings.S(lang, "err.generic"), showAlert: true, cancellationToken: ct);
+                return;
+        }
+
+        _state.SetFilter(chatId, draft);
+        await _tg.AnswerCallbackQueryAsync(cb.Id, cancellationToken: ct);
+        await TryEditBuilder(chatId, msg.MessageId, FilterBuilderText(chatId, lang), Keyboards.FilterBuilder(draft, lang), ct);
+    }
+
+    private static (int? From, int? To, bool Ok) ParseYearRange(string raw)
+    {
+        var bounds = raw.Split('-');
+        if (bounds.Length != 2
+            || !int.TryParse(bounds[0], out var from)
+            || !int.TryParse(bounds[1], out var to)
+            || from < 0 || to < 0)
+            return (null, null, false);
+
+        return (from == 0 ? null : from, to == 0 ? null : to, true);
+    }
+
+    private string FilterBuilderText(long chatId, string lang)
+    {
+        var draft = _state.GetFilter(chatId)!;
+        var summary = new List<string>();
+        if (draft.Type is { } type)
+            summary.Add(Strings.S(lang, $"fi.type.{(Keyboards.FilterTypes.Contains(type) ? type : "any")}"));
+        if (draft.Genres.Count > 0)
+            summary.Add(string.Join(", ", draft.Genres.Select(g => Strings.S(lang, $"fi.genre.{g}"))));
+        if (draft.YearFrom is { } yf || draft.YearTo is { } yt)
+        {
+            var from = draft.YearFrom?.ToString() ?? "…";
+            var to = draft.YearTo?.ToString() ?? "…";
+            summary.Add(Strings.F(lang, "fi.yearsSummary", from, to));
+        }
+
+        if (draft.MinRating is { } mr)
+            summary.Add(Strings.F(lang, "fi.ratingSummary", mr));
+
+        var state = summary.Count == 0
+            ? Strings.S(lang, "find.state.none")
+            : string.Join(" · ", summary);
+        return Strings.F(lang, "find.state", TextFormatter.Escape(draft.Query), state);
+    }
+
+    private async Task TryEditBuilder(long chatId, int messageId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
+    {
+        try
+        {
+            await _tg.EditMessageTextAsync(chatId, messageId, text, markup, ct);
+        }
+        catch (Exception)
+        {
+            await SendText(chatId, text, markup, ct); // повідомлення редагувати не вдалося — надішлемо нове
+        }
     }
 
     // ------------------------------------------------------------------ сценарії
 
     private async Task RunSearchAsync(
-        ITelegramBotClient botClient, long chatId, string query, int page, long? editMessageId, CancellationToken ct)
+        long chatId, long userId, string query, int page, long? editMessageId, FilterDraft? filters, CancellationToken ct)
     {
         var lang = _state.GetLang(chatId);
         if (editMessageId is null)
-            await SafeChatActionAsync(botClient, chatId, ct);
+            await SafeChatActionAsync(chatId, ct);
 
-        var res = await _api.SearchAsync(query, page, PageSize, lang, ct);
+        var res = await _api.SearchAsync(query, userId, filters?.ToApiFilters(), page, PageSize, lang, ct);
         if (!res.Ok)
         {
-            await ReplyErrorAsync(botClient, chatId, editMessageId, DescribeApiError(res, lang), ct);
+            await ReplyErrorAsync(chatId, editMessageId, DescribeApiError(res, lang), ct);
             return;
         }
 
         var data = res.Value!;
         var pageSize = Math.Max(data.PageSize, 1);
         var totalPages = Math.Max(1, (int)Math.Ceiling(data.Total / (double)pageSize));
-        _state.SetSearch(chatId, new SearchState(query, page, data.Total, pageSize));
+        _state.SetSearch(chatId, new SearchState(query, page, data.Total, pageSize, filters));
 
         if (data.Items.Count == 0)
         {
             var key = page > 1 ? "search.pageEnd" : "search.none";
-            await ReplyTextAsync(botClient, chatId, editMessageId, Strings.F(lang, key, TextFormatter.Escape(query)), null, ct);
+            await ReplyTextAsync(chatId, editMessageId, Strings.F(lang, key, TextFormatter.Escape(query)), null, ct);
             return;
         }
 
@@ -284,103 +433,104 @@ public sealed class BotUpdateHandler
         var lastItems = data.Items.Skip(lastFirst - firstNumber).ToList();
         var markup = Keyboards.ResultsActions(lastItems, lastFirst, hasPrev: page > 1, hasNext: page < totalPages, lang);
 
-        await SendOrEditAsync(botClient, chatId, editMessageId, chunks, markup, ct);
+        await SendOrEditAsync(chatId, editMessageId, chunks, markup, ct);
     }
 
-    /// <summary>/similar Назва1; Назва2; ... — кожну назву резолвимо через /api/search?pageSize=1, потім by-seeds.</summary>
-    private async Task RunSimilarAsync(ITelegramBotClient botClient, long chatId, string args, string lang, CancellationToken ct)
+    /// <summary>/similar Назва1; Назва2; ... — кожну назву резолвимо через /api/search?pageSize=1,
+    /// потім GET /api/similar/by-seeds по ВНУТРІШНІХ id (MD-05: tmdbId у більшості каталогу null).</summary>
+    private async Task RunSimilarAsync(long chatId, long userId, string? args, string lang, CancellationToken ct)
     {
         var seeds = SimilarSeedsParser.Parse(args);
         if (seeds.Count == 0)
         {
-            await SendText(botClient, chatId, Strings.S(lang, "similar.usage"), null, ct);
+            await SendText(chatId, Strings.S(lang, "similar.usage"), null, ct);
             return;
         }
 
         if (seeds.Count > SimilarLimit)
         {
-            await SendText(botClient, chatId, Strings.F(lang, "similar.tooMany", seeds.Count), null, ct);
+            await SendText(chatId, Strings.F(lang, "similar.tooMany", seeds.Count), null, ct);
             return;
         }
 
-        await SafeChatActionAsync(botClient, chatId, ct);
+        await SafeChatActionAsync(chatId, ct);
 
-        var tmdbIds = new List<int>(seeds.Count);
+        var ids = new List<int>(seeds.Count);
         var missing = new List<string>();
         foreach (var seed in seeds)
         {
-            var res = await _api.SearchAsync(seed, page: 1, pageSize: 1, lang, ct);
+            var res = await _api.SearchAsync(seed, userId, filters: null, page: 1, pageSize: 1, lang, ct);
             if (!res.Ok)
             {
-                await ReplyErrorAsync(botClient, chatId, null, DescribeApiError(res, lang), ct);
+                await ReplyErrorAsync(chatId, null, DescribeApiError(res, lang), ct);
                 return;
             }
 
             var first = res.Value!.Items.FirstOrDefault();
             if (first is null)
                 missing.Add(seed);
-            else if (!tmdbIds.Contains(first.TmdbId))
-                tmdbIds.Add(first.TmdbId);
+            else if (first.Id > 0 && !ids.Contains(first.Id))
+                ids.Add(first.Id);
         }
 
         if (missing.Count > 0)
         {
-            await SendText(botClient, chatId,
+            await SendText(chatId,
                 Strings.F(lang, "similar.missing", TextFormatter.Escape(string.Join(", ", missing))), null, ct);
             return;
         }
 
-        var similar = await _api.SimilarBySeedsAsync(tmdbIds, SimilarLimit, lang, ct);
+        var similar = await _api.SimilarBySeedsAsync(ids, userId, SimilarLimit, lang, ct);
         if (!similar.Ok)
         {
-            await ReplyErrorAsync(botClient, chatId, null, DescribeApiError(similar, lang), ct);
+            await ReplyErrorAsync(chatId, null, DescribeApiError(similar, lang), ct);
             return;
         }
 
-        await SendSimilarResultsAsync(botClient, chatId,
+        await SendSimilarResultsAsync(chatId,
             Strings.F(lang, "similar.header", TextFormatter.Truncate(TextFormatter.Escape(string.Join(", ", seeds)), 200)),
             similar.Value!, lang, ct);
     }
 
     /// <summary>/text опис побажання — POST /api/similar/by-text (503 → дружнє повідомлення про семантику).</summary>
-    private async Task RunTextAsync(ITelegramBotClient botClient, long chatId, string args, string lang, CancellationToken ct)
+    private async Task RunTextAsync(long chatId, long userId, string? args, string lang, CancellationToken ct)
     {
-        var text = args.Trim();
+        var text = (args ?? string.Empty).Trim();
         if (text.Length == 0)
         {
-            await SendText(botClient, chatId, Strings.S(lang, "text.usage"), null, ct);
+            await SendText(chatId, Strings.S(lang, "text.usage"), null, ct);
             return;
         }
 
-        await SafeChatActionAsync(botClient, chatId, ct);
+        await SafeChatActionAsync(chatId, ct);
 
-        var res = await _api.SimilarByTextAsync(text, SimilarLimit, lang, ct);
+        var res = await _api.SimilarByTextAsync(text, userId, SimilarLimit, lang, ct);
         if (!res.Ok)
         {
-            await ReplyErrorAsync(botClient, chatId, null, DescribeApiError(res, lang), ct);
+            await ReplyErrorAsync(chatId, null, DescribeApiError(res, lang), ct);
             return;
         }
 
-        await SendSimilarResultsAsync(botClient, chatId,
+        await SendSimilarResultsAsync(chatId,
             Strings.F(lang, "text.header", TextFormatter.Truncate(TextFormatter.Escape(text), 120)),
             res.Value!, lang, ct);
     }
 
-    /// <summary>/watchlist [сторінка] | /watched [сторінка] — GET /api/lists (профіль 1), наскрізна нумерація.</summary>
+    /// <summary>/watchlist [сторінка] | /watched [сторінка] — GET /api/lists (профіль з заголовків), наскрізна нумерація.</summary>
     private async Task RunListAsync(
-        ITelegramBotClient botClient, long chatId, string kind, int page, long? editMessageId, string lang, CancellationToken ct)
+        long chatId, long userId, string kind, int page, long? editMessageId, string lang, CancellationToken ct)
     {
-        var res = await _api.GetListsAsync(ProfileId, kind, lang, ct);
+        var res = await _api.GetListsAsync(kind, userId, lang, ct);
         if (!res.Ok)
         {
-            await ReplyErrorAsync(botClient, chatId, editMessageId, DescribeApiError(res, lang), ct);
+            await ReplyErrorAsync(chatId, editMessageId, DescribeApiError(res, lang), ct);
             return;
         }
 
         var items = res.Value!;
         if (items.Count == 0)
         {
-            await ReplyTextAsync(botClient, chatId, editMessageId, Strings.S(lang, "lists.empty"), null, ct);
+            await ReplyTextAsync(chatId, editMessageId, Strings.S(lang, "lists.empty"), null, ct);
             return;
         }
 
@@ -398,11 +548,11 @@ public sealed class BotUpdateHandler
         var (chunks, _) = Renderer.ChunkBlocks(header, blocks, firstNumber);
         var markup = Keyboards.ListPages(kind, page, totalPages, lang);
 
-        await SendOrEditAsync(botClient, chatId, editMessageId, chunks, markup, ct);
+        await SendOrEditAsync(chatId, editMessageId, chunks, markup, ct);
     }
 
     private async Task SendSimilarResultsAsync(
-        ITelegramBotClient botClient, long chatId, string header, IReadOnlyList<TitleCard> items, string lang, CancellationToken ct)
+        long chatId, string header, IReadOnlyList<TitleCard> items, string lang, CancellationToken ct)
     {
         var fullHeader = header + "\n" + Strings.S(lang, "search.legend");
         var blocks = items.Select((t, i) => Renderer.FormatTitleBlock(i + 1, t, lang, OverviewMax)).ToList();
@@ -410,7 +560,7 @@ public sealed class BotUpdateHandler
         var lastItems = items.Skip(lastFirst - 1).ToList();
         var markup = Keyboards.ResultsActions(lastItems, lastFirst, hasPrev: false, hasNext: false, lang);
 
-        await SendOrEditAsync(botClient, chatId, null, chunks, markup, ct);
+        await SendOrEditAsync(chatId, null, chunks, markup, ct);
     }
 
     // ------------------------------------------------------------------ /tunnel
@@ -421,36 +571,37 @@ public sealed class BotUpdateHandler
     /// /api/health; мертвий/нема URL → docker restart контейнера tunnel і повторна спроба,
     /// інакше — чесне повідомлення про збій.
     /// </summary>
-    private async Task RunTunnelAsync(ITelegramBotClient botClient, long chatId, string lang, CancellationToken ct)
+    private async Task RunTunnelAsync(long chatId, string lang, CancellationToken ct)
     {
-        var url = _tunnel.ReadUrl();
-        if (url is not null && await _tunnel.IsHealthyAsync(url, ct))
+        var tunnel = new TunnelService();
+        var url = tunnel.ReadUrl();
+        if (url is not null && await tunnel.IsHealthyAsync(url, ct))
         {
-            await SendText(botClient, chatId, Strings.F(lang, "tunnel.ok", url), null, ct);
+            await SendText(chatId, Strings.F(lang, "tunnel.ok", url), null, ct);
             return;
         }
 
         _log("Tunnel: URL missing or unhealthy — restarting " + TunnelService.ContainerName);
-        await SendText(botClient, chatId, Strings.S(lang, "tunnel.restarting"), null, ct);
+        await SendText(chatId, Strings.S(lang, "tunnel.restarting"), null, ct);
 
-        if (!_tunnel.RestartTunnel())
+        if (!tunnel.RestartTunnel())
         {
             _log("Tunnel: docker restart failed");
-            await SendText(botClient, chatId, Strings.S(lang, "tunnel.fail"), null, ct);
+            await SendText(chatId, Strings.S(lang, "tunnel.fail"), null, ct);
             return;
         }
 
         // після рестарту tee обнуляє лог і новий cloudflared пише туди вже новий URL
         await Task.Delay(TunnelService.RestartSettle, ct);
-        var fresh = _tunnel.ReadUrl();
-        if (fresh is not null && await _tunnel.IsHealthyAsync(fresh, ct))
+        var fresh = tunnel.ReadUrl();
+        if (fresh is not null && await tunnel.IsHealthyAsync(fresh, ct))
         {
-            await SendText(botClient, chatId, Strings.F(lang, "tunnel.ok", fresh), null, ct);
+            await SendText(chatId, Strings.F(lang, "tunnel.ok", fresh), null, ct);
             return;
         }
 
         _log("Tunnel: still no healthy URL after restart");
-        await SendText(botClient, chatId, Strings.S(lang, "tunnel.fail"), null, ct);
+        await SendText(chatId, Strings.S(lang, "tunnel.fail"), null, ct);
     }
 
     // ------------------------------------------------------------------ помилки API
@@ -463,69 +614,68 @@ public sealed class BotUpdateHandler
 
     // ------------------------------------------------------------------ надсилання/редагування
 
-    private async Task SendText(
-        ITelegramBotClient botClient, long chatId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
-        => await botClient.SendMessage(chatId, text,
-            parseMode: ParseMode.Html, linkPreviewOptions: NoPreview, replyMarkup: markup, cancellationToken: ct);
+    private async Task SendText(long chatId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
+        => await _tg.SendMessageAsync(chatId, text, markup, ct);
 
-    private async Task<bool> TryEdit(
-        ITelegramBotClient botClient, long chatId, long messageId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
+    private async Task<bool> TryEdit(long chatId, long messageId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
     {
         try
         {
-            await botClient.EditMessageText(chatId, (int)messageId, text,
-                parseMode: ParseMode.Html, linkPreviewOptions: NoPreview, replyMarkup: markup, cancellationToken: ct);
+            await _tg.EditMessageTextAsync(chatId, (int)messageId, text, markup, ct);
             return true;
         }
-        catch (ApiRequestException ex) when (ex.Message?.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) == true)
+        catch (Exception ex) when (IsNotModified(ex))
         {
             return true; // та сама сторінка — це ок
         }
-        catch (ApiRequestException)
+        catch (Exception)
         {
             return false; // напр. «message to edit not found» — надішлемо нове повідомлення
         }
     }
 
+    private static bool IsNotModified(Exception ex)
+        => ex.Message?.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) == true;
+
     private async Task ReplyTextAsync(
-        ITelegramBotClient botClient, long chatId, long? editMessageId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
+        long chatId, long? editMessageId, string text, InlineKeyboardMarkup? markup, CancellationToken ct)
     {
-        if (editMessageId is { } mid && await TryEdit(botClient, chatId, mid, text, markup, ct))
+        if (editMessageId is { } mid && await TryEdit(chatId, mid, text, markup, ct))
             return;
-        await SendText(botClient, chatId, text, markup, ct);
+        await SendText(chatId, text, markup, ct);
     }
 
     private async Task SendOrEditAsync(
-        ITelegramBotClient botClient, long chatId, long? editMessageId, IReadOnlyList<string> chunks, InlineKeyboardMarkup? markup, CancellationToken ct)
+        long chatId, long? editMessageId, IReadOnlyList<string> chunks, InlineKeyboardMarkup? markup, CancellationToken ct)
     {
         if (editMessageId is null)
         {
             for (var i = 0; i < chunks.Count; i++)
-                await SendText(botClient, chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
+                await SendText(chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
             return;
         }
 
         // редагуємо перший чанк у місці старого повідомлення, решту — новими повідомленнями
-        if (!await TryEdit(botClient, chatId, editMessageId.Value, chunks[0], chunks.Count == 1 ? markup : null, ct))
+        if (!await TryEdit(chatId, editMessageId.Value, chunks[0], chunks.Count == 1 ? markup : null, ct))
         {
             for (var i = 0; i < chunks.Count; i++)
-                await SendText(botClient, chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
+                await SendText(chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
             return;
         }
 
         for (var i = 1; i < chunks.Count; i++)
-            await SendText(botClient, chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
+            await SendText(chatId, chunks[i], i == chunks.Count - 1 ? markup : null, ct);
     }
 
     private async Task ReplyErrorAsync(
-        ITelegramBotClient botClient, long chatId, long? editMessageId, string text, CancellationToken ct)
-        => await ReplyTextAsync(botClient, chatId, editMessageId, text, null, ct);
+        long chatId, long? editMessageId, string text, CancellationToken ct)
+        => await ReplyTextAsync(chatId, editMessageId, text, null, ct);
 
-    private async Task SafeChatActionAsync(ITelegramBotClient botClient, long chatId, CancellationToken ct)
+    private async Task SafeChatActionAsync(long chatId, CancellationToken ct)
     {
         try
         {
-            await botClient.SendChatAction(chatId, ChatAction.Typing, cancellationToken: ct);
+            await _tg.SendChatActionAsync(chatId, ChatAction.Typing, ct);
         }
         catch (Exception ex)
         {

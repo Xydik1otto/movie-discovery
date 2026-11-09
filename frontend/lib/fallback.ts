@@ -34,7 +34,6 @@ import {
 import type { Lang } from "../i18n/I18nContext";
 import type {
   DiscoverResponse,
-  GuestListItem,
   ListKind,
   ListItem,
   ListStats,
@@ -137,18 +136,19 @@ export async function guardedBySeeds(
 }
 
 // FR-21: by-seeds з фільтрами студії (GET-форма з фолбеком на POST усередині api).
+// MD-03: параметр — внутрішні id тайтлів (є в усіх, на відміну від tmdbId).
 export async function guardedBySeedsEx(
-  tmdbIds: number[],
+  internalIds: number[],
   lang: Lang,
   filters: SimilarSeedsFilters = {},
   limit = 20,
 ): Promise<Gate<SimilarItem[]>> {
   try {
-    const r = await similarBySeedsEx(tmdbIds, lang, filters, limit);
+    const r = await similarBySeedsEx(internalIds, lang, filters, limit);
     return { data: r.items ?? [], unavailable: false };
   } catch (e) {
     if (isUnavailable(e)) {
-      return { data: demoSimilar(tmdbIds, lang, limit), unavailable: true };
+      return { data: demoSimilar(internalIds, lang, limit), unavailable: true };
     }
     throw e;
   }
@@ -249,28 +249,9 @@ export async function guardedListStats(lang: Lang): Promise<Gate<ListStats>> {
   }
 }
 
-// Гостьові елементи для міграції: читаємо п'ять списків під дефолтним
-// профілем-гостем (як зараз). Що не прочиталось — пропускаємо (м'яко).
-export async function guardedGuestItems(): Promise<Gate<GuestListItem[]>> {
-  const kinds: ListKind[] = ["watchlist", "watched", "read", "liked", "disliked"];
-  const results = await Promise.allSettled(kinds.map((k) => getLists(k)));
-  const items: GuestListItem[] = [];
-  let anyOk = false;
-  results.forEach((r, i) => {
-    if (r.status !== "fulfilled") return;
-    anyOk = true;
-    for (const it of r.value.items ?? []) {
-      items.push({
-        kind: kinds[i],
-        titleId: it.id,
-        tmdbId: it.tmdbId ?? null,
-        rating: it.rating ?? null,
-      });
-    }
-  });
-  if (!anyOk) return { data: [], unavailable: true };
-  return { data: items, unavailable: false };
-}
+// MD-04: колишня guardedGuestItems (читала поточні СЕРВЕРНІ списки під дефолтним
+// профілем і видавала їх за «гостьові») видалена. Гостьові дані тепер живуть
+// у localStorage — lib/guestLists.ts, знімок для міграції читається ЛИШЕ звідти.
 
 export { postDiscoverAction, postOnboardingAnswers, migrateGuestLists, rateListItem };
 

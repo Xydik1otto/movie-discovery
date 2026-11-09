@@ -1,0 +1,67 @@
+{
+  "live5200": {
+    "titlesCount": 2863652,
+    "search_inception": {
+      "n": 5,
+      "median_ms": 24.3,
+      "p95_ms": 24.7,
+      "min_ms": 22.7,
+      "max_ms": 123.9
+    },
+    "search_filtered": {
+      "n": 5,
+      "median_ms": 25.7,
+      "p95_ms": 26.0,
+      "min_ms": 24.0,
+      "max_ms": 36.3
+    },
+    "health": {
+      "n": 5,
+      "median_ms": 2597.7,
+      "p95_ms": 2628.4,
+      "min_ms": 2457.3,
+      "max_ms": 2666.7
+    },
+    "title_detail": {
+      "n": 5,
+      "median_ms": 5.1,
+      "p95_ms": 5.8,
+      "min_ms": 4.8,
+      "max_ms": 17.9
+    },
+    "similar_by_title": {
+      "n": 5,
+      "median_ms": 22.9,
+      "p95_ms": 29.7,
+      "min_ms": 21.3,
+      "max_ms": 532.1
+    }
+  },
+  "fixture5300": {
+    "titlesCount": 6,
+    "search_inception": {
+      "n": 5,
+      "median_ms": 5.5,
+      "p95_ms": 5.7,
+      "min_ms": 5.4,
+      "max_ms": 5.9
+    },
+    "search_filtered": {
+      "n": 5,
+      "median_ms": 6.5,
+      "p95_ms": 13.6,
+      "min_ms": 6.0,
+      "max_ms": 30.4
+    },
+    "health": {
+      "n": 5,
+      "median_ms": 5.3,
+      "p95_ms": 5.7,
+      "min_ms": 4.7,
+      "max_ms": 14.3
+    },
+    "title_detail": {
+      "error": "list index out of range"
+    }
+  }
+}

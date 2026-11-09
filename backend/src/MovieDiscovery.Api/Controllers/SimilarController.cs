@@ -37,6 +37,8 @@ public sealed class SimilarController(
     }
 
     /// <summary>Multi-seed GET (FR-21): ?ids=1,2,3&limit=20&lang=uk&yearFrom=&yearTo=&types=movie,series&genres=.
+    /// MD-03: ids — ЛИШЕ внутрішні title id (резолв строго по t.Id); невідомий id → 404 titles_not_found
+    /// з переліком missing, без часткових результатів. Legacy tmdb-простір — лише POST by-seeds {tmdbIds}.
     /// types/рік — hard-фільтри пулу (до сортування), genres — soft-boost (бонус до score, не відсікання).</summary>
     [HttpGet("by-seeds")]
     public async Task<IActionResult> BySeedsGet(
@@ -59,7 +61,8 @@ public sealed class SimilarController(
                 return BadRequest(new { error = "invalid_request", message = $"Некоректний id: «{token.Trim()}»" });
             parsed.Add(id);
         }
-        if (parsed is not { Count: >= 1 and <= 10 })
+        var distinct = parsed.Distinct().ToList();
+        if (distinct is not { Count: >= 1 and <= 10 })
             return BadRequest(new { error = "invalid_request", message = "ids має містити від 1 до 10 ідентифікаторів" });
 
         if (ValidateYears(yearFrom, yearTo) is { } badYears) return badYears;
@@ -71,10 +74,28 @@ public sealed class SimilarController(
             Types = SimilarFilters.NormalizeTokens(SimilarFilters.ParseCsv(types)),
             Genres = SimilarFilters.NormalizeGenres(SimilarFilters.ParseCsv(genres), TmdbGenres.NormalizeToEn),
         };
-        return await RunBySeedsAsync(parsed.Distinct().ToList(), limit, SearchController.Lang(lang), filters, ct);
+
+        // MD-03: GET-простір — внутрішні id, резолв строго по t.Id (жодного tmdb-фолбеку).
+        var found = await db.Titles.AsNoTracking()
+            .Where(t => distinct.Contains(t.Id))
+            .ToListAsync(ct);
+        if (found.Count != distinct.Count)
+            return NotFound(new
+            {
+                error = "titles_not_found",
+                message = "Деякі тайтли не знайдено",
+                missing = distinct.Except(found.Select(t => t.Id)).ToList(),
+            });
+
+        return await ScoreAsync(found, limit, SearchController.Lang(lang), filters, ct);
     }
 
-    /// <summary>Multi-seed POST: 1–10 tmdbIds; незнайдені id → 404 з переліком. Фільтри FR-21 — опційні поля body.</summary>
+    /// <summary>
+    /// Multi-seed POST: 1–10 tmdbIds; незнайдені id → 404 з переліком. Фільтри FR-21 — опційні поля body.
+    /// LEGACY (MD-03): подвійний резолв — tmdb_id ПЕРШИЙ, fallback на внутрішній id. Через це існує
+    /// контракт колізій: при A.Id == B.TmdbId запит POST tmdbIds=A повертає B (tmdb-приорітет),
+    /// тоді як GET ?ids=A повертає A (внутрішній простір). Не змінювати резолв без узгодження контракту.
+    /// </summary>
     [HttpPost("by-seeds")]
     public async Task<IActionResult> BySeeds([FromBody] BySeedsRequest req, CancellationToken ct)
     {
@@ -125,7 +146,7 @@ public sealed class SimilarController(
     private async Task<IActionResult> RunBySeedsAsync(
         List<int> distinct, int limit, string langSafe, SimilarFilters filters, CancellationToken ct)
     {
-        // FR-21: подвійний резолв — tmdb_id АБО внутрішній id (2.8 млн IMDb-рядків
+        // FR-21 (legacy POST): подвійний резолв — tmdb_id АБО внутрішній id (2.8 млн IMDb-рядків
         // мають tmdb_id = NULL; «Схоже на...» має працювати на всьому каталозі).
         var found = await db.Titles.AsNoTracking()
             .Where(t => (t.TmdbId != null && distinct.Contains(t.TmdbId.Value)) || distinct.Contains(t.Id))
@@ -151,8 +172,15 @@ public sealed class SimilarController(
         if (missing.Count > 0)
             return NotFound(new { error = "titles_not_found", message = "Деякі тайтли не знайдено", missing });
 
+        return await ScoreAsync(seeds, limit, langSafe, filters, ct);
+    }
+
+    /// <summary>Спільний хвіст GET/POST by-seeds: скоринг seeds + побудова відповіді (reasons ставить
+    /// TitlesController.ToSimilarItem). GET і POST проходять той самий SimilarFilters-шлях (MD-03).</summary>
+    private async Task<IActionResult> ScoreAsync(
+        List<Title> seeds, int limit, string langSafe, SimilarFilters filters, CancellationToken ct)
+    {
         var scored = await similarity.SimilarBySeedsAsync(seeds, limit, langSafe, filters, ct);
-        // reasons (коди FR-21: shared_genres/shared_actor/decade) ставить TitlesController.ToSimilarItem
         return Ok(new SimilarItemsResponse(scored.Select(s => TitlesController.ToSimilarItem(s, langSafe)).ToList()));
     }
 

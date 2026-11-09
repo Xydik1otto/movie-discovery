@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { addToList, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
+import { guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
+import { addListItem } from "@/lib/listActions";
 import { getWatch } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
 import {
   dubGroupLabelKey,
@@ -23,6 +25,7 @@ import ProviderBadge from "@/components/ProviderBadge";
 
 export default function TitleDetailPage() {
   const { t, lang } = useI18n();
+  const { user } = useAuth();
   const router = useRouter();
   const routeParams = useParams<{ id: string }>();
   const id = Number(routeParams?.id);
@@ -130,9 +133,20 @@ export default function TitleDetailPage() {
     try {
       const rating =
         kind !== "watchlist" && watchedRating ? Number(watchedRating) : undefined;
-      // Для аніме/манги з імпорту tmdbId може бути null — тоді addToList
-      // сам надсилає внутрішній id тайтла як titleId.
-      await addToList(detail, kind, rating ?? null);
+      // MD-04: єдиний хелпер — залогінений → API, гість → localStorage.
+      // Внутрішній id летить завжди; tmdbId — коли є (аніме/манга без нього ок).
+      await addListItem(
+        !!user,
+        kind,
+        { id: detail.id, tmdbId: detail.tmdbId ?? null },
+        rating ?? null,
+        {
+          title: detail.title,
+          type: detail.type,
+          posterUrl: detail.posterUrl ?? null,
+          year: detail.year ?? null,
+        },
+      );
       setAdded(kind);
     } catch (e) {
       void e;
@@ -315,16 +329,15 @@ export default function TitleDetailPage() {
           {added === "watchlist" ? `✓ ${t("title.added")}` : `＋ ${t("title.watchlist")}`}
         </button>
 
-        {/* FR-21: «Схожі» зі сторінки тайтла → /similar?seed={id} (авто-прогін, внутрішній id). */}
-        {detail.tmdbId != null && (
-          <button
-            type="button"
-            onClick={() => router.push(`/similar?seed=${detail.id}`)}
-            className="rounded-xl border border-accent/50 bg-accent/10 px-4 py-2.5 text-sm font-bold text-accent-2 transition-colors hover:bg-accent/20"
-          >
-            ✦ {t("similar.cardBtn")}
-          </button>
-        )}
+        {/* FR-21/MD-03: «Схожі» → /similar?seed={id} (внутрішній id, авто-прогін).
+            Показуємо для ВСІХ тайтлів — gate по tmdbId ховав кнопку в аніме/манги. */}
+        <button
+          type="button"
+          onClick={() => router.push(`/similar?seed=${detail.id}`)}
+          className="rounded-xl border border-accent/50 bg-accent/10 px-4 py-2.5 text-sm font-bold text-accent-2 transition-colors hover:bg-accent/20"
+        >
+          ✦ {t("similar.cardBtn")}
+        </button>
 
         <div className="flex items-center gap-2">
           <button

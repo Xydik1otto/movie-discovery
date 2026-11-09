@@ -344,3 +344,9 @@ Golden-set перевірок (фіксується в тестах): напр. 
 - GET /api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres= — опційні hard-фільтри type/рік, genres як soft-boost; items додають reasons[].
 - Таблиці user_collections(id, user_id, name, created_at) + user_collection_items(collection_id, title_id, ord); POST/GET/DELETE /api/collections (auth).
 - GET /api/collections/presets — серверні пресети: top-rated за настроєм (жанри), з free watch_links у пріоритеті.
+
+## Статус реалізації (09.11.2026, після аудиту)
+
+- Е0–Е1 виконані і перевірені живим аудитом; FR-16/17/18/19/20/21 реалізовані (деталі — PLAN.md).
+- Виправний цикл MD-01–10 (docs/audits/2026-11-09/FIX_SPEC.md) виконаний; результат → HERMES_IMPLEMENTATION_REPORT.md у тому каталозі.
+- Не сертифіковано: Ollama-семантика (Ollama вимкнена), живий Telegram (немає тестового токена), публічний запуск Е4, NFR-2 (≥50 000 тайтлів з описами+векторами — каталог 2.86 млн рядків, але заповнення metadata/embeddings не доведене).

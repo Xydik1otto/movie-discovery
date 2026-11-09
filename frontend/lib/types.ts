@@ -216,10 +216,15 @@ export interface ListStats {
   topGenres?: (string | { genre: string; count?: number | null })[] | null;
 }
 
+// Живий API повертає options як {key, nameUk, nameEn} — демо лишається
+// у фронтовій формі {id, label, value}; нормалізацію робить getOnboardingQuestions.
 export interface OnboardingOption {
   id: string;
+  key?: string | null;
   label?: string | null;
   value?: string | null;
+  nameUk?: string | null;
+  nameEn?: string | null;
   posterUrl?: string | null;
 }
 
@@ -227,15 +232,20 @@ export interface OnboardingQuestion {
   id: string;
   type: "posters" | "mood" | "era" | "titles";
   title?: string | null;
+  promptUk?: string | null;
+  promptEn?: string | null;
   options?: OnboardingOption[] | null;
 }
 
+// FR-18: контракт бекенду (OnboardingController.AnswersRequest) — MD-02:
+// picks — ТІЛЬКИ жанрові ключі з poster-питань (option.key), mood/era — масиви
+// ключів відповідних питань, favoriteTitles — до 3 ВНУТРІШНІХ id тайтлів.
 export interface OnboardingAnswers {
-  picks?: { questionId: string; values: string[] }[];
-  mood?: string[];
-  era?: string | null;
-  favoriteTitles?: { titleId: number; tmdbId?: number | null; title: string }[];
-  skipped?: boolean;
+  picks: string[];
+  mood: string[];
+  era: string[];
+  favoriteTitles: number[];
+  skipped: boolean;
 }
 
 // Елемент гостьового списку для POST /api/lists/migrate-guest.

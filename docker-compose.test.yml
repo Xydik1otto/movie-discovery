@@ -1,0 +1,61 @@
+# Ізольований fixture-стек для інтеграційних тестів (MD-10 / FIX_SPEC 2026-11-09).
+# Запуск: docker compose -f docker-compose.test.yml -p moviediscovery-test up -d --build
+# НІКОЛИ не змішувати з production-стеком: інші порти, інші імена, власний volume (не ./data/pg).
+# Очистка: docker compose -f docker-compose.test.yml -p moviediscovery-test down -v --remove-orphans
+services:
+  db-test:
+    image: pgvector/pgvector:pg16
+    container_name: moviediscovery-test-db
+    environment:
+      POSTGRES_USER: movie
+      POSTGRES_PASSWORD: test_pg_pw
+      POSTGRES_DB: moviediscovery_test
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U movie -d moviediscovery_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: no
+
+  api-test:
+    build: ./backend
+    container_name: moviediscovery-test-api
+    environment:
+      ASPNETCORE_URLS: http://+:5200
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: Host=db-test;Port=5432;Database=moviediscovery_test;Username=movie;Password=test_pg_pw
+      # Гостьовий серверний профіль (MD-01) і bot-ключ (MD-05) — тестові значення.
+      GUEST_PROFILE_ID: "1"
+      BOT_API_KEY: test-bot-key
+      ADMIN_KEY: test-admin-key
+      # Зовнішні інтеграції у тестах вимкнені: без TMDB/Ollama/YouTube/MAL.
+      TMDB_API_KEY: ""
+      OLLAMA_URL: ""
+      YOUTUBE_API_KEY: ""
+      MAL_CLIENT_ID: ""
+    ports:
+      - "5300:5200"
+    depends_on:
+      db-test:
+        condition: service_healthy
+    restart: no
+
+  web-test:
+    build:
+      context: ./frontend
+      # NEXT_PUBLIC_* печеться ПІД ЧАС БІЛДУ (Dockerfile ARG, дефолт http://localhost:5200):
+      # порожній build-arg → same-origin проксі /api/* (як у production docker-compose.yml).
+      args:
+        NEXT_PUBLIC_API_URL: ""
+    container_name: moviediscovery-test-web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ""
+      API_SERVER_URL: http://api-test:5200
+    ports:
+      - "3201:3000"
+    depends_on:
+      - api-test
+    restart: no

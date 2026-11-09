@@ -30,9 +30,10 @@ docker compose up -d --build
 # 1. PostgreSQL+pgvector (docker compose up -d db) або локальний PG на :5433
 # 2. Backend
 cd backend && dotnet run --project src/MovieDiscovery.Api   # :5200
-# 3. Frontend
-cd frontend && npm install && npm run dev                    # :3001
-# 4. Бот (опційно, потрібен TG_BOT_TOKEN)
+# 3. Frontend (next dev без -p слухає :3000; на :3001 — npm run dev -- -p 3001
+#    або next start після npm run build; standalone-запуск — frontend/Dockerfile)
+cd frontend && npm install && npm run dev                    # :3000 (або -p 3001)
+# 4. Бот (опційно, потрібен TG_BOT_TOKEN і BOT_API_KEY для авторизації запитів до API)
 cd bot && dotnet run
 ```
 
@@ -43,17 +44,20 @@ TZ.md          — технічне завдання (етапи Е0-Е4, кри
 PLAN.md        — АВТОРИТЕТНИЙ API-контракт (схеми, ендпоінти, env)
 backend/       — ASP.NET Core 8 (Api / Core / Infrastructure + тести)
 frontend/      — Next.js 15 (uk/en, темна тема)
-bot/           — Telegram-бот
-docker-compose.yml, .env.example
+bot/           — Telegram-бот (X-Bot-Key + X-Telegram-User-Id, власний профіль на TG-юзера)
+docker-compose.yml, docker-compose.test.yml (ізольований fixture-стек для e2e), .env.example
+e2e/           — e4_accounts.py (FR-16/17/18 smoke), md_audit_fixes.py (регресія MD-01..07), seed_fixture.sql
 ```
 
 ## Етапи (див. TZ.md §11)
 
-- **Е0** — каркас: compose, схема БД, TMDB-клієнт з кешем ← *ми тут*
-- **Е1** — MVP веб: каталог, фільтри, картка, «схоже», списки
-- **Е2** — семантика (Ollama) + multi-seed + Telegram-бот + uk/en
-- **Е3** — скрапери (UA VOD, Кінопошук) + Jellyfin/Plex/Trakt
-- **Е4** — профілі, реєстрація, публічний запуск (HTTPS, webhook)
+- **Е0** — каркас: compose, схема БД, TMDB-клієнт з кешем ✅
+- **Е1** — MVP веб: каталог, фільтри, картка, «схоже», списки ✅ (перевірено аудитом 09.11.2026)
+- **Е2** — семантика (Ollama) + multi-seed + Telegram-бот + uk/en — реалізовано; Ollama-семантика потребує живого Ollama (зараз вимкнено), бот — живого Telegram-токена
+- **Е3** — скрапери (UA VOD, Кінопошук) + Jellyfin/Plex/Trakt — частково: sweet.tv/IA/YouTube провайдери live
+- **Е4** — профілі, реєстрація, публічний запуск (HTTPS, webhook) — реєстрація/профілі live; публічний запуск не виконано
+
+Статус оновлено за аудитом 09.11.2026 (docs/audits/2026-11-09/) — історичне «E2E 16/16» не є доказом поточної працездатності; актуальні гейти: backend 480, bot 149, lint/tsc/build green, e2e/md_audit_fixes.py 40/40 на fixture-стеку.
 
 ## Атрибуція
 

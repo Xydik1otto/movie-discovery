@@ -4,7 +4,7 @@ namespace MovieDiscovery.Bot.Api;
 public sealed class TitleCard
 {
     public int Id { get; set; }
-    public int TmdbId { get; set; }
+    public int? TmdbId { get; set; } // null для більшості рядків каталогу IMDb/аніме/манґи
     public string Type { get; set; } = "movie"; // movie | series | show
     public string Title { get; set; } = "";
     public string? OriginalTitle { get; set; }
@@ -40,4 +40,22 @@ public sealed class SearchResponse
 public sealed class ItemsResponse
 {
     public List<TitleCard> Items { get; set; } = [];
+}
+
+/// <summary>
+/// Опційні фільтри пошуку (MD-06, паритет з web FR-8): усі поля необов'язкові,
+/// null/порожні поля у query не потрапляють. Жанри — канонічні англійські назви
+/// (lowercase); бекенд сам нормалізує значення (TmdbGenres.NormalizeToEn).
+/// </summary>
+public sealed record SearchFilters
+{
+    public string? Type { get; init; } // movie | series | anime | manga
+    public IReadOnlyList<string>? Genres { get; init; }
+    public int? YearFrom { get; init; }
+    public int? YearTo { get; init; }
+    public int? MinRating { get; init; }
+
+    public bool IsEmpty => Type is null
+        && (Genres is null || Genres.Count == 0)
+        && YearFrom is null && YearTo is null && MinRating is null;
 }

@@ -3,7 +3,8 @@
 // FR-18: онбординг після реєстрації. Кроки: 3 екрани постер-мультивибірів
 // (жанри, статичні групи з /api/onboarding/questions), настрій, ера,
 // 3 улюблених тайтли через пошук-автокомпліт. «Пропустити» — у будь-який
-// момент (skipped=true). Прогрес-бар. API недоступний → демо-квіз.
+// момент (skipped=true). Прогрес-бар. MD-02: API недоступний → демо-квіз,
+// але завершити/пропустити можна ЛИШЕ успішним POST на живий API.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -34,6 +35,8 @@ export default function OnboardingPage() {
   const [favorites, setFavorites] = useState<TitleCard[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  // MD-02: чесний стан збереження — помилка/недоступність НЕ завершують онбординг.
+  const [submitError, setSubmitError] = useState(false);
 
   // Автокомпліт улюблених тайтлів
   const [query, setQuery] = useState("");
@@ -107,38 +110,51 @@ export default function OnboardingPage() {
 
   const submit = useCallback(
     async (skipped: boolean) => {
+      // MD-02: без живого API «завершення» не буває — демо-квіз не може
+      // зберегти профіль, тож показуємо чесну помилку з retry, вибір лишається.
+      if (unavailable) {
+        setSubmitError(true);
+        return;
+      }
       setSubmitting(true);
+      setSubmitError(false);
       try {
-        if (!unavailable) {
-          await postOnboardingAnswers({
-            picks: Object.entries(picks).map(([questionId, values]) => ({
-              questionId,
-              values,
-            })),
-            mood: picks["mood"] ?? [],
-            era: picks["era"]?.[0] ?? null,
-            favoriteTitles: favorites.map((f) => ({
-              titleId: f.id,
-              tmdbId: f.tmdbId ?? null,
-              title: f.title,
-            })),
-            skipped,
-          });
-          await refresh();
+        // FR-18 (MD-02): picks — ТІЛЬКИ жанрові ключі з poster-питань
+        // (option.key; інші питання НЕ змішуємо в жанри), mood/era — масиви
+        // ключів відповідних типів, favoriteTitles — внутрішні id тайтлів.
+        const genrePicks: string[] = [];
+        const mood: string[] = [];
+        const era: string[] = [];
+        for (const q of questions) {
+          const chosen = picks[q.id] ?? [];
+          if (q.type === "posters") genrePicks.push(...chosen);
+          else if (q.type === "mood") mood.push(...chosen);
+          else if (q.type === "era") era.push(...chosen);
         }
+        await postOnboardingAnswers({
+          picks: genrePicks,
+          mood,
+          era,
+          favoriteTitles: favorites.map((f) => f.id),
+          skipped,
+        });
+        // done — ЛИШЕ після підтвердженого збереження (refresh оновлює
+        // me.onboardingDone=true). 400/500/timeout сюди не потрапляють.
+        await refresh();
         setDone(true);
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
           router.replace("/login?needLogin=1&next=/onboarding");
           return;
         }
-        // Інші збої не блокують: квіз можна «пропустити» пізніше з Header.
-        setDone(true);
+        // Інші збої (400/500/502/timeout): вибір залишається на місці,
+        // показуємо видиму помилку + retry — без фальшивого «Готово».
+        setSubmitError(true);
       } finally {
         setSubmitting(false);
       }
     },
-    [picks, favorites, unavailable, refresh, router],
+    [questions, picks, favorites, unavailable, refresh, router],
   );
 
   if (done) {
@@ -368,6 +384,24 @@ export default function OnboardingPage() {
             </div>
           )}
         </section>
+      )}
+
+      {/* MD-02: видима помилка збереження + retry; вибір не скидається. */}
+      {submitError && (
+        <div
+          role="alert"
+          className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-300"
+        >
+          <span className="min-w-0 flex-1">{t("onboarding.error")}</span>
+          <button
+            type="button"
+            onClick={() => void submit(false)}
+            disabled={submitting}
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-white transition-colors enabled:hover:bg-accent-2 disabled:opacity-60"
+          >
+            {t("onboarding.retry")}
+          </button>
+        </div>
       )}
 
       {/* Навігація кроків */}

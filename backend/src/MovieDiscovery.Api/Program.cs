@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
+using MovieDiscovery.Core;
 using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Discover;
 using MovieDiscovery.Core.Domain;
@@ -56,9 +57,13 @@ public class Program
         // FR-16/17/18: ваги профілю смаку + опції discover
         builder.Services.Configure<ProfileOptions>(builder.Configuration.GetSection("Profile"));
         builder.Services.Configure<DiscoverOptions>(builder.Configuration.GetSection("Discover"));
+        // MD-05: бот — секція "Bot" (BOT_API_KEY через MapEnvDefaults; порожній ключ → bot-auth вимкнено)
+        builder.Services.Configure<BotOptions>(builder.Configuration.GetSection("Bot"));
 
         var cs = builder.Configuration.GetConnectionString("Default")
-                 ?? throw new InvalidOperationException("ConnectionStrings:Default не задано");
+                 ?? (builder.Environment.IsEnvironment("Testing")
+                     ? "Host=localhost;Database=testing;Username=testing;Password=testing"
+                     : throw new InvalidOperationException("ConnectionStrings:Default не задано"));
         builder.Services.AddDbContext<MovieDiscoveryDbContext>(o =>
             o.UseNpgsql(cs, npg => npg.UseVector()).UseSnakeCaseNamingConvention());
 
@@ -222,6 +227,8 @@ public class Program
         builder.Services.AddSingleton<MalOfficialThrottle>();
         builder.Services.AddSingleton<SweetTvThrottle>();
         builder.Services.AddScoped<ICacheStore, SourceCacheStore>();
+        // MD-09: in-memory кеш (titlesCount у /api/health — 60 с TTL).
+        builder.Services.AddMemoryCache();
         builder.Services.AddSingleton<IEmbedder, OllamaEmbedder>();
         builder.Services.AddScoped<SimilarityEngine>(sp =>
             new SimilarityEngine(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SimilarityOptions>>().Value));
@@ -237,18 +244,25 @@ public class Program
         // FR-16/17/18: акаунти, профіль смаку, discover, онбординг
         builder.Services.AddScoped<TasteProfileService>();
         builder.Services.AddScoped<UserListService>();
+        builder.Services.AddScoped<GuestProfileService>(); // MD-01: designated guest profile
         builder.Services.AddScoped<CollectionsService>();
         builder.Services.AddScoped<DiscoverService>();
+        builder.Services.AddScoped<BotIdentityService>(); // MD-05: telegram-ідентичність → профіль списків
 
-        builder.Services.AddHostedService<EmbeddingBackgroundService>();
-        builder.Services.AddHostedService<SyncBackgroundService>();
-        builder.Services.AddHostedService<AnimeSyncBackgroundService>();
-        builder.Services.AddHostedService<ImportBackgroundService>();
-        builder.Services.AddHostedService<ImdbSyncBackgroundService>();
-        builder.Services.AddHostedService<WatchSyncBackgroundService>();
-        builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
-        builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
-        builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
+        // Тестове середовище (WebApplicationFactory): фонові сервіси не потрібні — інакше
+        // вони стартують синхронізації проти InMemory-БД. Прод-поведінка не змінюється.
+        if (!builder.Environment.IsEnvironment("Testing"))
+        {
+            builder.Services.AddHostedService<EmbeddingBackgroundService>();
+            builder.Services.AddHostedService<SyncBackgroundService>();
+            builder.Services.AddHostedService<AnimeSyncBackgroundService>();
+            builder.Services.AddHostedService<ImportBackgroundService>();
+            builder.Services.AddHostedService<ImdbSyncBackgroundService>();
+            builder.Services.AddHostedService<WatchSyncBackgroundService>();
+            builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
+            builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
+            builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
+        }
 
         var app = builder.Build();
 
@@ -270,7 +284,10 @@ public class Program
             {
                 using var scope = app.Services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
-                await db.Database.MigrateAsync();
+                if (app.Environment.IsEnvironment("Testing"))
+                    await db.Database.EnsureCreatedAsync(); // InMemory у WAF-тестах — міграції не потрібні
+                else
+                    await db.Database.MigrateAsync();
                 await DbSeeder.SeedDefaultProfileAsync(db);
             }
             catch (Exception ex)
@@ -300,5 +317,6 @@ public class Program
         Map("ADMIN_KEY", "Admin:Key");
         Map("JIKAN_URL", "Jikan:BaseUrl");
         Map("MAL_CLIENT_ID", "MalOfficial:ClientId");
+        Map("BOT_API_KEY", "Bot:ApiKey");
     }
 }

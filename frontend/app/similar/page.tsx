@@ -212,7 +212,8 @@ function SimilarInner() {
   }
 
   function chainFrom(item: TitleCardType) {
-    if (item.tmdbId == null) return;
+    // MD-03: ланцюг по ВНУТРІШНЬОМУ id — аніме/манга (tmdbId=null) більше
+    // не відсікаються мовчки.
     setChainStack((prev) => [makeSnapshot(), ...prev].slice(0, CHAIN_LIMIT));
     if (mode === "studio") {
       // підміняємо еталони — живий ефект перезапустить пошук (дебаунс 500 мс)

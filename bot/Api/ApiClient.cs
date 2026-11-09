@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -5,8 +6,11 @@ namespace MovieDiscovery.Bot.Api;
 
 /// <summary>
 /// HTTP-клієнт до REST API (PLAN.md). HttpClient + System.Text.Json, camelCase.
+/// КОЖЕН запит несе заголовки X-Bot-Key (env BOT_API_KEY; якщо порожній — не додається)
+/// та X-Telegram-User-Id (id юзера Telegram) — бекенд резолвить профіль із них;
+/// параметр profileId ніде не надсилається (MD-05).
 /// Мережеві помилки не викидає назовні, а повертає як <see cref="ApiResult{T}"/>:
-/// 404/503 → Status; таймаут → Error "timeout"; недоступність → "unreachable".
+/// 404/403/409/503 → Status; таймаут → Error "timeout"; недоступність → "unreachable".
 /// </summary>
 public sealed class ApiClient
 {
@@ -18,62 +22,97 @@ public sealed class ApiClient
     };
 
     private const int TimeoutSeconds = 30;
+    private const string BotKeyHeader = "X-Bot-Key";
+    private const string TelegramUserHeader = "X-Telegram-User-Id";
 
     private readonly HttpClient _http;
+    private readonly string? _botApiKey;
 
-    public ApiClient(HttpClient http) => _http = http;
+    public ApiClient(HttpClient http, string? botApiKey = null)
+    {
+        _http = http;
+        _botApiKey = string.IsNullOrWhiteSpace(botApiKey) ? null : botApiKey.Trim();
+    }
 
-    public ApiClient(string baseUrl)
+    public ApiClient(string baseUrl, string? botApiKey = null)
         : this(new HttpClient
         {
             BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(TimeoutSeconds)
-        })
+        }, botApiKey)
     {
     }
 
-    /// <summary>GET /api/search?q=&amp;type=&amp;...&amp;page=&amp;pageSize=&amp;lang=</summary>
+    /// <summary>GET /api/search?q=&amp;type=&amp;genres=&amp;yearFrom=&amp;yearTo=&amp;minRating=&amp;page=&amp;pageSize=&amp;lang=</summary>
     public Task<ApiResult<SearchResponse>> SearchAsync(
-        string q, int page = 1, int pageSize = 10, string lang = "uk", CancellationToken ct = default)
-        => GetAsync<SearchResponse>(
-            $"api/search?q={Uri.EscapeDataString(q)}&page={page}&pageSize={pageSize}&lang={Uri.EscapeDataString(lang)}", ct);
+        string q, long telegramUserId, SearchFilters? filters = null,
+        int page = 1, int pageSize = 10, string lang = "uk", CancellationToken ct = default)
+        => SendAsync<SearchResponse>(HttpMethod.Get, BuildSearchUrl(q, filters, page, pageSize, lang), null, telegramUserId, ct);
 
-    /// <summary>POST /api/similar/by-seeds { tmdbIds, limit, lang }. tmdbIds 1–10.</summary>
-    public async Task<ApiResult<IReadOnlyList<TitleCard>>> SimilarBySeedsAsync(
-        IReadOnlyList<int> tmdbIds, int limit = 10, string lang = "uk", CancellationToken ct = default)
+    private static string BuildSearchUrl(string q, SearchFilters? filters, int page, int pageSize, string lang)
     {
-        var res = await PostAsync<ItemsResponse>("api/similar/by-seeds", new { tmdbIds, limit, lang }, ct);
+        var sb = new StringBuilder("api/search?q=");
+        sb.Append(Uri.EscapeDataString(q));
+        if (filters is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(filters.Type))
+                sb.Append("&type=").Append(Uri.EscapeDataString(filters.Type));
+            if (filters.Genres is { Count: > 0 })
+                sb.Append("&genres=").Append(Uri.EscapeDataString(string.Join(',', filters.Genres)));
+            if (filters.YearFrom is { } yf)
+                sb.Append("&yearFrom=").Append(yf.ToString(CultureInfo.InvariantCulture));
+            if (filters.YearTo is { } yt)
+                sb.Append("&yearTo=").Append(yt.ToString(CultureInfo.InvariantCulture));
+            if (filters.MinRating is { } mr)
+                sb.Append("&minRating=").Append(mr.ToString(CultureInfo.InvariantCulture));
+        }
+
+        sb.Append("&page=").Append(page)
+          .Append("&pageSize=").Append(pageSize)
+          .Append("&lang=").Append(Uri.EscapeDataString(lang));
+        return sb.ToString();
+    }
+
+    /// <summary>GET /api/similar/by-seeds?ids=…&amp;limit=&amp;lang= — ids ВНУТРІШНІ id тайтлів (1–10).</summary>
+    public async Task<ApiResult<IReadOnlyList<TitleCard>>> SimilarBySeedsAsync(
+        IReadOnlyList<int> ids, long telegramUserId, int limit = 10, string lang = "uk", CancellationToken ct = default)
+    {
+        var url = $"api/similar/by-seeds?ids={Uri.EscapeDataString(string.Join(',', ids))}" +
+                  $"&limit={limit.ToString(CultureInfo.InvariantCulture)}&lang={Uri.EscapeDataString(lang)}";
+        var res = await SendAsync<ItemsResponse>(HttpMethod.Get, url, null, telegramUserId, ct);
         return Unwrap(res);
     }
 
     /// <summary>POST /api/similar/by-text { text, limit, lang }. 503, якщо семантичний індекс недоступний.</summary>
     public async Task<ApiResult<IReadOnlyList<TitleCard>>> SimilarByTextAsync(
-        string text, int limit = 10, string lang = "uk", CancellationToken ct = default)
+        string text, long telegramUserId, int limit = 10, string lang = "uk", CancellationToken ct = default)
     {
-        var res = await PostAsync<ItemsResponse>("api/similar/by-text", new { text, limit, lang }, ct);
+        var res = await SendAsync<ItemsResponse>(HttpMethod.Post, "api/similar/by-text", new { text, limit, lang }, telegramUserId, ct);
         return Unwrap(res);
     }
 
-    /// <summary>GET /api/lists?profileId=&amp;kind=watchlist|watched&amp;lang=</summary>
+    /// <summary>GET /api/lists?kind=watchlist|watched&amp;lang= — профіль резолвиться на бекенді з заголовків.</summary>
     public async Task<ApiResult<IReadOnlyList<TitleCard>>> GetListsAsync(
-        int profileId, string kind, string lang = "uk", CancellationToken ct = default)
+        string kind, long telegramUserId, string lang = "uk", CancellationToken ct = default)
     {
-        var res = await GetAsync<ItemsResponse>(
-            $"api/lists?profileId={profileId}&kind={Uri.EscapeDataString(kind)}&lang={Uri.EscapeDataString(lang)}", ct);
+        var res = await SendAsync<ItemsResponse>(HttpMethod.Get,
+            $"api/lists?kind={Uri.EscapeDataString(kind)}&lang={Uri.EscapeDataString(lang)}", null, telegramUserId, ct);
         return Unwrap(res);
     }
 
     /// <summary>
-    /// POST /api/lists { profileId, kind, tmdbId } — 201 успіх; 404 невідомий tmdbId; 409 вже у списку.
-    /// Тіло відповіді не читаємо — важливий лише статус.
+    /// POST /api/lists/{kind} { titleId } — ідемпотентний upsert за ВНУТРІШНІМ id тайтла.
+    /// 201 успіх; 409 already_in_list; 404 title_not_found. Тіло відповіді не читаємо — важливий лише статус.
     /// </summary>
-    public async Task<ApiResult<bool>> AddToListAsync(int profileId, string kind, int tmdbId, CancellationToken ct = default)
+    public async Task<ApiResult<bool>> AddToListAsync(string kind, int titleId, long telegramUserId, CancellationToken ct = default)
     {
         try
         {
-            var payload = JsonSerializer.Serialize(new { profileId, kind, tmdbId }, JsonOptions);
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var resp = await _http.PostAsync("api/lists", content, ct);
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"api/lists/{Uri.EscapeDataString(kind)}");
+            ApplyHeaders(req, telegramUserId);
+            var payload = JsonSerializer.Serialize(new { titleId }, JsonOptions);
+            req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var resp = await _http.SendAsync(req, ct);
             return resp.IsSuccessStatusCode
                 ? ApiResult<bool>.Success(true)
                 : ApiResult<bool>.Failure((int)resp.StatusCode, $"HTTP {(int)resp.StatusCode}");
@@ -93,11 +132,19 @@ public sealed class ApiClient
             ? ApiResult<IReadOnlyList<TitleCard>>.Success(res.Value!.Items)
             : ApiResult<IReadOnlyList<TitleCard>>.Failure(res.Status, res.Error ?? "unknown");
 
-    private async Task<ApiResult<T>> GetAsync<T>(string url, CancellationToken ct)
+    private async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string url, object? body, long telegramUserId, CancellationToken ct)
     {
         try
         {
-            using var resp = await _http.GetAsync(url, ct);
+            using var req = new HttpRequestMessage(method, url);
+            ApplyHeaders(req, telegramUserId);
+            if (body is not null)
+            {
+                var payload = JsonSerializer.Serialize(body, body.GetType(), JsonOptions);
+                req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+            }
+
+            using var resp = await _http.SendAsync(req, ct);
             return await ReadAsync<T>(resp, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -110,23 +157,11 @@ public sealed class ApiClient
         }
     }
 
-    private async Task<ApiResult<T>> PostAsync<T>(string url, object body, CancellationToken ct)
+    private void ApplyHeaders(HttpRequestMessage req, long telegramUserId)
     {
-        try
-        {
-            var payload = JsonSerializer.Serialize(body, body.GetType(), JsonOptions);
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var resp = await _http.PostAsync(url, content, ct);
-            return await ReadAsync<T>(resp, ct);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            return ApiResult<T>.Failure(null, "timeout");
-        }
-        catch (HttpRequestException)
-        {
-            return ApiResult<T>.Failure(null, "unreachable");
-        }
+        if (_botApiKey is not null)
+            req.Headers.Add(BotKeyHeader, _botApiKey);
+        req.Headers.Add(TelegramUserHeader, telegramUserId.ToString(CultureInfo.InvariantCulture));
     }
 
     private static async Task<ApiResult<T>> ReadAsync<T>(HttpResponseMessage resp, CancellationToken ct)

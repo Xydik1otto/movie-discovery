@@ -166,17 +166,16 @@ export default function TitleCard({
             </div>
           </div>
 
-          {/* FR-21: кнопка «Схожі» — у кутку постера, видно при hover/фокусі. */}
-          {item.tmdbId != null && (
-            <button
-              type="button"
-              onClick={openSimilar}
-              aria-label={t("similar.cardAria", { title: item.title })}
-              className="absolute bottom-2 right-2 z-10 rounded-lg border border-white/25 bg-black/70 px-2 py-1 text-[11px] font-bold text-white opacity-0 shadow-md backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-            >
-              ✦ {t("similar.cardBtn")}
-            </button>
-          )}
+          {/* FR-21/MD-03: кнопка «Схожі» для ВСІХ тайтлів — /similar резолвить
+              за внутрішнім id (item.id), тож аніме/манга/IMDb теж мають кнопку. */}
+          <button
+            type="button"
+            onClick={openSimilar}
+            aria-label={t("similar.cardAria", { title: item.title })}
+            className="absolute bottom-2 right-2 z-10 rounded-lg border border-white/25 bg-black/70 px-2 py-1 text-[11px] font-bold text-white opacity-0 shadow-md backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            ✦ {t("similar.cardBtn")}
+          </button>
         </div>
       </Link>
 

@@ -67,9 +67,11 @@ public static class TextFormatter
         _ => "📋"
     };
 
-    /// <summary>movie → https://www.themoviedb.org/movie/{id}; series|show → /tv/{id}.</summary>
-    public static string TmdbLink(string? type, int tmdbId)
-        => $"https://www.themoviedb.org/{(IsSeries(type) ? "tv" : "movie")}/{tmdbId}";
+    /// <summary>movie → https://www.themoviedb.org/movie/{id}; series|show → /tv/{id}. null, якщо tmdbId відсутній.</summary>
+    public static string? TmdbLink(string? type, int? tmdbId)
+        => tmdbId is null or <= 0
+            ? null
+            : $"https://www.themoviedb.org/{(IsSeries(type) ? "tv" : "movie")}/{tmdbId}";
 
     public static bool IsSeries(string? type) => type is "series" or "show";
 

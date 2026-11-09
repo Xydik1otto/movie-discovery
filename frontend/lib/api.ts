@@ -196,17 +196,16 @@ export async function similarByText(
 
 // FR-21: GET-форма by-seeds з опційними фільтрами студії
 // (/api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=).
-// Бекенд може ще не мати GET-маршруту (лише POST) — тоді 404/405 → м'який
-// фолбек на POST без фільтрів: результати є, студійні рамки просто не
-// застосувались (graceful до паралельного розгортання бекенду).
+// MD-03: ids — внутрішні title ids (єдина однозначна простір імен; tmdbId є
+// лише в частини каталогу, тому GET-форма НІКОЛИ не отримує tmdb-ідентифікатори).
 export async function similarBySeedsEx(
-  tmdbIds: number[],
+  internalIds: number[],
   lang: Lang,
   filters: SimilarSeedsFilters = {},
   limit = 20,
 ): Promise<{ items: SimilarItem[] }> {
   const sp = new URLSearchParams();
-  sp.set("ids", tmdbIds.join(","));
+  sp.set("ids", internalIds.join(","));
   if (filters.yearFrom != null) sp.set("yearFrom", String(filters.yearFrom));
   if (filters.yearTo != null) sp.set("yearTo", String(filters.yearTo));
   if (filters.type) sp.set("types", filters.type);
@@ -216,8 +215,20 @@ export async function similarBySeedsEx(
   try {
     return await request<{ items: SimilarItem[] }>(`/api/similar/by-seeds?${sp.toString()}`);
   } catch (e) {
+    // MD-03: 404 з error=titles_not_found — ЧЕСНА відповідь «еталони не знайдено».
+    // Фолбек на legacy POST би підмінив її рекомендаціями для іншого тайтла.
+    if (
+      e instanceof ApiError &&
+      e.status === 404 &&
+      (e.body as { error?: unknown } | null)?.error === "titles_not_found"
+    ) {
+      throw e;
+    }
+    // 404/405 БЕЗ цього коду = GET-маршруту ще нема (бекенд старішої версії) —
+    // м'який фолбек на legacy POST {tmdbIds}: його змішаний resolver приймає
+    // й внутрішні id, тож результати коректні, лише студійні рамки не застосувались.
     if (e instanceof ApiError && (e.status === 404 || e.status === 405)) {
-      return similarBySeeds(tmdbIds, lang, limit);
+      return similarBySeeds(internalIds, lang, limit);
     }
     throw e;
   }
@@ -381,8 +392,20 @@ export async function getOnboardingQuestions(lang: Lang = "uk"): Promise<Onboard
   const r = await request<{ questions?: OnboardingQuestion[] } | OnboardingQuestion[]>(
     `/api/onboarding/questions${qs({ lang })}`,
   );
-  if (Array.isArray(r)) return r;
-  return r.questions ?? [];
+  const raw = Array.isArray(r) ? r : (r.questions ?? []);
+  // MD-02: живий API віддає {id, type, promptUk/promptEn, options:[{key, nameUk, nameEn}]},
+  // а фронтова форма — {id, label, value}. Нормалізуємо: option.id = option.key
+  // (жанровий/десятиліттєвий ключ — саме він летить у picks/mood/era), label — локалізована назва.
+  // Демо-питання ({id, label, value}) проходять наскрізь без змін.
+  return raw.map((q) => ({
+    ...q,
+    title: q.title ?? (lang === "uk" ? q.promptUk : q.promptEn) ?? null,
+    options: (q.options ?? []).map((o) => ({
+      ...o,
+      id: o.key ?? o.id,
+      label: o.label ?? o.nameUk ?? o.nameEn ?? o.value ?? o.key ?? o.id,
+    })),
+  }));
 }
 
 export async function postOnboardingAnswers(answers: OnboardingAnswers): Promise<void> {
@@ -399,13 +422,20 @@ export async function getListStats(): Promise<ListStats> {
   return r ?? {};
 }
 
+// MD-04: POST /api/lists/migrate-guest → 200 {moved, skipped}. У тілі — лише
+// поля контракту бекенду (kind/titleId/rating); tmdbId не надсилаємо.
 export async function migrateGuestLists(
   items: GuestListItem[],
-): Promise<{ migrated?: number }> {
-  const r = await request<{ migrated?: number } | null>("/api/lists/migrate-guest", {
-    method: "POST",
-    body: JSON.stringify({ items }),
-  });
+): Promise<{ moved?: number; skipped?: number }> {
+  const r = await request<{ moved?: number; skipped?: number } | null>(
+    "/api/lists/migrate-guest",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        items: items.map((it) => ({ kind: it.kind, titleId: it.titleId, rating: it.rating ?? null })),
+      }),
+    },
+  );
   return r ?? {};
 }
 

@@ -1,0 +1,243 @@
+[
+  {
+    "path": "/api/health",
+    "status": 200,
+    "ms": 3031,
+    "bytes": 62,
+    "keys": [
+      "status",
+      "db",
+      "ollama",
+      "titlesCount"
+    ],
+    "body": {
+      "status": "ok",
+      "db": true,
+      "ollama": false,
+      "titlesCount": 2863652
+    }
+  },
+  {
+    "path": "/api/search?q=Inception&pageSize=3&lang=uk",
+    "status": 200,
+    "ms": 7625,
+    "bytes": 1623,
+    "keys": [
+      "items",
+      "total",
+      "page",
+      "pageSize"
+    ],
+    "count": 3,
+    "total": 52,
+    "samples": [
+      {
+        "id": 1218055,
+        "tmdbId": null,
+        "title": "Початок",
+        "type": "movie"
+      },
+      {
+        "id": 1518486,
+        "tmdbId": null,
+        "title": "Inception: The Cobol Job",
+        "type": "movie"
+      },
+      {
+        "id": 2781340,
+        "tmdbId": null,
+        "title": "Inception: Jump Right Into the Action",
+        "type": "movie"
+      }
+    ]
+  },
+  {
+    "path": "/api/search?type=anime&pageSize=3&lang=uk",
+    "status": 200,
+    "ms": 78,
+    "bytes": 2064,
+    "keys": [
+      "items",
+      "total",
+      "page",
+      "pageSize"
+    ],
+    "count": 3,
+    "total": 741,
+    "samples": [
+      {
+        "id": 528,
+        "tmdbId": null,
+        "title": "ONE PIECE",
+        "type": "anime"
+      },
+      {
+        "id": 526,
+        "tmdbId": null,
+        "title": "HUNTER×HUNTER (2011)",
+        "type": "anime"
+      },
+      {
+        "id": 521,
+        "tmdbId": null,
+        "title": "Shingeki no Kyojin",
+        "type": "anime"
+      }
+    ]
+  },
+  {
+    "path": "/api/search?type=manga&pageSize=3&lang=uk",
+    "status": 200,
+    "ms": 0,
+    "bytes": 1729,
+    "keys": [
+      "items",
+      "total",
+      "page",
+      "pageSize"
+    ],
+    "count": 3,
+    "total": 164,
+    "samples": [
+      {
+        "id": 769,
+        "tmdbId": null,
+        "title": "Chainsaw Man",
+        "type": "manga"
+      },
+      {
+        "id": 773,
+        "tmdbId": null,
+        "title": "ONE PIECE",
+        "type": "manga"
+      },
+      {
+        "id": 772,
+        "tmdbId": null,
+        "title": "Berserk",
+        "type": "manga"
+      }
+    ]
+  },
+  {
+    "path": "/api/title/1218055?lang=uk",
+    "status": 200,
+    "ms": 31,
+    "bytes": 747,
+    "keys": [
+      "actors",
+      "director",
+      "keywords",
+      "overviewFull",
+      "backdropUrl",
+      "trailerYtId",
+      "providers",
+      "status",
+      "originalLanguage",
+      "id",
+      "tmdbId",
+      "type",
+      "title",
+      "originalTitle",
+      "year"
+    ]
+  },
+  {
+    "path": "/api/title/1218055/similar?limit=3&lang=uk",
+    "status": 200,
+    "ms": 32,
+    "bytes": 1717,
+    "keys": [
+      "items"
+    ],
+    "count": 3,
+    "total": null,
+    "samples": [
+      {
+        "id": 517682,
+        "tmdbId": null,
+        "title": "Mission to Mars",
+        "type": "movie"
+      },
+      {
+        "id": 823017,
+        "tmdbId": null,
+        "title": "Interstellar",
+        "type": "movie"
+      },
+      {
+        "id": 1289330,
+        "tmdbId": null,
+        "title": "Prometheus",
+        "type": "movie"
+      }
+    ]
+  },
+  {
+    "path": "/api/similar/by-seeds?ids=1218055&limit=3&lang=uk",
+    "status": 200,
+    "ms": 62,
+    "bytes": 1717,
+    "keys": [
+      "items"
+    ],
+    "count": 3,
+    "total": null,
+    "samples": [
+      {
+        "id": 517682,
+        "tmdbId": null,
+        "title": "Mission to Mars",
+        "type": "movie"
+      },
+      {
+        "id": 823017,
+        "tmdbId": null,
+        "title": "Interstellar",
+        "type": "movie"
+      },
+      {
+        "id": 1289330,
+        "tmdbId": null,
+        "title": "Prometheus",
+        "type": "movie"
+      }
+    ]
+  },
+  {
+    "path": "/api/auth/me",
+    "status": 401,
+    "error": "HTTP Error 401: Unauthorized",
+    "ms": 0
+  },
+  {
+    "path": "/manifest.webmanifest",
+    "status": 200,
+    "ms": 0,
+    "bytes": 705
+  },
+  {
+    "path": "/sw.js",
+    "status": 200,
+    "ms": 31,
+    "bytes": 2319
+  },
+  {
+    "path": "/icons/icon-192.png",
+    "status": 200,
+    "ms": 0,
+    "bytes": 2174
+  },
+  {
+    "path": "/icons/icon-512.png",
+    "status": 200,
+    "ms": 0,
+    "bytes": 6220
+  },
+  {
+    "path": "/offline",
+    "status": 200,
+    "ms": 16,
+    "bytes": 12800
+  }
+]

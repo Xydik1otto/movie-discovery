@@ -27,6 +27,9 @@ interface AuthContextValue {
   user: AuthUser | null;
   ready: boolean;
   apiUp: boolean;
+  // MD-07/MD-08: сервер не підтвердив logout (напр., API недоступний) —
+  // користувач лишається залогіненим локально, UI показує чесне повідомлення.
+  logoutFailed: boolean;
   refresh: () => Promise<void>;
   login: (email: string, password: string) => Promise<AuthFailure | null>;
   register: (
@@ -77,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(false);
   const [apiUp, setApiUp] = useState(true);
+  // MD-07/MD-08: честність logout — сервер не підтвердив вихід → повідомлення.
+  const [logoutFailed, setLogoutFailed] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -132,17 +137,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    setLogoutFailed(false);
     try {
       await logoutUser();
-    } catch {
-      // навіть якщо запит не пройшов — локально розлогінюємось
+      // Сервер підтвердив вихід (200/204) — локально теж розлогінюємось.
+      setUser(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        // Сесія вже закрита на сервері — локальний вихід коректний.
+        setUser(null);
+        return;
+      }
+      // MD-07: сервер НЕ підтвердив вихід (API недоступний / 5xx) —
+      // НЕ удаваємо завершення серверної сесії: користувач лишається
+      // залогіненим локально, UI показує чесне повідомлення.
+      setLogoutFailed(true);
     }
-    setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, apiUp, refresh, login, register, logout }),
-    [user, ready, apiUp, refresh, login, register, logout],
+    () => ({ user, ready, apiUp, logoutFailed, refresh, login, register, logout }),
+    [user, ready, apiUp, logoutFailed, refresh, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

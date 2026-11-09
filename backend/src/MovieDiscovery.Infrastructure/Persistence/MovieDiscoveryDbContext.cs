@@ -23,6 +23,7 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<WatchLink> WatchLinks => Set<WatchLink>();
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<InteractionLog> InteractionLogs => Set<InteractionLog>();
+    public DbSet<BotIdentity> BotIdentities => Set<BotIdentity>();
     public DbSet<UserCollection> UserCollections => Set<UserCollection>();
     public DbSet<UserCollectionItem> UserCollectionItems => Set<UserCollectionItem>();
 
@@ -210,6 +211,18 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
                 .HasForeignKey(x => x.TitleId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.UserId, x.CreatedAt });
+        });
+
+        // MD-05: telegram-ідентичність бота → власний профіль списків (PK = telegram_user_id,
+        // унікальний — race-safe створення); FK на profiles з каскадом (профіль → його ідентичність).
+        mb.Entity<BotIdentity>(e =>
+        {
+            e.ToTable("bot_identities");
+            e.HasKey(x => x.TelegramUserId);
+            e.HasOne(x => x.Profile)
+                .WithMany()
+                .HasForeignKey(x => x.ProfileId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // FR-21: збережені добірки юзера — user_collections + user_collection_items.

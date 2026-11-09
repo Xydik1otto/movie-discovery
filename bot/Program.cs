@@ -15,6 +15,8 @@ catch
 }
 
 var config = BotConfig.FromEnvironment();
+if (string.IsNullOrWhiteSpace(config.BotApiKey))
+    Log.Error("BOT_API_KEY порожній — заголовок X-Bot-Key не надсилатиметься (авторизація API вимкнена).");
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {
@@ -45,10 +47,10 @@ if (string.IsNullOrWhiteSpace(config.Token))
     return;
 }
 
-var api = new ApiClient(config.ApiUrl);
+var api = new ApiClient(config.ApiUrl, config.BotApiKey);
 var state = new ChatState();
-var handler = new BotUpdateHandler(api, state, Log.Info);
 var botClient = new TelegramBotClient(config.Token);
+var handler = new BotUpdateHandler(botClient, api, state, Log.Info);
 
 // Чекаємо валідний токен / зв'язок з Telegram — ретраї кожні 30 с, не падаємо.
 User? me = null;

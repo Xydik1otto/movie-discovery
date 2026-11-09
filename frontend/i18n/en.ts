@@ -259,6 +259,8 @@ export const en: Dict = {
   "auth.err.lockout": "Too many failed attempts — try again in 15 minutes",
   "auth.err.generic": "Something went wrong. Try again",
   "auth.err.unavailable": "API is unavailable — try again later",
+  // MD-07: the server did not confirm logout — honest message instead of a fake sign-out.
+  "auth.logoutUnavailable": "Could not log out — the server is unavailable. You are still logged in.",
 
   // --- FR-18: Cinema Shelf (discover) ---
   "nav.discover": "Cinema Shelf",
@@ -297,6 +299,9 @@ export const en: Dict = {
   "onboarding.done.text": "Your taste profile is ready — the Cinema Shelf already uses your answers.",
   "onboarding.done.discover": "To the Cinema Shelf",
   "onboarding.done.home": "Back home",
+  // MD-02: honest save failure — selections are kept, no fake “Done”.
+  "onboarding.error": "Could not save your answers — the server is unavailable or refused. Your selections are kept, try again.",
+  "onboarding.retry": "Try again",
 
   // --- FR-17: “Liked” tab, stats, guest migration ---
   "lists.liked": "Liked",
@@ -310,6 +315,12 @@ export const en: Dict = {
   "migrate.button": "Move them",
   "migrate.done": "Guest lists have been moved into your account ✓",
   "migrate.error": "Could not move them — try again",
+  // MD-04: exact partial-migration stats + retry (snapshot is kept).
+  "migrate.partial": "Moved: {moved}, skipped: {skipped}. Try again — repeating the migration does not duplicate entries.",
+
+  // MD-04: guest lists in localStorage (FR-16)
+  "lists.guestNotice": "Guest mode: lists are kept in this browser only. Log in to save them to your account.",
+  "lists.storageUnavailable": "Local storage is unavailable (private mode) — guest lists will not survive closing the page.",
 
   // --- FR-21: “Similar to...” — studio, collections, chain, reasons ---
   "similar.studioMode": "Studio",

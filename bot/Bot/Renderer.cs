@@ -61,7 +61,9 @@ public static class Renderer
                 sb.Append("\n<i>").Append(TextFormatter.Escape(overview)).Append("</i>");
         }
 
-        sb.Append("\n🔗 <a href=\"").Append(TextFormatter.TmdbLink(t.Type, t.TmdbId)).Append("\">TMDB</a>");
+        var tmdbLink = TextFormatter.TmdbLink(t.Type, t.TmdbId);
+        if (tmdbLink is not null)
+            sb.Append("\n🔗 <a href=\"").Append(tmdbLink).Append("\">TMDB</a>");
 
         if (t.Reasons is { Count: > 0 } reasons)
         {

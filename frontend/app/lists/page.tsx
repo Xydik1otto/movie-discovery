@@ -1,17 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/auth";
 import {
   deleteListItem,
-  guardedGuestItems,
   guardedLists,
   guardedListStats,
   isUnavailable,
   migrateGuestLists,
   rateListItem,
 } from "@/lib/fallback";
+import { rateListEntry } from "@/lib/listActions";
+import {
+  clearGuestSnapshot,
+  guestSnapshot,
+  hasMigrationMarker,
+  loadGuestLists,
+  removeGuestItem,
+  setMigrationMarker,
+  storageAvailable,
+  type GuestEntry,
+} from "@/lib/guestLists";
 import type { ListKind, ListItem, ListStats } from "@/lib/types";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
@@ -21,25 +31,62 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 const TABS: ListKind[] = ["watchlist", "liked", "watched", "read", "disliked"];
 const RATEABLE: ListKind[] = ["watched", "read"];
 
+// Гостьовий запис → форма ListItem для рендера картки (без серверних запитів).
+function guestToItem(e: GuestEntry): ListItem {
+  return {
+    id: e.titleId,
+    tmdbId: e.tmdbId ?? null,
+    type: e.meta?.type ?? "movie",
+    title: e.meta?.title ?? "",
+    originalTitle: null,
+    year: e.meta?.year ?? null,
+    posterUrl: e.meta?.posterUrl ?? null,
+    rating: e.rating ?? null,
+    createdAt: e.addedAt,
+  };
+}
+
 export default function ListsPage() {
   const { t, lang } = useI18n();
   const { user, ready } = useAuth();
+  const isGuest = ready && !user;
   const [kind, setKind] = useState<ListKind>("watchlist");
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState(false);
   const [actionError, setActionError] = useState(false);
+  // MD-04: чесний стан гостьового сховища (приватний режим браузера).
+  const [noStorage, setNoStorage] = useState(false);
   // FR-17: статистика списків (лічильники + середня оцінка + топ жанрів).
   const [stats, setStats] = useState<ListStats | null>(null);
   const [statsUnavailable, setStatsUnavailable] = useState(false);
-  // FR-17: одноразова міграція гостьових списків в акаунт.
+  // FR-17/MD-04: міграція гостьових списків в акаунт.
   const [guestCount, setGuestCount] = useState<number | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [migrated, setMigrated] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{ moved: number; skipped: number } | null>(
+    null,
+  );
   const [migrateError, setMigrateError] = useState(false);
+  // Перезавантаження серверних списків після міграції.
+  const [reload, setReload] = useState(0);
+
+  // Гостьові записи (усі kind) — для вкладок і локальної статистики.
+  const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
 
   useEffect(() => {
+    if (!ready) return;
+    if (!user) {
+      // MD-04: гість читає списки з localStorage — жодного серверного виклику
+      // (ні /api/lists, ні /api/lists/stats; старий шлях із profileId=1 знято).
+      setNoStorage(!storageAvailable());
+      setGuestEntries(loadGuestLists());
+      setUnavailable(false);
+      setError(false);
+      setLoading(false);
+      return;
+    }
     let alive = true;
     setLoading(true);
     setError(false);
@@ -59,7 +106,7 @@ export default function ListsPage() {
     return () => {
       alive = false;
     };
-  }, [kind, lang]);
+  }, [ready, user, kind, lang, reload]);
 
   const loadStats = useCallback(() => {
     guardedListStats(lang)
@@ -71,37 +118,45 @@ export default function ListsPage() {
   }, [lang]);
 
   useEffect(() => {
+    if (!ready) return;
+    if (!user) return; // гість — статистика рахується локально
     loadStats();
-  }, [loadStats]);
+  }, [ready, user, loadStats, reload]);
 
-  // Банер міграції: лише для залогінених, одноразово (прапорець у localStorage).
-  useEffect(() => {
-    if (!ready || !user) {
-      setGuestCount(null);
-      return;
-    }
-    let migratedBefore = false;
-    try {
-      migratedBefore = window.localStorage.getItem("guestMigrated") === "1";
-    } catch {
-      migratedBefore = false;
-    }
-    if (migratedBefore) {
-      setGuestCount(null);
-      return;
-    }
-    let alive = true;
-    guardedGuestItems()
-      .then((r) => {
-        if (alive) setGuestCount(r.data.length);
-      })
-      .catch(() => {
-        if (alive) setGuestCount(null);
-      });
-    return () => {
-      alive = false;
+  // Гість: локальні лічильники (чесно, без серверних агрегатів).
+  const guestStats = useMemo(() => {
+    const rated = guestEntries.filter((e) => e.rating != null);
+    const avg = rated.length
+      ? Number((rated.reduce((s, e) => s + (e.rating ?? 0), 0) / rated.length).toFixed(1))
+      : null;
+    return {
+      watchedCount: guestEntries.filter((e) => e.kind === "watched").length,
+      likedCount: guestEntries.filter((e) => e.kind === "liked").length,
+      dislikedCount: guestEntries.filter((e) => e.kind === "disliked").length,
+      avgRating: avg,
     };
-  }, [ready, user]);
+  }, [guestEntries]);
+
+  const guestItems = useMemo(
+    () => guestEntries.filter((e) => e.kind === kind).map(guestToItem),
+    [guestEntries, kind],
+  );
+
+  // Банер міграції (MD-04): читаємо ЛИШЕ ЛОКАЛЬНИЙ гостьовий знімок (ніколи не
+  // серверні списки). Маркер — `md_guest_migrated:{userId}:{hash}`: інший
+  // акаунт чужий маркер не успадковує, нові гостьові дії пропонують міграцію знову.
+  useEffect(() => {
+    if (!ready || !user || user.id == null) {
+      setGuestCount(null);
+      return;
+    }
+    const snap = guestSnapshot();
+    if (!snap.length || hasMigrationMarker(user.id, snap)) {
+      setGuestCount(null);
+      return;
+    }
+    setGuestCount(snap.length);
+  }, [ready, user, reload]);
 
   function itemIdOf(item: ListItem): number {
     return item.itemId ?? item.id;
@@ -109,6 +164,12 @@ export default function ListsPage() {
 
   async function remove(item: ListItem) {
     setActionError(false);
+    if (isGuest) {
+      // Гість: видаляємо у localStorage, оптимістично оновлюємо локальний стан.
+      removeGuestItem(kind, item.id);
+      setGuestEntries(loadGuestLists());
+      return;
+    }
     setItems((prev) => prev.filter((x) => x.id !== item.id));
     if (unavailable) return; // демо-режим — лише локально
     try {
@@ -121,6 +182,12 @@ export default function ListsPage() {
 
   async function rate(item: ListItem, rating: number) {
     setActionError(false);
+    if (isGuest) {
+      // MD-04: гість — оцінка в localStorage (ідемпотентний upsert).
+      await rateListEntry(false, kind, { id: item.id, tmdbId: item.tmdbId ?? null }, rating);
+      setGuestEntries(loadGuestLists());
+      return;
+    }
     const prevItems = items;
     setItems((prev) =>
       prev.map((x) => (x.id === item.id ? { ...x, rating } : x)),
@@ -137,21 +204,39 @@ export default function ListsPage() {
     }
   }
 
+  // MD-04: міграція ЛИШЕ за дією користувача, знімок — з localStorage.
+  // Маркер і очищення знімка — тільки коли moved+skipped покрили весь знімок.
   async function doMigrate() {
+    if (!user || user.id == null) return;
+    const snap = guestSnapshot();
+    if (!snap.length) {
+      setGuestCount(null);
+      return;
+    }
     setMigrating(true);
     setMigrateError(false);
+    setMigrateResult(null);
     try {
-      const r = await guardedGuestItems();
-      if (r.data.length > 0) await migrateGuestLists(r.data);
-      try {
-        window.localStorage.setItem("guestMigrated", "1");
-      } catch {
-        // без localStorage банер просто зникне до перезавантаження
+      const r = await migrateGuestLists(snap);
+      const moved = r.moved ?? 0;
+      const skipped = r.skipped ?? 0;
+      if (moved + skipped === snap.length) {
+        // Повне підтверджене перенесення: маркер scoped за акаунтом+знімком,
+        // знімок чистимо. Повторна міграція не дублює (бекенд ідемпотентний).
+        setMigrationMarker(user.id, snap);
+        clearGuestSnapshot();
+        setGuestEntries([]);
+        setGuestCount(null);
+        setMigrated(true);
+        setReload((x) => x + 1);
+        loadStats();
+      } else {
+        // Частковий результат: знімок і маркер недоторкані, чесна статистика + retry.
+        setMigrateResult({ moved, skipped });
+        setMigrateError(true);
       }
-      setGuestCount(null);
-      setMigrated(true);
-      loadStats();
     } catch {
+      // Збій (мережа/401/500): нічого не видаляємо, кнопка «Перенести» лишається.
       setMigrateError(true);
     } finally {
       setMigrating(false);
@@ -180,13 +265,38 @@ export default function ListsPage() {
     </div>
   );
 
+  const shownItems = user ? items : guestItems;
+  const shownStats: ListStats | null = user
+    ? stats
+    : {
+        watchedCount: guestStats.watchedCount,
+        likedCount: guestStats.likedCount,
+        dislikedCount: guestStats.dislikedCount,
+        avgRating: guestStats.avgRating,
+      };
+
   return (
     <div>
       <h1 className="mb-4 text-2xl font-extrabold tracking-tight sm:text-3xl">
         {t("nav.lists")}
       </h1>
 
-      {/* FR-17: банер-пропозиція перенести гостьові списки (одноразово) */}
+      {/* MD-04: чесний підпис гостьового режиму */}
+      {isGuest && (
+        <p className="mb-4 rounded-2xl border border-line bg-panel px-4 py-2.5 text-sm text-mute">
+          {t("lists.guestNotice")}
+        </p>
+      )}
+      {isGuest && noStorage && (
+        <p
+          role="alert"
+          className="mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-300"
+        >
+          {t("lists.storageUnavailable")}
+        </p>
+      )}
+
+      {/* FR-17/MD-04: банер-пропозиція перенести гостьові списки (за дією користувача) */}
       {ready && user && guestCount != null && guestCount > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3">
           <span className="min-w-0 flex-1 text-sm text-ink">
@@ -208,25 +318,35 @@ export default function ListsPage() {
         </p>
       )}
       {migrateError && (
-        <p className="mb-4 text-sm text-amber-300">{t("migrate.error")}</p>
+        <div className="mb-4">
+          <p className="text-sm text-amber-300">{t("migrate.error")}</p>
+          {migrateResult && (
+            <p className="mt-1 text-sm text-amber-300">
+              {t("migrate.partial", {
+                moved: migrateResult.moved,
+                skipped: migrateResult.skipped,
+              })}
+            </p>
+          )}
+        </div>
       )}
 
-      {/* FR-17: статистика */}
-      {stats && (
+      {/* FR-17: статистика (гостю — локальні лічильники, топ жанрів недоступний) */}
+      {shownStats && (
         <section className="mb-4">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {statCell(t("lists.stats.watched"), stats.watchedCount ?? 0)}
-            {statCell(t("lists.stats.liked"), stats.likedCount ?? 0)}
-            {statCell(t("lists.stats.disliked"), stats.dislikedCount ?? 0)}
+            {statCell(t("lists.stats.watched"), shownStats.watchedCount ?? 0)}
+            {statCell(t("lists.stats.liked"), shownStats.likedCount ?? 0)}
+            {statCell(t("lists.stats.disliked"), shownStats.dislikedCount ?? 0)}
             {statCell(
               t("lists.stats.avgRating"),
-              stats.avgRating != null ? String(stats.avgRating) : "—",
+              shownStats.avgRating != null ? String(shownStats.avgRating) : "—",
             )}
           </div>
-          {!!stats.topGenres?.length && (
+          {user && !!shownStats.topGenres?.length && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-mute">
               <span className="font-semibold">{t("lists.stats.topGenres")}:</span>
-              {stats.topGenres.slice(0, 5).map((g, i) => {
+              {shownStats.topGenres.slice(0, 5).map((g, i) => {
                 const label = typeof g === "string" ? g : (g.genre ?? "");
                 return (
                   <span
@@ -239,7 +359,7 @@ export default function ListsPage() {
               })}
             </div>
           )}
-          {statsUnavailable && <div className="mt-2"><ApiBanner /></div>}
+          {user && statsUnavailable && <div className="mt-2"><ApiBanner /></div>}
         </section>
       )}
 
@@ -258,7 +378,7 @@ export default function ListsPage() {
         )}
       </div>
 
-      {unavailable && <ApiBanner />}
+      {user && unavailable && <ApiBanner />}
       {actionError && (
         <p className="mb-3 text-sm text-amber-300">{t("common.error")}</p>
       )}
@@ -267,11 +387,11 @@ export default function ListsPage() {
         <LoadingSkeleton count={6} />
       ) : error ? (
         <EmptyState icon="⚠️" title={t("common.error")} />
-      ) : items.length === 0 ? (
+      ) : shownItems.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {items.map((item) => (
+          {shownItems.map((item) => (
             <TitleCard
               key={`${kind}-${item.id}`}
               item={item}

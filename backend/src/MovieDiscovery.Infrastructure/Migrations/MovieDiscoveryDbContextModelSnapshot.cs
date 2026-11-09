@@ -188,6 +188,32 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.ToTable("asp_net_users", (string)null);
                 });
 
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.BotIdentity", b =>
+                {
+                    b.Property<long>("TelegramUserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("telegram_user_id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("TelegramUserId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("ProfileId")
+                        .HasColumnType("integer")
+                        .HasColumnName("profile_id");
+
+                    b.HasKey("TelegramUserId")
+                        .HasName("pk_bot_identities");
+
+                    b.HasIndex("ProfileId")
+                        .HasDatabaseName("ix_bot_identities_profile_id");
+
+                    b.ToTable("bot_identities", (string)null);
+                });
+
             modelBuilder.Entity("MovieDiscovery.Core.Domain.ImportJob", b =>
                 {
                     b.Property<int>("Id")
@@ -1038,6 +1064,18 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_asp_net_user_tokens_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Core.Domain.BotIdentity", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_bot_identities_profiles_profile_id");
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("MovieDiscovery.Core.Domain.ImportJob", b =>
