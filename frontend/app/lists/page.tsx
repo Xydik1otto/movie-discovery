@@ -13,7 +13,6 @@ import {
 } from "@/lib/fallback";
 import { rateListEntry } from "@/lib/listActions";
 import {
-  clearGuestSnapshot,
   guestSnapshot,
   hasMigrationMarker,
   loadGuestLists,
@@ -71,6 +70,8 @@ export default function ListsPage() {
     skipped: number;
     rejected: { kind: string; titleId: number; status: string }[];
   } | null>(null);
+  // CR-03 фінал: legacy API без per-entry статусів — чесна помилка несумісності.
+  const [migrateIncompatible, setMigrateIncompatible] = useState(false);
   const [migrateError, setMigrateError] = useState(false);
   // Перезавантаження серверних списків після міграції.
   const [reload, setReload] = useState(0);
@@ -225,34 +226,41 @@ export default function ListsPage() {
     }
     setMigrating(true);
     setMigrateError(false);
+    setMigrateIncompatible(false);
     setMigrateResult(null);
     try {
       const r = await migrateGuestLists(snap);
       const moved = r.moved ?? 0;
       const skipped = r.skipped ?? 0; // ЛИШЕ дублікати (alreadyExisting)
       const entries = r.entries ?? [];
+      // CR-03 фінал: без per-entry доказів НЕ чистимо знімок і НЕ ставимо
+      // completion-маркер. Старий API змішує rejected у skipped, тож
+      // moved+skipped === snap.length НЕ є доказом перенесення (probe:
+      // snapshot з неіснуючим тайтлом + legacy {moved:0,skipped:1} повністю
+      // стирав знімок). Чесна помилка несумісної версії API + збережений retry.
+      if (entries.length === 0) {
+        setMigrateIncompatible(true);
+        setMigrateError(true);
+        return;
+      }
       const confirmed = entries.filter((e) => e.status === "moved" || e.status === "duplicate");
       const rejected = entries
         .filter((e) => e.status !== "moved" && e.status !== "duplicate")
         .map((e) => ({ kind: e.kind, titleId: e.titleId, status: e.status }));
       const dropConfirmed = () => {
-        // Прибираємо з localStorage лише підтверджені пари (kind,titleId):
-        // записи, додані іншою вкладкою під час міграції, лишаються.
-        removeGuestEntries(confirmed.map((e) => ({ kind: e.kind, titleId: e.titleId })));
+        // Версійно-безпечне видалення: зі знімка прибираємо ЛИШЕ записи, що досі
+        // ідентичні надісланій версії (kind+titleId+rating+addedAt). Змінені або
+        // повторно додані іншою вкладкою записи того самого ключа лишаються.
+        const submittedByKey = new Map<string, GuestEntry>(snap.map((s) => [`${s.kind}:${s.titleId}`, s]));
+        const confirmedRefs = confirmed
+          .map((e) => submittedByKey.get(`${e.kind}:${e.titleId}`))
+          .filter((s): s is GuestEntry => s !== undefined);
+        removeGuestEntries(confirmedRefs);
         const rest = loadGuestLists();
         setGuestEntries(rest);
         setGuestCount(rest.length > 0 ? rest.length : null);
       };
-      if (entries.length === 0 && moved + skipped === snap.length) {
-        // Legacy-бекенд без per-entry статусів (стара семантика).
-        setMigrationMarker(user.id, snap);
-        clearGuestSnapshot();
-        setGuestEntries([]);
-        setGuestCount(null);
-        setMigrated(true);
-        setReload((x) => x + 1);
-        loadStats();
-      } else if (confirmed.length === snap.length) {
+      if (confirmed.length === snap.length) {
         // Повне підтверджене перенесення: маркер scoped за акаунтом+знімком.
         setMigrationMarker(user.id, snap);
         dropConfirmed();
@@ -354,20 +362,25 @@ export default function ListsPage() {
       {migrateError && (
         <div className="mb-4">
           <p className="text-sm text-amber-300">{t("migrate.error")}</p>
-          {migrateResult && (
-            <>
-              <p className="mt-1 text-sm text-amber-300">
-                {t("migrate.partial", {
-                  moved: migrateResult.moved,
-                  skipped: migrateResult.skipped,
-                })}
-              </p>
-              {migrateResult.rejected.length > 0 && (
+          {migrateIncompatible ? (
+            // CR-03 фінал: legacy API без per-entry статусів — знімок НЕ чистився.
+            <p className="mt-1 text-sm text-amber-300">{t("migrate.incompatible")}</p>
+          ) : (
+            migrateResult && (
+              <>
                 <p className="mt-1 text-sm text-amber-300">
-                  {t("migrate.rejected", { n: migrateResult.rejected.length })}
+                  {t("migrate.partial", {
+                    moved: migrateResult.moved,
+                    skipped: migrateResult.skipped,
+                  })}
                 </p>
-              )}
-            </>
+                {migrateResult.rejected.length > 0 && (
+                  <p className="mt-1 text-sm text-amber-300">
+                    {t("migrate.rejected", { n: migrateResult.rejected.length })}
+                  </p>
+                )}
+              </>
+            )
           )}
         </div>
       )}

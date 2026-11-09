@@ -1,0 +1,29 @@
+{
+  "concurrentRating": {
+    "submittedRating": 7,
+    "newRating": 9,
+    "remaining": [],
+    "expected": "new rating must remain until acknowledged"
+  },
+  "legacyRejectedMigration": {
+    "response": {
+      "moved": 0,
+      "skipped": 1
+    },
+    "remaining": [],
+    "migrated": true,
+    "expected": "retain unconfirmed record; unsupported older API cannot distinguish rejects"
+  },
+  "storageFailure": "GuestStorageError",
+  "fallback": {
+    "calls": [
+      "/api/similar/by-seeds?ids=1&genres=science+fiction&limit=20&lang=uk"
+    ],
+    "error": {
+      "error": "similar_by_seeds_get_unsupported"
+    }
+  },
+  "swDeletedCaches": [
+    "mvdc-v0"
+  ]
+}

@@ -172,23 +172,34 @@ export function setMigrationMarker(userId: string | number, snapshot: GuestEntry
   }
 }
 
-// Знімок чистимо ЛИШЕ після підтвердженого повного перенесення.
-export function clearGuestSnapshot(): void {
-  try {
-    window.localStorage.removeItem(GUEST_LISTS_KEY);
-  } catch {
-    // ignore
-  }
+// CR-03 фінал: full-wipe знімка ВИДАЛЕНО з API (clearGuestSnapshot) — він стирав
+// усі гостьові дані разом з rejected/новими записами інших вкладок. Видалення
+// тепер лише точкове через removeGuestEntries за ідентичністю запису.
+
+// CR-03 фінал: прибрати зі знімка ЛИШЕ підтверджені записи, ТОЧНО ідентичні
+// надісланому snapshot (kind + titleId + rating + addedAt). Зміна рейтингу або
+// remove+readd того самого ключа іншою вкладкою під час in-flight міграції
+// створюють НОВИЙ запис — він не збігається з підтвердженим і лишається для
+// наступної явної міграції. Ключ alone (kind,titleId) недостатній: сервер
+// підтвердив лише надіслане значення, а не новіше.
+export interface GuestEntryIdentity {
+  kind: string;
+  titleId: number;
+  rating: number | null;
+  addedAt: string;
 }
 
-// CR-03: прибрати зі знімка ЛИШЕ підтверджені записи (moved|duplicate) — по парі
-// (kind,titleId) ЗНАЧЕННЯМ, без повного wipe ключа. Нові entries, додані іншою
-// вкладкою під час міграції (версія сховища змінилася), лишаються на місці.
-export function removeGuestEntries(confirmed: readonly { kind: string; titleId: number }[]): boolean {
+// Токен ідентичності запису: усі поля значенням; addedAt розрізняє повторно
+// додані записи того самого ключа (новий add = нова мітка часу).
+function entryToken(e: { kind: string; titleId: number; rating: number | null; addedAt: string }): string {
+  return `${e.kind}:${e.titleId}:${e.rating ?? ""}:${e.addedAt}`;
+}
+
+export function removeGuestEntries(confirmed: readonly GuestEntryIdentity[]): boolean {
   if (confirmed.length === 0) return true;
-  const drop = new Set(confirmed.map((c) => `${c.kind}:${c.titleId}`));
+  const drop = new Set(confirmed.map(entryToken));
   const store = readStore();
-  const items = store.items.filter((i) => !drop.has(`${i.kind}:${i.titleId}`));
-  if (items.length === store.items.length) return true; // нічого прибирати
+  const items = store.items.filter((i) => !drop.has(entryToken(i)));
+  if (items.length === store.items.length) return true; // ніщо не збігається — лишити як є
   return writeStore({ version: store.version, items });
 }

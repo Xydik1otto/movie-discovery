@@ -1,0 +1,6 @@
+{
+  "scenarios": 7,
+  "pass": 18,
+  "fail": 0,
+  "base": "http://localhost:3201"
+}

@@ -1,0 +1,71 @@
+{
+  "actions": [
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "10",
+        "152ee3852d3bb2a572f4b1a11d1bd9d563ddd2cca368a35e123d7eca94767270",
+        "944120b222c6db444c152c846838a502b167340b1085db99344fec14760b94a9",
+        "823c823776edde2cbcf8a59fa97d8a02aa93d7f3c7676acdb195a16005f62e57"
+      ],
+      "code": 0,
+      "output": "Flag --time has been deprecated, use --timeout instead\n152ee3852d3bb2a572f4b1a11d1bd9d563ddd2cca368a35e123d7eca94767270\n944120b222c6db444c152c846838a502b167340b1085db99344fec14760b94a9\n823c823776edde2cbcf8a59fa97d8a02aa93d7f3c7676acdb195a16005f62e57"
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "152ee3852d3bb2a572f4b1a11d1bd9d563ddd2cca368a35e123d7eca94767270",
+        "944120b222c6db444c152c846838a502b167340b1085db99344fec14760b94a9",
+        "823c823776edde2cbcf8a59fa97d8a02aa93d7f3c7676acdb195a16005f62e57"
+      ],
+      "code": 0,
+      "output": "152ee3852d3bb2a572f4b1a11d1bd9d563ddd2cca368a35e123d7eca94767270\n944120b222c6db444c152c846838a502b167340b1085db99344fec14760b94a9\n823c823776edde2cbcf8a59fa97d8a02aa93d7f3c7676acdb195a16005f62e57"
+    },
+    {
+      "command": [
+        "docker",
+        "volume",
+        "rm",
+        "2a66e9187f7b1538f1812d603e9f8e404385179c0613b324377447c9bd60fe2b"
+      ],
+      "code": 0,
+      "output": "2a66e9187f7b1538f1812d603e9f8e404385179c0613b324377447c9bd60fe2b"
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "codex-cr-review-20261109_default"
+      ],
+      "code": 0,
+      "output": "codex-cr-review-20261109_default"
+    },
+    {
+      "command": [
+        "docker",
+        "image",
+        "rm",
+        "codex-cr-review-20261109-api-test:latest",
+        "codex-cr-review-20261109-web-test:latest"
+      ],
+      "code": 0,
+      "output": "Untagged: codex-cr-review-20261109-api-test:latest\nDeleted: sha256:9810ed30ab7c7d76dec03ba93c5479aaabc543cf473a03242dbc53b42efb06cc\nUntagged: codex-cr-review-20261109-web-test:latest\nDeleted: sha256:9e8b990b74cf0e5653952c8e143396cf7df0048cd8d57d02956526811d20ba41"
+    }
+  ],
+  "errors": [],
+  "remainingTaskContainers": "",
+  "preservedRunningServices": "c9b33e70205d scb-fa-pg-rev Up 11 minutes\nda6209fda6a8 scb-fc-pg Up 41 minutes\n53c79389cb52 scb-bill-qa-pg-0585670b7c Up About an hour\n001e8bc1e6b7 scb-tp-int-pg-i11 Up About an hour\ne88c5e19bc82 scb-tp-int-pg-i12 Up About an hour\nbcd884134176 scb-tp-int-pg-tpc Up 2 hours\n6cc7ee8372ae moviediscovery-web Up 3 hours\n5f8d1ea23331 moviediscovery-api Up 3 hours\n406c2ea0a0fa moviediscovery-bot Up 3 hours\nd5d40cd87764 moviediscovery-tunnel Up 3 hours\nae0addb940cc moviediscovery-db Up 3 hours (healthy)\n",
+  "userHealth": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "db": true,
+      "ollama": false,
+      "titlesCount": 2863652
+    }
+  }
+}
