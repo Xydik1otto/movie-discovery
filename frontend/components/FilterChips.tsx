@@ -23,7 +23,9 @@ export function Chip({
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`rounded-full border transition-colors ${pad} ${
+      // shrink-0 + whitespace-nowrap: чіп не стискається і не переноситься на
+      // 2 рядки — у скрол-рядах (тими) усі чіпи однакової висоти, довші — скролляться.
+      className={`shrink-0 whitespace-nowrap rounded-full border transition-colors ${pad} ${
         selected
           ? "border-accent bg-accent/15 font-semibold text-accent-2"
           : "border-line bg-panel text-mute hover:border-mute hover:text-ink"

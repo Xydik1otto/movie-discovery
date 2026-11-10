@@ -943,7 +943,7 @@ function HomePageInner() {
                 </p>
               )}
               <div
-                className={`grid grid-cols-2 gap-3 transition-opacity duration-200 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${
+                className={`grid grid-cols-2 gap-3 pb-24 transition-opacity duration-200 sm:grid-cols-3 md:grid-cols-4 md:pb-0 lg:grid-cols-5 xl:grid-cols-6 ${
                   list.busy ? "pointer-events-none opacity-60" : ""
                 }`}
               >
@@ -1007,7 +1007,7 @@ function HomePageInner() {
                     {t("nav.similar")} →
                   </Link>
                 </p>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3 md:grid-cols-4 md:pb-0 lg:grid-cols-5 xl:grid-cols-6">
                   {similarItems.map((item) => (
                     <TitleCard key={item.id} item={item} score={item.score} />
                   ))}

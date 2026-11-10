@@ -7,6 +7,7 @@ namespace MovieDiscovery.Infrastructure.Services;
 public sealed record GenreCount(string Genre, int Count);
 
 public sealed record ListStats(
+    int WatchlistCount,
     int WatchedCount,
     int ReadCount,
     int LikedCount,
@@ -119,8 +120,8 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         return true;
     }
 
-    /// <summary>Статистика списків юзера (FR-17): watched/read/liked/disliked + watching/reading/on_hold/dropped
-    /// (паритет статусів трекерів), avgRating, topGenres.</summary>
+    /// <summary>Статистика списків юзера (FR-17): watchlist («Хочу глянути») + watched/read/liked/disliked
+    /// + watching/reading/on_hold/dropped (паритет статусів трекерів), avgRating, topGenres.</summary>
     public async Task<ListStats> StatsAsync(string userId, CancellationToken ct = default)
     {
         var up = await taste.ResolveAsync(userId, ct);
@@ -129,6 +130,7 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .Where(l => l.ProfileId == up.ProfileId)
             .ToListAsync(ct);
 
+        var watchlist = entries.Count(l => l.Kind == ListKinds.Watchlist);
         var watched = entries.Count(l => l.Kind == ListKinds.Watched);
         var read = entries.Count(l => l.Kind == ListKinds.Read);
         var liked = entries.Count(l => l.Kind == ListKinds.Liked);
@@ -150,7 +152,7 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .ToList();
 
         return new ListStats(
-            watched, read, liked, disliked, watching, reading, onHold, dropped,
+            watchlist, watched, read, liked, disliked, watching, reading, onHold, dropped,
             ratings.Count == 0 ? null : Math.Round(ratings.Average(), 2),
             topGenres);
     }

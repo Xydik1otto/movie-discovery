@@ -81,7 +81,8 @@ public sealed class TitleTrailerSyncService(
     MovieDiscoveryDbContext db,
     ICacheStore cache,
     IOptions<YoutubeOptions> options,
-    ILogger<TitleTrailerSyncService> log)
+    ILogger<TitleTrailerSyncService> log,
+    YouTubeDailySearchQuota? quota = null)
 {
     private readonly YoutubeOptions _opt = options.Value;
 
@@ -145,6 +146,14 @@ public sealed class TitleTrailerSyncService(
         if (!IsConfigured) return 0;
         var title = await db.Titles.AsNoTracking().FirstOrDefaultAsync(t => t.Id == titleId, ct);
         if (title is null) return 0;
+        // Денний ГЛОБАЛЬНИЙ ліміт search-викликів (90/день) — on-demand-шлях (GET .../trailers):
+        // гейт ПІСЛЯ дешевих виходів (не налаштований/тайтл нема) і ПЕРЕД search-спробою.
+        // Перевищення → YouTubeQuotaExceededException (не YoutubeApiException! — м'який catch
+        // нижче не проковтує, контролер мапить на 429 quota_exceeded). Батч RunAsync йде
+        // напряму в SyncOneAsync і гейт минає (адмінський прогін не блокуємо денним лімітом).
+        // quota == null (пряме new у тестах) → без ліміту.
+        if (quota is not null && !quota.TryConsume())
+            throw new YouTubeQuotaExceededException();
         try
         {
             return await SyncOneAsync(title, ct);

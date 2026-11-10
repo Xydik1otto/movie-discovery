@@ -85,8 +85,9 @@ public sealed class ImportController(
     }
 
     /// <summary>Статус і статистика джоби (опитування прогресу). Ownership (Codex IV-01):
-    /// власник — профіль запитувача (auth → свій профіль; анонім → guest/legacy-NULL джоба);
-    /// чужа джоба → 404 без розкриття існування.</summary>
+    /// власник — профіль запитувача (auth → свій профіль; анонім → ЛИШЕ джоба свого
+    /// guest-профілю; NULL-profile legacy джоби анонімам НЕ належать — чесний 404,
+    /// а не «спільний доступ усіх анонімів до legacy-джоб»).</summary>
     [HttpGet("jobs/{id:int}")]
     public async Task<IActionResult> GetJob(int id, CancellationToken ct)
     {
@@ -103,9 +104,10 @@ public sealed class ImportController(
         }
         else
         {
+            // Ownership аноніма — лише ЯВНИЙ збіг з designated guest profile (нові джоби
+            // завжди мають чесний profile_id; NULL — легасі, який анонімам не належить).
             var guestProfile = await guest.ResolveAsync(ct);
-            var guestOwned = guestProfile is { } g
-                && (job.ProfileId is null || job.ProfileId == g.Id); // NULL — legacy гостьові джоби
+            var guestOwned = guestProfile is { } g && job.ProfileId == g.Id;
             if (!guestOwned)
                 return NotFound(new { error = "not_found", message = "Джобу імпорту не знайдено" });
         }

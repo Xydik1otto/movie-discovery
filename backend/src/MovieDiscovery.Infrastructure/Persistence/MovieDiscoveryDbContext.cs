@@ -51,6 +51,12 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
         mb.HasDbFunction(typeof(MovieDbFunctions).GetMethod(nameof(MovieDbFunctions.ActorsTrgmText))!)
             .HasName("actors_trgm_text");
 
+        // FTS-предикат двофазного пошуку (SearchService Фаза A): 5 полів @@ tsquery —
+        // GIN-індекс ix_titles_search_fts на виразі title_search_fts(...). Інлайнитись
+        // має саме ця обгортка (СХЕМА public, дефолтна), як і actors_trgm_text вище.
+        mb.HasDbFunction(typeof(MovieDbFunctions).GetMethod(nameof(MovieDbFunctions.TitleSearchMatch))!)
+            .HasName("title_search_match");
+
         mb.Entity<Title>(e =>
         {
             e.Property(x => x.Type).IsRequired().HasMaxLength(16);

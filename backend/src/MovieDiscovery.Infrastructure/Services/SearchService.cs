@@ -59,7 +59,6 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         var page = Math.Max(1, q.Page);
         var pageSize = Math.Clamp(q.PageSize, 1, 50);
 
-        var query = BuildQuery(q);
         // Ліміт точного підрахунку ДЛЯ ТЕКСТОВОГО ПОШУКУ: частотний підрядок
         // ('x' = 104k збігів) змушує планер до seq-scan по 2.86 млн рядків
         // (замір prod: 14.2 с тільки на count — 30 с CommandTimeoutKill при
@@ -67,24 +66,66 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         // точне число лишається для фільтрів без q (їхні count-и по GIN дешеві).
         const int CountCap = 2000;
         var capped = !string.IsNullOrWhiteSpace(q.Q);
-        // Параметризовані LIMIT/ILIKE + generic-план PG = bitmap+sort без ранньої
-        // термінації ('а' 12–14 с). Лікується на рівні БД: ALTER ROLE movie SET
-        // plan_cache_mode = force_custom_plan (custom-план бачить реальні значення;
-        // планування ~6 мс проти секунд виконання). EF.Constant тут НЕ варіант —
-        // як аргумент Take(int) він викликається eagerly поза expression tree.
-        // UX-01: omitTotal — клієнт гортає сторінки, маючи total у кеші з page=1;
-        // повторний COUNT на кожному перегортанні пропускаємо (total = -1).
-        int total;
-        if (q.OmitTotal)
+
+        // ── Двофазний текстовий пошук (walk-безпечний) ──
+        // Фаза A (FTS): предикат @@ tsquery НЕ має реальної оцінки селективності — PG
+        // бере дефолтні ~2% (rows=57297), тому з ORDER BY popularity планер обирає
+        // popularity-walk (Index Scan ix_titles_popularity + фільтр to_tsvector на
+        // КОЖНОМУ рядку: замір 'zzqxnonexist:*' LIMIT 20 = 109 с). Рахунок БЕЗ OrderBy
+        // walk не допускає (немає впорядкованого шляху) → Bitmap GIN → мілісекунди
+        // навіть для 0 збігів. Фаза B (legacy ILIKE/trgm): фолбек при 0 FTS-збігів —
+        // pg_trgm має реальну селективність (ILIKE-nonce 0.13 с Bitmap). Гейт
+        // IsNpgsql() обов'язковий: InMemory (WAF-тести) не транслює HasDbFunction.
+        var tsQuery = FtsQueryBuilder.Build(q.Q);
+        if (tsQuery is not null && db.Database.IsNpgsql())
         {
-            total = -1;
+            var ftsQuery = BuildFtsQuery(q, tsQuery);
+            var ftsTotal = q.OmitTotal
+                ? -1
+                : await ftsQuery.Take(CountCap + 1).CountAsync(ct);
+
+            if (ftsTotal != 0)
+            {
+                // MaxPages/clamp/OmitTotal — від рахунку кроку 1 (як у легаси-шляху).
+                var ftsMaxPage = ftsTotal >= 0
+                    ? Math.Max(1, (int)Math.Ceiling(ftsTotal / (double)pageSize))
+                    : MaxPages;
+                if (page > ftsMaxPage)
+                    page = ftsMaxPage;
+
+                List<Title> ftsItems;
+                if (q.Sort is "rating" or "imdb" or "votes" or "year")
+                {
+                    // COALESCE-ключі сортування не-sargable: popularity-walk неможливий,
+                    // звичайний SQL Skip/Take як у Фазі B (семантика сортування точна —
+                    // топ-N по popularity тут давав би НЕВІРНИЙ топ по рейтингу).
+                    ftsItems = await Sort(ftsQuery, q.Sort)
+                        .Skip((page - 1) * pageSize)
+                        .Take(pageSize)
+                        .AsNoTracking()
+                        .ToListAsync(ct);
+                }
+                else
+                {
+                    // popularity-сімейство (popularity | relevance-дефолт) — walk-безпечний
+                    // C#-пайплайн (кроки 3a–3d ревізії).
+                    ftsItems = await FetchFtsPopularityPageAsync(q, tsQuery, page, pageSize, ftsTotal, ct);
+                }
+
+                return new SearchResult(ftsItems, ftsTotal, page, pageSize, capped && ftsTotal > CountCap);
+            }
+
+            // Фаза B: 0 FTS-збігів (або OmitTotal із порожнім фетчем неможливий —
+            // 0 рахується лише без OmitTotal) → ILIKE-фолбек зі своїм capped-рахунком
+            // (підрядки/часткові слова — семантика без змін).
         }
-        else
-        {
-            total = capped
+
+        var query = BuildQuery(q);
+        var total = q.OmitTotal
+            ? -1
+            : capped
                 ? await query.Take(CountCap + 1).CountAsync(ct)
                 : await query.CountAsync(ct);
-        }
 
         // UX-01: клип глибини OFFSET. Сторінка не може перевищити maxPage за
         // total — застарілий bookmark/брутфорс ?page=999999 більше не змушує PG
@@ -115,7 +156,8 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
     // indexing-walk у межах мілісекунд навіть без лічильника.
     internal const int MaxPages = 5000;
 
-    /// <summary>Побудова запиту з усіма фільтрами (public — тест трансляції без БД, як NpgsqlTranslationTests).</summary>
+    /// <summary>Побудова запиту з усіма фільтрами (public — тест трансляції без БД, як NpgsqlTranslationTests).
+    /// Фаза B двофазного пошуку: текстовий q-предикат ILIKE/trgm + спільні фільтри ApplyFilters.</summary>
     public IQueryable<Title> BuildQuery(SearchQuery q)
     {
         IQueryable<Title> query;
@@ -127,18 +169,105 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             // materializує УСІ збіги (104k рядків з TOAST-масивами) перед сортуванням
             // → 15–30 с на частотних підрядках. Один рівень дає планеру ранню
             // термінацію по ix_titles_popularity (замір: 2.9 мс проти 15.5 с).
+            // 3-арг ILIKE(col, pat, "\\"): 2-аргна форма генерує ESCAPE '' (без
+            // escape-символа) — бекслеші EscapeLike мертві, '%/_/\' у q не шукались.
             query = db.Titles.Where(t =>
-                (t.TitleUk != null && EF.Functions.ILike(t.TitleUk, pat)) ||
-                (t.TitleRu != null && EF.Functions.ILike(t.TitleRu, pat)) ||
-                EF.Functions.ILike(t.TitleEn, pat) ||
-                (t.Director != null && EF.Functions.ILike(t.Director, pat)) ||
-                EF.Functions.ILike(MovieDbFunctions.ActorsTrgmText(t.Actors)!, pat));
+                (t.TitleUk != null && EF.Functions.ILike(t.TitleUk, pat, "\\")) ||
+                (t.TitleRu != null && EF.Functions.ILike(t.TitleRu, pat, "\\")) ||
+                EF.Functions.ILike(t.TitleEn, pat, "\\") ||
+                (t.Director != null && EF.Functions.ILike(t.Director, pat, "\\")) ||
+                EF.Functions.ILike(MovieDbFunctions.ActorsTrgmText(t.Actors)!, pat, "\\"));
         }
         else
         {
             query = db.Titles;
         }
 
+        return ApplyFilters(query, q);
+    }
+
+    /// <summary>Фаза A двофазного пошуку: FTS-предикат title_search_match (GIN
+    /// ix_titles_search_fts) + той самий спільний пайплайн фільтрів. internal — тест
+    /// SQL-трансляції без БД. Викликається ЛИШЕ при db.Database.IsNpgsql() — InMemory
+    /// не транслює HasDbFunction (WAF-тести йдуть легаси-шляхом BuildQuery).
+    /// БЕЗ OrderBy: сортування в SQL дозволяє планеру popularity-walk — заборонено.</summary>
+    internal IQueryable<Title> BuildFtsQuery(SearchQuery q, string tsQuery) =>
+        ApplyFilters(
+            db.Titles.Where(t =>
+                MovieDbFunctions.TitleSearchMatch(t.TitleEn, t.TitleUk, t.TitleRu, t.Director, t.Actors, tsQuery)),
+            q);
+
+    /// <summary>Легкий рядок фетча Фази A: тільки (id int4, popularity float8, year int) —
+    /// сторінку сортуємо в C# по легких колонках; повні 45-колоночні сутності фетчаться
+    /// окремим = ANY(ids) лише для pageSize рядків сторінки.</summary>
+    internal sealed record FtsRow(int Id, double Popularity, int? Year);
+
+    /// <summary>Вікно фетча Фази A: CountCap(2000) + 2 — покриває увесь capped-total
+    /// (≤ 2001), тож не-sorted фетч гарантовано забирає ВСІ збіги.</summary>
+    internal const int FtsFetchCap = 2002;
+
+    /// <summary>
+    /// Крок 3 ревізії Фази A (popularity-сімейство): walk-безпечний фетч (id, popularity, year).
+    /// topN=false (total ≤ FetchCap — фетчиться ВСІ збіги): предикат+фільтри БЕЗ OrderBy →
+    /// Bitmap GIN без сортування; порядок дає C#. topN=true (total невідомий — OmitTotal,
+    /// або завеликий): топ-N фетч з OrderByDescending(popularity + 0.0) — арифметика ламає
+    /// sargability ORDER BY → планер ЗАМУШЕНИЙ брати Bitmap+top-N-sort, popularity-walk
+    /// неможливий. ORDER BY дзеркалить гілку сортування (popularity → Id; relevance → Year).
+    /// internal — тест трансляції без БД (NpgsqlTranslationTests).
+    /// </summary>
+    internal IQueryable<FtsRow> BuildFtsPopularityFetch(SearchQuery q, string tsQuery, bool topN)
+    {
+        var pred = BuildFtsQuery(q, tsQuery);
+        var ordered = !topN
+            ? pred
+            : q.Sort == "popularity"
+                ? pred.OrderByDescending(t => t.Popularity + 0.0).ThenBy(t => t.Id)
+                : pred.OrderByDescending(t => t.Popularity + 0.0)
+                    .ThenByDescending(t => t.Year ?? 0)
+                    .ThenBy(t => t.Id);
+        return ordered.Select(t => new FtsRow(t.Id, t.Popularity, t.Year));
+    }
+
+    /// <summary>Кроки 3c–3d: сторінка Фази A для popularity-сортувань. Сортування списку
+    /// id — у C# (дублює SQL-семантику гілок popularity: «popularity» → Pop DESC, Id ASC;
+    /// relevance-дефолт → + Year??0 DESC), слайс Skip/Take — у C#, повні сутності — одним
+    /// = ANY(ids) фетчем по PK у порядку pageIds.</summary>
+    private async Task<List<Title>> FetchFtsPopularityPageAsync(
+        SearchQuery q, string tsQuery, int page, int pageSize, int total, CancellationToken ct)
+    {
+        var topN = total < 0 || total > FtsFetchCap;
+        var rows = await BuildFtsPopularityFetch(q, tsQuery, topN)
+            .Take(FtsFetchCap)
+            .ToListAsync(ct);
+
+        var ordered = q.Sort == "popularity"
+            ? rows.OrderByDescending(r => r.Popularity).ThenBy(r => r.Id)
+            : rows.OrderByDescending(r => r.Popularity)
+                .ThenByDescending(r => r.Year ?? 0)
+                .ThenBy(r => r.Id);
+
+        var pageIds = ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(r => r.Id)
+            .ToList();
+        if (pageIds.Count == 0)
+            return [];
+
+        // Перф-хвиля (11.11): AsNoTracking — сущності лише мапляться, не модифікуються.
+        var byId = await db.Titles
+            .AsNoTracking()
+            .Where(t => pageIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, ct);
+        return pageIds.Select(id => byId[id]).ToList();
+    }
+
+    /// <summary>Спільні фільтри обох фаз (type/genres/years/country/rating/runtime/status/
+    /// actor/director/studio/keyword/language/minVotes/seasons/excludeGenres/hasTrailer/
+    /// hasProviders/watchable/category/audioLang/minQuality) — БЕЗ текстового q-предиката,
+    /// який кожна фаза будує по-своєму (FTS vs ILIKE).</summary>
+    private IQueryable<Title> ApplyFilters(IQueryable<Title> query, SearchQuery q)
+    {
         if (!string.IsNullOrWhiteSpace(q.Type))
             query = query.Where(t => t.Type == q.Type);
 

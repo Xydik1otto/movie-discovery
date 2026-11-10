@@ -12,7 +12,8 @@ namespace MovieDiscovery.Api.Controllers;
 /// <summary>
 /// Метадата фільтрів за категорією (адаптивна панель фільтрів фронтових розділів):
 /// GET /api/filters?category={movie|series|anime|manga|tvshow|cartoon|dorama|all} —
-/// повертає ЛИШЕ ті фільтри, які релевантні категорії (фронт рендерить панель без «мертвих»
+/// category відсутня/порожня = 'all' (Головна викликає панель без категорії),
+/// невалідна НЕПОРОЖНЯ → 400. Повертає ЛИШЕ ті фільтри, які релевантні категорії (фронт рендерить панель без «мертвих»
 /// блоків): жанри/роки/країни завжди, студії — anime/cartoon/manga, статуси — series/anime/tvshow,
 /// сорти — статичний набір. Плюс counts — розбивка категорії по типах (total/movies/series/
 /// shorts/animation_movies/animation_series).
@@ -49,8 +50,11 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
     public async Task<IActionResult> Get([FromQuery] string? category, CancellationToken ct = default)
     {
         var cat = category?.Trim().ToLowerInvariant();
-        // category обов'язкова і лише з allowlist (включно з 'all'): невалідна/відсутня → 400.
-        if (cat is null || !Categories.Contains(cat))
+        // ВІДСУТНЯ/порожня category → 'all' (Головна викликає /api/filters без category —
+        // це валідний запит, а не помилка); невалідна НЕПОРОЖНЯ → 400 з allowlist.
+        if (string.IsNullOrWhiteSpace(cat))
+            cat = "all";
+        if (!Categories.Contains(cat))
             return BadRequest(new
             {
                 error = "invalid_request",

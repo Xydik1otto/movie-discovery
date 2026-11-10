@@ -20,7 +20,9 @@ public sealed class ListsController(
     /// <summary>Список профілю: {itemId, ...TitleCard, rating, createdAt}.
     /// MD-05: X-Bot-Key+X-Telegram-User-Id → власний профіль telegram-юзера (profileId клієнта ігнорується).
     /// Cookie-юзер → його постійний профіль (FR-16), чужий profileId → 403.
-    /// Гість (MD-01) → лише designated guest profile: чужий profileId → 403, невідомий → 404.</summary>
+    /// Гість (MD-01) → лише designated guest profile: чужий profileId → 403, невідомий → 404;
+    /// гостьовий серверний шлях вимкнено (GUEST_PROFILE_ID відсутній/приріплений) → 401
+    /// «потрібен вхід» (узгоджено з /api/lists/stats; списки гостя живуть у localStorage).</summary>
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromQuery] int? profileId,
@@ -42,9 +44,15 @@ public sealed class ListsController(
         }
         else
         {
-            var (resolved, foreign) = await ResolveProfileAsync(profileId, ct);
+            var (resolved, foreign, guestUnavailable) = await ResolveProfileAsync(profileId, ct);
             if (foreign)
                 return StatusCode(StatusCodes.Status403Forbidden, new { error = "forbidden" });
+            if (guestUnavailable)
+                // Гостьовий серверний шлях вимкнено (GUEST_PROFILE_ID відсутній/профіль
+                // приріплений до акаунта) — чесний 401, узгоджено з GET /api/lists/stats,
+                // а не оманливий 404 «профіль не знайдено». Фронт для гостя читає localStorage,
+                // тож живий гостьовий флоу це не ламає.
+                return Unauthorized(new { error = "unauthorized", message = "Потрібен вхід, щоб бачити свої списки" });
             profile = resolved;
         }
         if (profile is null)
@@ -127,7 +135,7 @@ public sealed class ListsController(
         }
         else
         {
-            var (resolved, foreign) = await ResolveProfileAsync(req.ProfileId == 0 ? null : req.ProfileId, ct);
+            var (resolved, foreign, _) = await ResolveProfileAsync(req.ProfileId == 0 ? null : req.ProfileId, ct);
             if (foreign)
                 return StatusCode(StatusCodes.Status403Forbidden, new { error = "forbidden" });
             if (resolved is null)
@@ -186,7 +194,7 @@ public sealed class ListsController(
         }
         else
         {
-            var (resolved, foreign) = await ResolveProfileAsync(req.ProfileId == 0 ? null : req.ProfileId, ct);
+            var (resolved, foreign, _) = await ResolveProfileAsync(req.ProfileId == 0 ? null : req.ProfileId, ct);
             if (foreign)
                 return StatusCode(StatusCodes.Status403Forbidden, new { error = "forbidden" });
             if (resolved is null)
@@ -224,7 +232,10 @@ public sealed class ListsController(
     public Task<IActionResult> PostWatched([FromBody] PostKindRequest req, CancellationToken ct) =>
         PostKind(Core.Domain.ListKinds.Watched, req, ct);
 
-    /// <summary>GET /api/lists/stats (FR-17): {watchedCount, readCount, likedCount, dislikedCount,
+    /// <summary>Максимум items у POST /api/lists/migrate-guest (захист від велетенського payload).</summary>
+    internal const int MaxMigrateItems = 500;
+
+    /// <summary>GET /api/lists/stats (FR-17): {watchlistCount, watchedCount, readCount, likedCount, dislikedCount,
     /// watchingCount, readingCount, onHoldCount, droppedCount, avgRating, topGenres} —
     /// нові лічильники — паритет статусів трекерів (Shikimori).</summary>
     [Authorize]
@@ -236,6 +247,7 @@ public sealed class ListsController(
         var s = await userLists.StatsAsync(userId, ct);
         return Ok(new
         {
+            watchlistCount = s.WatchlistCount,
             watchedCount = s.WatchedCount,
             readCount = s.ReadCount,
             likedCount = s.LikedCount,
@@ -249,14 +261,18 @@ public sealed class ListsController(
         });
     }
 
-    /// <summary>POST /api/lists/migrate-guest (FR-16): ідемпотентне перенесення гостьових items у профіль юзера.</summary>
+    /// <summary>POST /api/lists/migrate-guest (FR-16): ідемпотентне перенесення гостьових items у профіль юзера.
+    /// Items обмежені (максимум 500): більше → 400 invalid_request (захист від велетенського payload).</summary>
     [Authorize]
     [HttpPost("migrate-guest")]
     public async Task<IActionResult> MigrateGuest([FromBody] MigrateGuestRequest req, CancellationToken ct)
     {
         if (!TryUserId(out var userId))
             return Unauthorized(new { error = "unauthorized", message = "Потрібен вхід" });
-        var res = await userLists.MigrateGuestAsync(userId, req.Items ?? [], ct);
+        var items = req.Items ?? [];
+        if (items.Count > MaxMigrateItems)
+            return BadRequest(new { error = "invalid_request", message = "Занадто багато елементів (максимум 500)" });
+        var res = await userLists.MigrateGuestAsync(userId, items, ct);
         // CR-03: per-entry статуси (moved|duplicate|invalid_kind|invalid_rating|unknown_title);
         // skipped = лише дублікати, rejected окремо в entries — клієнт чистить snapshot
         // тільки по підтверджених записах.
@@ -363,8 +379,9 @@ public sealed class ListsController(
     /// <summary>Cookie-юзер → його постійний профіль (створюємо зв'язку user_profiles за потреби; FR-16),
     /// чужий profileId з клієнта → forbidden (MD-01); гість → ЛИШЕ designated guest profile:
     /// довільний profileId відхиляється, профілі акаунтів анонімному шляху недоступні;
-    /// якщо legacy guest profile приріплений до акаунта — гостьовий серверний шлях вимкнено (null → 404).</summary>
-    private async Task<(Core.Domain.Profile? Profile, bool Forbidden)> ResolveProfileAsync(int? profileId, CancellationToken ct)
+    /// якщо legacy guest profile приріплений до акаунта — гостьовий серверний шлях вимкнено
+    /// (GuestUnavailable=true → анонімний GET віддає 401 «потрібен вхід»).</summary>
+    private async Task<(Core.Domain.Profile? Profile, bool Forbidden, bool GuestUnavailable)> ResolveProfileAsync(int? profileId, CancellationToken ct)
     {
         if (TryUserId(out var userId))
         {
@@ -372,19 +389,19 @@ public sealed class ListsController(
             var own = await db.Profiles.AsNoTracking().FirstAsync(p => p.Id == up.ProfileId, ct);
             // MD-01: авторизований — профіль ЗАВЖДИ власний; profileId клієнта ігнорується
             // (чужі профілі недосяжні в будь-якому разі).
-            return (own, false);
+            return (own, false, false);
         }
 
         var guestProfile = await guest.ResolveAsync(ct);
         if (guestProfile is null)
-            return (null, false); // гостьовий серверний шлях вимкнено → 404 без деталей
+            return (null, false, true); // гостьовий серверний шлях вимкнено → 401 (потрібен вхід)
 
         if (!profileId.HasValue || profileId.Value == 0 || profileId.Value == guestProfile.Id)
-            return (guestProfile, false);
+            return (guestProfile, false, false);
 
         // MD-01: чужий profileId — 403 (профіль існує) або 404 (невідомий) без розкриття приватних даних.
         var exists = await db.Profiles.AsNoTracking().AnyAsync(p => p.Id == profileId.Value, ct);
-        return (null, exists);
+        return (null, exists, false);
     }
 
     private Core.Domain.ListEntry AddGuestEntry(int profileId, string kind, int titleId, int? rating)

@@ -28,18 +28,20 @@ export default function PersonalReco() {
       return;
     }
     let alive = true;
-    getHomeRecommendations(lang, 20)
+    const ac = new AbortController();
+    getHomeRecommendations(lang, 20, ac.signal)
       .then((r) => {
         if (!alive) return;
         setItems(Array.isArray(r.items) ? r.items : []);
         setReason(r.reason ?? null);
       })
       .catch(() => {
-        // 401 (сесія скінчилась)/мережа/5xx — чесно ховаємо секцію, без скелетона назавжди.
+        // 401 (сесія скінчилась)/мережа/скасування — чесно ховаємо секцію, без скелетона назавжди.
         if (alive) setItems(null);
       });
     return () => {
       alive = false;
+      ac.abort();
     };
   }, [ready, user, lang]);
 

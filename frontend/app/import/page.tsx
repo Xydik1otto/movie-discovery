@@ -6,8 +6,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
+import { useAuth } from "@/lib/auth";
 import {
+  ApiError,
   ApiUnavailableError,
   getImportJob,
   getImportSources,
@@ -51,6 +54,8 @@ function failureMessage(error: string | null | undefined, t: (k: string) => stri
 
 export default function ImportPage() {
   const { t } = useI18n();
+  const { user, ready, apiUp } = useAuth();
+  const router = useRouter();
   const [sources, setSources] = useState<ImportSource[]>(LOCAL_SOURCES);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
@@ -129,6 +134,14 @@ export default function ImportPage() {
     };
   }, []);
 
+  // Гість на живому API → редирект на /login з повідомленням (як /discover):
+  // старт імпорту пише в профіль юзера — аноніму бекенд віддає 401.
+  useEffect(() => {
+    if (ready && apiUp && !user) {
+      router.replace("/login?needLogin=1&next=/import");
+    }
+  }, [ready, apiUp, user, router]);
+
   // Codex IV (5): Resume — опитування тієї самої джоби після збою мережі.
   // Джоба продовжує працювати на бекенді; повторний старт не потрібен і створив би дубль.
   function resume() {
@@ -149,6 +162,11 @@ export default function ImportPage() {
       setJobId(created);
       poll(created);
     } catch (e) {
+      // Cookie протух/не залогінений → на вхід, далі повернемось на /import (як /discover).
+      if (e instanceof ApiError && e.status === 401) {
+        router.replace("/login?needLogin=1&next=/import");
+        return;
+      }
       // Без API джобу не створити — ніяких демо-підмінок.
       const down = isUnavailable(e) || e instanceof ApiUnavailableError;
       if (down) setUnavailable(true);
@@ -172,6 +190,14 @@ export default function ImportPage() {
     const localized = t(key);
     return localized !== key ? localized : (sources.find((s) => s.id === id)?.hint ?? "");
   };
+
+  // Чекаємо auth-стейт: на живому API аноніма вже веде на /login (як /discover).
+  if (!ready) {
+    return <LoadingSkeleton count={1} />;
+  }
+  if (apiUp && !user) {
+    return <LoadingSkeleton count={1} />;
+  }
 
   return (
     <div>

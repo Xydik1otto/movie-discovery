@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using System.Text;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace MovieDiscovery.Infrastructure.Services.Emailing;
@@ -41,12 +42,18 @@ public sealed class SmtpEmailSender(EmailOptions options, ILogger<SmtpEmailSende
     }
 }
 
-/// <summary>Чесний dev-режим (MAIL_ENABLED=false): лист І ЛІНК видні в логах, не тихо.</summary>
-public sealed class LoggingEmailSender(ILogger<LoggingEmailSender> logger) : IEmailSender
+/// <summary>Чесний dev-режим (MAIL_ENABLED=false): лист І ЛІНК видні в логах, не тихо.
+/// Production-безпека: тіло листа містить one-time токени (підтвердження email / скидання
+/// пароля) — у Production у лог іде ЛИШЕ адреса і тема, тіло маскується (env → IHostEnvironment).</summary>
+public sealed class LoggingEmailSender(ILogger<LoggingEmailSender> logger, IHostEnvironment? env = null) : IEmailSender
 {
     public Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
     {
-        logger.LogInformation("EMAIL [SMTP вимкнено] → {To} | {Subject} | {Body}", to, subject, htmlBody);
+        if (env?.IsProduction() == true)
+            logger.LogInformation("EMAIL [SMTP вимкнено] → {To} | {Subject} | (тіло листа приховано у Production)",
+                to, subject);
+        else
+            logger.LogInformation("EMAIL [SMTP вимкнено] → {To} | {Subject} | {Body}", to, subject, htmlBody);
         return Task.CompletedTask;
     }
 }

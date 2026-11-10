@@ -47,7 +47,6 @@ export const en: Dict = {
   "filters.seasons": "Seasons",
   "filters.excludeGenres": "Exclude genres",
   "filters.hasTrailer": "Has trailer",
-  "filters.hasProviders": "Available to watch (UA)",
   "filters.movie": "Movie",
   "filters.series": "Series",
   "filters.show": "Show",
@@ -73,13 +72,10 @@ export const en: Dict = {
   "filters.studios": "Studios",
 
   "title.similar": "Similar",
-  "title.why": "Why similar?",
   "title.watchlist": "Watchlist",
-  "title.watched": "Watched",
   "title.watchedAdd": "Watched it",
   // Disabled mutually-exclusive action: honest reason, no fake "✓ done" mark.
   "title.removeFirst": "Remove the title from “Want to watch” first",
-  "title.providers": "Where to watch",
   "title.watch.where": "Where to watch",
   "title.trailer": "Trailer",
   "title.director": "Director",
@@ -96,14 +92,15 @@ export const en: Dict = {
   "title.status.returning": "Returning",
   "title.status.ended": "Ended",
   "title.status.canceled": "Canceled",
-  "title.noTrailer": "Trailer not available",
   "title.added": "Added",
+  "title.notFound": "Title not found",
+  "title.notFoundHint": "This title isn\u2019t in the catalog yet — it may not have been indexed.",
+  "title.notFoundSearch": "Search",
 
   "similar.seedsTitle": "Similar to...",
   "similar.seedsHint": "Add favourite movies and series — or just pick genres and mood. We’ll look for what ties them together: genre, mood, era, cast.",
   "similar.searchSeed": "Search reference titles…",
   "similar.find": "Find similar",
-  "similar.seeds": "Seeds",
   "similar.seedsCount": "Seeds: {n}/10",
   "similar.seedsRequired": "Add at least one seed first",
   "similar.seedsOrFiltersRequired": "Add a seed or pick genres/mood",
@@ -112,8 +109,6 @@ export const en: Dict = {
   "similar.byTextPlaceholder": "For example: a grim detective story set in a rainy city",
   "similar.textFind": "Find by description",
   "similar.history": "Search history",
-  "similar.score": "Match",
-  "similar.resultsFor": "Selection for: {seeds}",
   "similar.quickMode": "Quick",
   "similar.seedsMode": "Seeds",
   "similar.quickHint": "Type a movie or series title — we'll instantly find similar picks.",
@@ -134,8 +129,9 @@ export const en: Dict = {
   "lists.remove": "Remove",
 
   "common.loading": "Loading…",
-  "common.showMore": "Show more",
   "common.error": "Error",
+  "notFound.title": "Page not found",
+  "notFound.text": "This page doesn\u2019t exist — check the address or head back home.",
   "common.prev": "Back",
   "common.next": "Next",
   "common.pageOf": "Page {p} of {t}",
@@ -146,16 +142,12 @@ export const en: Dict = {
 
   "lang.switch": "Language",
 
-  "providers.none": "No viewing data for this region yet",
   "providers.stream": "Stream",
   "providers.rent": "Rent",
   "providers.buy": "Buy",
   "providers.free": "Free",
 
-  "watch.free": "Free",
   "watch.subscription": "Subscription",
-  "watch.rent": "Rent",
-  "watch.buy": "Buy",
   "watch.badge.free": "Free",
   "watch.badge.subscription": "Sub",
   "watch.badge.rent": "Rent",
@@ -193,7 +185,6 @@ export const en: Dict = {
   "watch.audio.zho": "Chinese",
   "watch.audio.original": "Original",
   "watch.audio.multi": "Multi-language",
-  "watch.defaultGroup": "Watch",
 
   "provider.sweettv": "sweet.tv",
   "provider.archive": "Internet Archive (free)",
@@ -263,12 +254,11 @@ export const en: Dict = {
 
   "title.readAdd": "Read it",
 
-  "footer.attribution": "Movie data by TMDB. Availability data by JustWatch.",
+  "footer.attribution": "Movie data: IMDb, AniList, Shikimori, Cinemeta (Stremio). Availability: JustWatch.",
 
   // --- FR-16: accounts ---
   "auth.login": "Log in",
   "auth.logout": "Log out",
-  "auth.guest": "Guest",
   "auth.loginTitle": "Log in",
   "auth.loginSubtitle": "Log in — lists, ratings and the Cinema Shelf will be kept in your profile.",
   "auth.registerTitle": "Sign up",
@@ -282,7 +272,6 @@ export const en: Dict = {
   "auth.toRegister": "No account yet? Sign up",
   "auth.toLogin": "Already have an account? Log in",
   "auth.needLogin": "This section is available after logging in. Log in and we will continue.",
-  "auth.afterRegister": "Account created. Log in to finish the setup.",
   "auth.err.required": "This field is required",
   "auth.err.email": "Invalid email",
   "auth.err.passwordShort": "Password must be at least 8 characters",
@@ -329,7 +318,6 @@ export const en: Dict = {
   "nav.discover": "Cinema Shelf",
   "discover.title": "Cinema Shelf",
   "discover.subtitle": "Swipe: right — like it, left — not for me. Or use the buttons.",
-  "discover.loading": "Putting a selection together…",
   "discover.empty": "You’ve seen it all. Come back later — we’ll put together a new selection.",
   "discover.again": "Another round",
   "discover.like": "Like",
@@ -342,7 +330,6 @@ export const en: Dict = {
   "discover.mode.exploit": "for you",
   "discover.mode.safe": "safe picks",
   "discover.mode.explore": "exploration",
-  "discover.needLogin": "The “Cinema Shelf” is available after logging in — that is how it learns from your actions.",
 
   // --- FR-18: onboarding ---
   "onboarding.title": "Let us tune your picks",
@@ -369,7 +356,6 @@ export const en: Dict = {
 
   // --- FR-17: “Liked” tab, stats, guest migration ---
   "lists.liked": "Liked",
-  "lists.stats.title": "Stats",
   "lists.stats.watched": "Watched",
   "lists.stats.read": "Read",
   "lists.stats.liked": "Liked",
@@ -431,7 +417,6 @@ export const en: Dict = {
   "studio.genres": "Genre accent",
   "studio.genresHint": "up to 3 genres",
 
-  "collections.title": "Collections",
   "collections.subtitle": "Ready-made collections and your own — saved to your account.",
   "collections.presets": "Presets",
   "collections.preset.mood": "Mood",

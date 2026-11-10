@@ -53,7 +53,10 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         // ── Віртуальні категорії та озвучки (FR-19) ──
         [FromQuery] string? category = null,
         [FromQuery] string? audioLang = null,
-        [FromQuery] int? minQuality = null,
+        // minQuality біндиться РЯДКОМ (не int?): ASP.NET-біндинг int? на 'hd' давав
+        // беззмістовний 400 "The value 'hd' is not valid" ДО входу в екшен. Дружній
+        // парсер (ParseMinQuality) приймає і числа, і акаунт-рівні (hd/fhd/uhd/sd/Np).
+        [FromQuery] string? minQuality = null,
         // UX-01: швидкі перегортання — клієнт із кешованим total просить пропустити COUNT.
         [FromQuery] bool omitTotal = false,
         CancellationToken ct = default)
@@ -84,7 +87,11 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         if (!string.IsNullOrWhiteSpace(audioLangSafe) && !Core.Search.VirtualCategories.AudioLangs.Contains(audioLangSafe))
             return BadRequest(new { error = "invalid_request", message = "audioLang має бути ukr | russ | eng | jpn | kor | zho | original | multi" });
 
-        if (minQuality is { } mq && !Core.Search.VirtualCategories.Qualities.Contains(mq))
+        // FR-19: minQuality — дружній парсер (числа + акаунт-рівні), потім allowlist.
+        var (minQualityValue, minQualityError) = ParseMinQuality(minQuality);
+        if (minQualityError is not null)
+            return BadRequest(new { error = "invalid_request", message = minQualityError });
+        if (minQualityValue is { } mq && !Core.Search.VirtualCategories.Qualities.Contains(mq))
             return BadRequest(new { error = "invalid_request", message = "minQuality має бути 480 | 720 | 1080 | 2160" });
 
         var query = new SearchQuery(
@@ -98,7 +105,7 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             HasTrailer: hasTrailer, HasProviders: hasProviders,
             RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA",
             Watchable: watchable,
-            Category: category, AudioLang: audioLangSafe, MinQuality: minQuality,
+            Category: category, AudioLang: audioLangSafe, MinQuality: minQualityValue,
             OmitTotal: omitTotal);
 
         // TTL-кеш дефолтного каталогу (10.11): повторний GET /api/search того самого
@@ -207,6 +214,33 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             if (!list.Contains(en, StringComparer.OrdinalIgnoreCase)) list.Add(en);
         }
         return [.. list];
+    }
+
+    /// <summary>
+    /// Дружній парсер minQuality (SearchQuery.MinQuality лишається int?): рядок біндиться
+    /// [FromQuery] як string, тут розбирається. Акаунт-рівні: hd→720, fhd/fullhd→1080,
+    /// uhd/4k→2160, sd→480; суфіксовані '480p'/'720p'/'1080p'/'2160p' → число; числове —
+    /// як є (allowlist перевіряє контролер). Невідоме → (null, помилка з переліком допустимих).
+    /// Кейс-незалежно; порожнє/null → відсутній фільтр.
+    /// </summary>
+    internal static (int? Value, string? Error) ParseMinQuality(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (null, null);
+        var s = raw.Trim().ToLowerInvariant();
+        switch (s)
+        {
+            case "hd": return (720, null);
+            case "fhd" or "fullhd": return (1080, null);
+            case "uhd" or "4k": return (2160, null);
+            case "sd": return (480, null);
+            case "480p": return (480, null);
+            case "720p": return (720, null);
+            case "1080p": return (1080, null);
+            case "2160p": return (2160, null);
+        }
+        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+            return (n, null);
+        return (null, "minQuality має бути 480 | 720 | 1080 | 2160 або hd | fhd | uhd");
     }
 
     /// <summary>

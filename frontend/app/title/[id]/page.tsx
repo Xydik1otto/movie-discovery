@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
+import { ApiError, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { addListItem } from "@/lib/listActions";
 import { getWatch, getTitleSeries } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -37,6 +38,8 @@ export default function TitleDetailPage() {
   const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // API чесно відповів 404 — тайтла немає в каталозі (окремо від «Помилка»).
+  const [notFound, setNotFound] = useState(false);
 
   const [similar, setSimilar] = useState<SimilarItem[]>([]);
   const [similarLoading, setSimilarLoading] = useState(true);
@@ -80,6 +83,7 @@ export default function TitleDetailPage() {
     let alive = true;
     setLoading(true);
     setError(false);
+    setNotFound(false);
     setDetail(null);
     guardedTitle(id, lang)
       .then((r) => {
@@ -87,8 +91,10 @@ export default function TitleDetailPage() {
         setDetail(r.data);
         setUnavailable(r.unavailable);
       })
-      .catch(() => {
-        if (alive) setError(true);
+      .catch((e) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 404) setNotFound(true);
+        else setError(true);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -202,6 +208,33 @@ export default function TitleDetailPage() {
     return (
       <div>
         <LoadingSkeleton count={6} />
+      </div>
+    );
+  }
+
+  // API 404 — чесний стан «тайтла немає» з виходом на головну/пошук.
+  if (notFound) {
+    return (
+      <div>
+        <EmptyState
+          icon="🔍"
+          title={t("title.notFound")}
+          hint={t("title.notFoundHint")}
+        />
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/"
+            className="rounded-xl bg-accent px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-accent-2"
+          >
+            {t("onboarding.done.home")}
+          </Link>
+          <Link
+            href="/"
+            className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-mute transition-colors hover:text-ink"
+          >
+            {t("title.notFoundSearch")}
+          </Link>
+        </div>
       </div>
     );
   }
@@ -346,7 +379,10 @@ export default function TitleDetailPage() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
           </div>
-          <div className="-mt-28 sm:-mt-36">
+          {/* z-стекінг: absolute-градієнт hero малюється поверх static-контенту
+              (CSS painting order) — без relative z-10 h1/постер зникають під
+              градієнтом (помітно на мобільному 390px, де зона перекриття більша). */}
+          <div className="relative z-10 -mt-28 sm:-mt-36">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
               {posterBlock("w-36 sm:w-48")}
               {headingBlock(true)}

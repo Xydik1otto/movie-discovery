@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using MovieDiscovery.Api.Auth;
 using MovieDiscovery.Core.Domain;
@@ -345,7 +346,8 @@ public sealed class AuthController(
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return options.Enabled
                 ? new SmtpEmailSender(options, loggerFactory.CreateLogger<SmtpEmailSender>())
-                : new LoggingEmailSender(loggerFactory.CreateLogger<LoggingEmailSender>());
+                : new LoggingEmailSender(loggerFactory.CreateLogger<LoggingEmailSender>(),
+                    sp.GetService<IHostEnvironment>()); // null (фолбек-хост) → як до маскування
         }
     }
 

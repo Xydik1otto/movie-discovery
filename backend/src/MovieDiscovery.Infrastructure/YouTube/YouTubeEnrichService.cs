@@ -149,7 +149,8 @@ public sealed class YouTubeEnrichService(
     MovieDiscoveryDbContext db,
     ICacheStore cache,
     IOptions<YoutubeOptions> options,
-    ILogger<YouTubeEnrichService> log)
+    ILogger<YouTubeEnrichService> log,
+    YouTubeDailySearchQuota? quota = null)
 {
     public const string Provider = "youtube";
 
@@ -173,6 +174,14 @@ public sealed class YouTubeEnrichService(
         if (await db.WatchLinks.AsNoTracking()
                 .AnyAsync(w => w.TitleId == titleId && w.Provider == Provider, ct))
             return false;
+
+        // Денний ГЛОБАЛЬНИЙ ліміт search-викликів (90/день) — on-demand-шлях (?enrich=youtube):
+        // гейт ПІСЛЯ дешевих виходів (лінк уже є → false без витрат) і ПЕРЕД search-спробою.
+        // Перевищення → YouTubeQuotaExceededException (не YoutubeApiException! — м'який catch
+        // нижче не проковтує, контролер мапить на 429 quota_exceeded). Батч SyncAsync йде
+        // напряму в FindAndUpsertAsync і гейт минає. quota == null (пряме new у тестах) → без ліміту.
+        if (quota is not null && !quota.TryConsume())
+            throw new YouTubeQuotaExceededException();
 
         try
         {

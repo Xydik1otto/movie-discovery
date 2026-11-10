@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MovieDiscovery.Core.Domain;
@@ -29,7 +30,8 @@ public static class EmailingServiceCollectionExtensions
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
             return options.Enabled
                 ? new SmtpEmailSender(options, loggerFactory.CreateLogger<SmtpEmailSender>())
-                : new LoggingEmailSender(loggerFactory.CreateLogger<LoggingEmailSender>());
+                : new LoggingEmailSender(loggerFactory.CreateLogger<LoggingEmailSender>(),
+                    sp.GetRequiredService<IHostEnvironment>());
         });
 
         // Identity-токен-провайдери для confirm/reset — БЕЗ них GenerateEmailConfirmationTokenAsync

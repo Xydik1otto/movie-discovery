@@ -76,7 +76,8 @@ export default function WatchPanel({
 
   const unknownCatalog = (p: WatchProvider) =>
     watchAvailabilityStatus(p) === "unknown";
-  const unknownCount = visible.filter(unknownCatalog).length;
+  const unknownItems = visible.filter(unknownCatalog);
+  const unknownCount = unknownItems.length;
 
   return (
     <section className="rounded-2xl border border-line bg-panel p-4">
@@ -157,9 +158,26 @@ export default function WatchPanel({
         </div>
       )}
 
-      {/* Неклікабельні/unknown-рядки не ховаємо — чесний стан видно у рядку */}
+      {/* Неклікабельні/unknown-рядки не ховаємо — чесний стан видно у рядку.
+          Нотатка-лічильник розгортається: перелік неперевірених варіантів під рукою. */}
       {unknownCount > 0 && (
-        <p className="mt-2 text-[11px] text-mute">{t("watch.unknownNote", { count: unknownCount })}</p>
+        <details className="mt-2">
+          <summary className="cursor-pointer select-none list-none text-[11px] text-mute transition-colors hover:text-accent-2">
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden className="text-[9px]">▸</span>
+              {t("watch.unknownNote", { count: unknownCount })}
+            </span>
+          </summary>
+          <ul className="mt-1.5 space-y-1.5 pl-3">
+            {unknownItems.map((p, i) => (
+              <WatchRow
+                key={`unknown-${p.provider}-${p.kind}-${p.url ?? "nourl"}-${p.audioLangs ?? "nolang"}-${i}`}
+                watch={p}
+                t={t}
+              />
+            ))}
+          </ul>
+        </details>
       )}
 
       {hasPaid && (

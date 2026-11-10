@@ -14,4 +14,13 @@ public static class MovieDbFunctions
     /// </summary>
     public static string? ActorsTrgmText(string[] actors) =>
         throw new InvalidOperationException("Лише для SQL-трансляції EF (HasDbFunction).");
+
+    /// <summary>
+    /// title_search_match(en, uk, ru, director, actors, q) — FTS-предикат двофазного пошуку
+    /// (Фаза A в SearchService.SearchAsync): title_search_fts(5 полів) @@ title_search_tsquery(q).
+    /// На виразі title_search_fts(title_en, title_uk, title_ru, director, actors) побудований
+    /// GIN-індекс ix_titles_search_fts — SQL-функції інлайняться, планер бачить індексний план.
+    /// </summary>
+    public static bool TitleSearchMatch(string? titleEn, string? titleUk, string? titleRu, string? director, string[]? actors, string tsQuery) =>
+        throw new InvalidOperationException("Лише для SQL-трансляції EF (HasDbFunction).");
 }

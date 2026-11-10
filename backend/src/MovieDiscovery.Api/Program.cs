@@ -105,15 +105,23 @@ public class Program
             o.User.RequireUniqueEmail = true;
         }).AddEntityFrameworkStores<MovieDiscoveryDbContext>();
 
-        // FR-16: cookie-автентифікація HttpOnly SameSite=Lax (Secure — на публічній стадії Е4+).
-        // Для API 401/403 замість redirect на сторінку логіна.
+        // FR-16: cookie-автентифікація HttpOnly SameSite=Lax. Secure — env-гейт:
+        // публічний доступ іде через HTTPS-тунель (FRONT_PUBLIC_URL = https://…), тож
+        // сесійна cookie на 30 діб не повинна ходити HTTP-легеню (код-рев'ю 11.11:
+        // mitm/downgrade на внутрішньому плечі). На http://localhost браузери все одно
+        // приймають Secure-cookie (localhost = trustworthy origin), LAN-HTTP-доступ —
+        // свідомо не підтримується для логіна.
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie(o =>
             {
                 o.Cookie.Name = "md_auth";
                 o.Cookie.HttpOnly = true;
                 o.Cookie.SameSite = SameSiteMode.Lax;
-                o.Cookie.SecurePolicy = CookieSecurePolicy.None;
+                var frontPublicUrl = Environment.GetEnvironmentVariable("FRONT_PUBLIC_URL");
+                var publicHttps = frontPublicUrl?.StartsWith("https://", StringComparison.OrdinalIgnoreCase) == true;
+                o.Cookie.SecurePolicy = publicHttps
+                    ? CookieSecurePolicy.Always
+                    : CookieSecurePolicy.None;
                 // FR-PERSIST: rememberMe → persistent-cookie на 30 діб замість сесійної;
                 // sliding продовжує активні сесії (перевидача після половини строку).
                 o.ExpireTimeSpan = TimeSpan.FromDays(30);
@@ -148,13 +156,41 @@ public class Program
         // (cloudflared → Next-проксі передає заголовок далі). Без цього
         // RemoteIpAddress = IP проксі, і auth-ліміти (login 5/хв, register 3/год)
         // стають СПІЛЬНИМИ для всіх зовнішніх користувачів — перші ж спроби
-        // вичерпують квоту на всіх (429 для всіх). Приймаємо XFF від будь-якого
-        // проксі (docker-мережа динамічна); api опублікований лише в LAN.
+        // вичерпують квоту на всіх (429 для всіх).
+        // Код-рев'ю 11.11: Clear() = довіра XFF будь-кому → спуфінг заголовка
+        // обходить УСІ per-IP лімітери (кожен запит з новим XFF = свіжий бакет).
+        // Довіра тепер точкова: docker-мережа compose (web/bot/gateway) +
+        // DNS-резолв імен сервісів на старті; XFF від прямих клієнтів (LAN)
+        // ігнорується. Підмережа — env MD_TRUSTED_NETWORKS (кома-список CIDR),
+        // бо recreate мережі може змінити 172.x.
         builder.Services.Configure<ForwardedHeadersOptions>(o =>
         {
             o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             o.KnownNetworks.Clear();
             o.KnownProxies.Clear();
+            foreach (var cidr in (Environment.GetEnvironmentVariable("MD_TRUSTED_NETWORKS")
+                                      ?? "172.23.0.0/16,127.0.0.0/8,::1/128")
+                         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (Microsoft.AspNetCore.HttpOverrides.IPNetwork.TryParse(cidr, out var net))
+                    o.KnownNetworks.Add(net);
+            }
+
+            foreach (var host in new[] { "web", "bot" })
+            {
+                try
+                {
+                    foreach (var ip in System.Net.Dns.GetHostAddresses(host))
+                        o.KnownProxies.Add(ip);
+                }
+                catch
+                {
+                    // поза контейнером (дизайн-тайм/тести) резолву нема — не фатально
+                }
+            }
+
+            if (System.Net.IPAddress.TryParse("172.23.0.1", out var gw))
+                o.KnownProxies.Add(gw);
         });
 
         // FR-16: RateLimiter — login 5/хв/IP, register 3/год/IP (429 при перевищенні).
@@ -195,6 +231,11 @@ public class Program
                 await context.HttpContext.Response.WriteAsync(payload, ct);
             };
         });
+
+        // Квота YouTube on-demand (трейлери/watch-enrich): партіція 10/хв/IP + денний
+        // лічильник search-викликів (1 search = 100 units, ліміт 90/день — код-рев'ю
+        // 11.11: анонім з перебором id випалював денну квоту API за один прогін).
+        builder.Services.AddYouTubeRateLimiting();
 
         builder.Services.AddHttpClient<TmdbClient>(c =>
         {
@@ -452,6 +493,20 @@ public class Program
             app.UseSwagger();
             app.UseSwaggerUI();
         }
+
+        // Глобальний обробник невідомих винятків → ProblemDetails-подібне тіло.
+        // API-аудит 11.11: 500-ки йшли З ПОРОЖНІМ тілом (0 байт) — клієнт бачив
+        // беззмістовний збій замість чесного «сервер не впорався».
+        app.UseExceptionHandler(a => a.Run(async ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                error = "internal_error",
+                message = "На сервері сталася помилка. Спробуйте ще раз за мить.",
+            });
+        }));
 
         // Компресія найзовніша: OutputCache зберігає НЕстиснутий боді, стиснення per-запит на виході.
         app.UseResponseCompression();

@@ -40,6 +40,8 @@ export function usePosterBackfill(
   const timerRef = useRef<number | null>(null);
   const inflightRef = useRef(false);
   const aliveRef = useRef(true);
+  // In-flight запит: cleanup (unmount) скасує його через AbortController.
+  const abortRef = useRef<AbortController | null>(null);
   // Останні колбек/масив — через ref, ефект перерегистровується лише на items.
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
@@ -82,7 +84,9 @@ export function usePosterBackfill(
         if (batch.length >= BATCH_LIMIT) break;
       }
       inflightRef.current = true;
-      batchResolvePosters(batch)
+      const ac = new AbortController();
+      abortRef.current = ac;
+      batchResolvePosters(batch, ac.signal)
         .then((r) => {
           if (!aliveRef.current) return;
           const map: ResolvedPostersMap = new Map();
@@ -100,6 +104,7 @@ export function usePosterBackfill(
         })
         .finally(() => {
           inflightRef.current = false;
+          if (abortRef.current === ac) abortRef.current = null;
           if (!aliveRef.current) {
             // Відповідь після unmount мерджити нікуди — дозволяємо повтор пізніше.
             for (const id of batch) requested.delete(id);
@@ -128,6 +133,9 @@ export function usePosterBackfill(
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      // Скасувати in-flight батч: відповідь після unmount все одно нікуди не мерджиться.
+      abortRef.current?.abort();
+      abortRef.current = null;
     };
   }, [items]);
 }

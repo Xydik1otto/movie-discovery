@@ -55,7 +55,8 @@ public sealed class FiltersTestFactory : WebApplicationFactory<Program>
 /// 2) фасети (genres/countries) — по частоті всередині КАТЕГОРІЇ, з лімітом і тай-брейком;
 /// 3) counts — розбивка по типах (shorts = movie з RuntimeMin≤40; animation_movies = movie
 ///    з жанром animation; animation_series = (series|show + animation) АБО type='anime');
-/// 4) невалідна/відсутня категорія → 400;
+/// 4) невалідна НЕПОРОЖНЯ категорія → 400; відсутня/порожня = 'all' (200, фікс «Головна
+///    шле /api/filters без category»);
 /// 5) TTL-кеш: другий виклик — той самий об'єкт БЕЗ ходіння в БД, ключі різних категорій
 ///    не перетинаються;
 /// 6) ліміти фасетів (genres ≤40, countries ≤20);
@@ -329,7 +330,7 @@ public class FiltersControllerTests
         Assert.Equal(3, counts.GetProperty("animation_series").GetInt32()); // Zeta + Theta + Iota
     }
 
-    // ── захист: невалідна/відсутня категорія → 400 ──
+    // ── захист: невалідна НЕПОРОЖНЯ категорія → 400; відсутня/порожня = 'all' (200) ──
 
     [Fact]
     public async Task Invalid_Category_Returns_400()
@@ -341,12 +342,20 @@ public class FiltersControllerTests
     }
 
     [Fact]
-    public async Task Missing_Category_Returns_400()
+    public async Task Missing_Category_Defaults_To_All()
     {
+        // Фікс «Головна шле /api/filters без category → 400»: відсутня/порожня категорія —
+        // валідний запит 'all' (200), а не помилка.
         var (factory, client) = await NewSeededAsync();
         var (status, json) = await GetFiltersAsync(client, null);
-        Assert.Equal(400, status);
-        Assert.Equal("invalid_request", json.RootElement.GetProperty("error").GetString());
+        Assert.Equal(200, status);
+        Assert.Equal("all", json.RootElement.GetProperty("category").GetString());
+        Assert.True(json.RootElement.GetProperty("counts").GetProperty("total").GetInt32() > 0);
+
+        // Порожнє значення ?category= — та сама семантика 'all'.
+        var (statusEmpty, jsonEmpty) = await GetFiltersAsync(client, "");
+        Assert.Equal(200, statusEmpty);
+        Assert.Equal("all", jsonEmpty.RootElement.GetProperty("category").GetString());
     }
 
     // ── кеш: другий виклик — той самий об'єкт, БД не чіпається; категорії не перетинаються ──

@@ -144,4 +144,79 @@ public class NpgsqlTranslationTests
         Assert.DoesNotContain("FROM (SELECT", upper);        // БЕЗ raw-підзапиту-матеріалізації
         Assert.Contains("ILIKE", upper);
     }
+
+    // ── Двофазний текстовий пошук: Фаза A (FTS) + EscapeLike-фікс ──
+
+    [Fact]
+    public void Search_Fts_PhaseA_Translates_TitleSearchMatch()
+    {
+        using var db = CreateContext();
+        var svc = new SearchService(db);
+        var query = svc.BuildFtsQuery(new SearchQuery(
+            Q: "dune", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
+            MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
+            Status: null, Sort: "popularity", Page: 1, PageSize: 24), tsQuery: "dun:*");
+        var sql = query.ToQueryString();
+        var upper = sql.ToUpperInvariant();
+
+        // HasDbFunction транслюється у public.title_search_match(...) — на виразі
+        // title_search_fts(...) у БД стоїть GIN ix_titles_search_fts
+        Assert.Contains("TITLE_SEARCH_MATCH", upper);
+        // composable, без raw-підзапиту-матеріалізації
+        Assert.DoesNotContain("FROM (SELECT", upper);
+    }
+
+    [Fact]
+    public void Search_Ilike_UsesEscapeCharacter()
+    {
+        // EscapeLike-фікс: 3-арг ILIKE(col, pat, "\\") → SQL ESCAPE '\'. 2-аргна форма
+        // давала ESCAPE '' — бекслеші EscapeLike (\%, \_, \\) були мертві.
+        using var db = CreateContext();
+        var svc = new SearchService(db);
+        var sql = svc.BuildQuery(new SearchQuery(
+            Q: "x", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
+            MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
+            Status: null, Sort: "popularity", Page: 1, PageSize: 24)).ToQueryString();
+
+        Assert.Contains("ESCAPE", sql.ToUpperInvariant());
+    }
+
+    // ── Ревізія Фази A: walk-безпечний popularity-фетч (дефолтна селективність FTS ~2%
+    // з ORDER BY popularity дає popularity-walk = 109 с на рідкісних запитах) ──
+
+    [Fact]
+    public void Search_Fts_PopularityFetch_TopN_NonSargableOrderBy_Translates()
+    {
+        using var db = CreateContext();
+        var svc = new SearchService(db);
+        var q = new SearchQuery(
+            Q: "dune", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
+            MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
+            Status: null, Sort: "relevance", Page: 1, PageSize: 24);
+        var sql = svc.BuildFtsPopularityFetch(q, "dun:*", topN: true).Take(2002).ToQueryString();
+        var upper = sql.ToUpperInvariant();
+
+        Assert.Contains("TITLE_SEARCH_MATCH", upper);
+        // арифметика popularity + 0.0 ламає sargability ORDER BY → walk неможливий
+        Assert.Contains("+ 0.0", upper);
+        Assert.Contains("COALESCE", upper); // ThenByDescending(year ?? 0)
+        Assert.Contains("LIMIT", upper);
+    }
+
+    [Fact]
+    public void Search_Fts_PopularityFetch_Unsorted_HasNoOrderBy()
+    {
+        // total ≤ FetchCap → фетчиться ВСІ збіги БЕЗ ORDER BY → Bitmap GIN без
+        // сортування; порядок сторінки будує C# — walk неможливий у принципі.
+        using var db = CreateContext();
+        var svc = new SearchService(db);
+        var q = new SearchQuery(
+            Q: "dune", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
+            MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
+            Status: null, Sort: "relevance", Page: 1, PageSize: 24);
+        var sql = svc.BuildFtsPopularityFetch(q, "dun:*", topN: false).Take(2002).ToQueryString();
+
+        Assert.Contains("TITLE_SEARCH_MATCH", sql.ToUpperInvariant());
+        Assert.DoesNotContain("ORDER", sql.ToUpperInvariant());
+    }
 }

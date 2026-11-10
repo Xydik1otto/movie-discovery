@@ -49,7 +49,6 @@ export const ru: Dict = {
   "filters.seasons": "Сезоны",
   "filters.excludeGenres": "Исключить жанры",
   "filters.hasTrailer": "Есть трейлер",
-  "filters.hasProviders": "Есть где посмотреть (UA)",
   "filters.movie": "Фильм",
   "filters.series": "Сериал",
   "filters.show": "Телешоу",
@@ -75,13 +74,10 @@ export const ru: Dict = {
   "filters.studios": "Студии",
 
   "title.similar": "Похожие",
-  "title.why": "Почему похоже?",
   "title.watchlist": "Хочу посмотреть",
-  "title.watched": "Просмотренное",
   "title.watchedAdd": "Посмотрел",
   // Отключённая кнопка взаимоисключающего действия: честная причина, без «✓ сделано».
   "title.removeFirst": "Сначала убери тайтл из списка «Хочу посмотреть»",
-  "title.providers": "Где посмотреть",
   "title.watch.where": "Где посмотреть",
   "title.trailer": "Трейлер",
   "title.director": "Режиссёр",
@@ -98,14 +94,15 @@ export const ru: Dict = {
   "title.status.returning": "Продолжается",
   "title.status.ended": "Завершён",
   "title.status.canceled": "Закрыт",
-  "title.noTrailer": "Трейлер недоступен",
   "title.added": "Добавлено",
+  "title.notFound": "Тайтл не найден",
+  "title.notFoundHint": "Такого тайтла нет в каталоге — возможно, он ещё не проиндексирован.",
+  "title.notFoundSearch": "Поиск",
 
   "similar.seedsTitle": "Похоже на...",
   "similar.seedsHint": "Добавь любимые фильмы и сериалы — или просто жанры и настроение. Будем искать то, что их связывает: жанр, настроение, эпоху, актёров.",
   "similar.searchSeed": "Поиск эталонов…",
   "similar.find": "Найти похожее",
-  "similar.seeds": "Эталоны",
   "similar.seedsCount": "Эталонов: {n}/10",
   "similar.seedsRequired": "Добавь хотя бы один эталон",
   "similar.seedsOrFiltersRequired": "Добавь эталон или выбери жанры и настроение",
@@ -114,8 +111,6 @@ export const ru: Dict = {
   "similar.byTextPlaceholder": "Например: мрачный детектив о дождливом городе и одиноком детективе",
   "similar.textFind": "Найти по описанию",
   "similar.history": "История подборок",
-  "similar.score": "Совпадение",
-  "similar.resultsFor": "Подборка для: {seeds}",
   "similar.quickMode": "Быстро",
   "similar.seedsMode": "Эталоны",
   "similar.quickHint": "Введи название фильма или сериала — сразу найдём похожие тайтлы.",
@@ -136,8 +131,9 @@ export const ru: Dict = {
   "lists.remove": "Удалить",
 
   "common.loading": "Загрузка…",
-  "common.showMore": "Показать ещё",
   "common.error": "Ошибка",
+  "notFound.title": "Страница не найдена",
+  "notFound.text": "Такой страницы нет — проверьте адрес или вернитесь на главную.",
   "common.prev": "Назад",
   "common.next": "Далее",
   "common.pageOf": "Страница {p} из {t}",
@@ -148,16 +144,12 @@ export const ru: Dict = {
 
   "lang.switch": "Язык",
 
-  "providers.none": "Для этого региона пока нет данных, где смотреть",
   "providers.stream": "Смотреть",
   "providers.rent": "Аренда",
   "providers.buy": "Купить",
   "providers.free": "Бесплатно",
 
-  "watch.free": "Бесплатно",
   "watch.subscription": "Подписка",
-  "watch.rent": "Аренда",
-  "watch.buy": "Покупка",
   "watch.badge.free": "FREE",
   "watch.badge.subscription": "Подписка",
   "watch.badge.rent": "Аренда",
@@ -195,7 +187,6 @@ export const ru: Dict = {
   "watch.audio.zho": "Китайский",
   "watch.audio.original": "Оригинал",
   "watch.audio.multi": "Многоголосый",
-  "watch.defaultGroup": "Смотреть",
 
   "provider.sweettv": "sweet.tv",
   "provider.archive": "Internet Archive (бесплатно)",
@@ -265,12 +256,11 @@ export const ru: Dict = {
 
   "title.readAdd": "Прочитал",
 
-  "footer.attribution": "Данные о фильмах предоставляет TMDB. Информация о доступности — JustWatch.",
+  "footer.attribution": "Данные о фильмах: IMDb, AniList, Shikimori, Cinemeta (Stremio). Доступность — JustWatch.",
 
   // --- FR-16: аккаунты ---
   "auth.login": "Войти",
   "auth.logout": "Выйти",
-  "auth.guest": "Гость",
   "auth.loginTitle": "Вход",
   "auth.loginSubtitle": "Войди — списки, оценки и «Кинотека» сохранятся в твоём профиле.",
   "auth.registerTitle": "Регистрация",
@@ -284,7 +274,6 @@ export const ru: Dict = {
   "auth.toRegister": "Нет аккаунта? Зарегистрироваться",
   "auth.toLogin": "Уже есть аккаунт? Войти",
   "auth.needLogin": "Этот раздел доступен после входа. Войди — и продолжим.",
-  "auth.afterRegister": "Аккаунт создан. Войди, чтобы завершить настройку.",
   "auth.err.required": "Заполни это поле",
   "auth.err.email": "Некорректный email",
   "auth.err.passwordShort": "Пароль должен содержать минимум 8 символов",
@@ -304,7 +293,6 @@ export const ru: Dict = {
   "nav.discover": "Кинотека",
   "discover.title": "Кинотека",
   "discover.subtitle": "Свайпай: вправо — нравится, влево — нет. Или жми кнопки.",
-  "discover.loading": "Собираем подборку…",
   "discover.empty": "Ты уже всё посмотрел. Загляни позже — соберём новую подборку.",
   "discover.again": "Ещё подборку",
   "discover.like": "Нравится",
@@ -317,7 +305,6 @@ export const ru: Dict = {
   "discover.mode.exploit": "для тебя",
   "discover.mode.safe": "проверенное",
   "discover.mode.explore": "исследование",
-  "discover.needLogin": "«Кинотека» доступна после входа — так подбор учится на твоих действиях.",
 
   // --- FR-18: онбординг ---
   "onboarding.title": "Настроим подбор",
@@ -344,7 +331,6 @@ export const ru: Dict = {
 
   // --- FR-17: вкладка «Нравится», статистика, миграция гостя ---
   "lists.liked": "Нравится",
-  "lists.stats.title": "Статистика",
   "lists.stats.watched": "Просмотрено",
   "lists.stats.read": "Прочитанное",
   "lists.stats.liked": "Нравится",
@@ -406,7 +392,6 @@ export const ru: Dict = {
   "studio.genres": "Жанровый акцент",
   "studio.genresHint": "до 3 жанров",
 
-  "collections.title": "Сборники",
   "collections.subtitle": "Готовые подборки и свои собственные — сохраняй в аккаунте.",
   "collections.presets": "Пресеты",
   "collections.preset.mood": "Настроение",

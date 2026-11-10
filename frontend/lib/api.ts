@@ -82,9 +82,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
       // Пошук/агрегати по 2.8 млн рядків під навантаженням масових синків можуть
       // легально мислити 10-20 с; 8 с давало фальшивий «API недоступний» + демо-дані.
-      signal: AbortSignal.timeout(25_000),
+      // Виклик із власним signal (скасування в useEffect) — таймаут не застосовується.
+      signal: init?.signal ?? AbortSignal.timeout(25_000),
     });
-  } catch {
+  } catch (e) {
+    // Скасування ззовні (unmount компонента) — не «API недоступний»: прокидаємо далі,
+    // щоб UI тихо прибрав запит (markDown() чіпати не можна).
+    if (init?.signal && e instanceof DOMException && e.name === "AbortError") throw e;
     markDown();
     throw new ApiUnavailableError();
   }
@@ -163,7 +167,8 @@ export async function searchTitles(
       page: p.page ?? 1,
       pageSize: p.pageSize ?? 20,
       // UX-01: перегортання без повторного COUNT (total бере клієнт із кешу).
-      omitTotal: p.omitTotal ? "1" : undefined,
+      // Бекенд валідує лише "true"/"false" — "1" давало 400 на кожну сторінку >1.
+      omitTotal: p.omitTotal ? "true" : undefined,
     })}&lang=${lang}`;
   return request<Paged<TitleCard>>(path);
 }
@@ -474,20 +479,20 @@ export async function migrateGuestLists(
 
 // --- FR-21: збірники (collections). Без логіну — 401, панель показує підказку. ---
 
-// Серверні пресети: [{key: 'mood'|'evening'|'duration', items: [...12 карток]}].
+// Серверні пресети: бекенд вертає {"presets":[{key, items:[...12 карток]}]}.
 export async function getCollectionPresets(lang: Lang): Promise<PresetCollection[]> {
-  const r = await request<{ items?: PresetCollection[] } | PresetCollection[]>(
-    `/api/collections/presets${qs({ lang })}`,
-  );
-  return (Array.isArray(r) ? r : (r.items ?? [])) as PresetCollection[];
+  const r = await request<
+    { presets?: PresetCollection[]; items?: PresetCollection[] } | PresetCollection[]
+  >(`/api/collections/presets${qs({ lang })}`);
+  return (Array.isArray(r) ? r : (r.presets ?? r.items ?? [])) as PresetCollection[];
 }
 
-// Свої збірки (auth): [{id, name, itemCount?, items?}].
+// Свої збірки (auth): бекенд вертає {"collections":[{id, name, itemCount?, items?}]}.
 export async function getCollections(): Promise<CollectionSummary[]> {
-  const r = await request<{ items?: CollectionSummary[] } | CollectionSummary[]>(
-    "/api/collections",
-  );
-  return (Array.isArray(r) ? r : (r.items ?? [])) as CollectionSummary[];
+  const r = await request<
+    { collections?: CollectionSummary[]; items?: CollectionSummary[] } | CollectionSummary[]
+  >("/api/collections");
+  return (Array.isArray(r) ? r : (r.collections ?? r.items ?? [])) as CollectionSummary[];
 }
 
 // POST /api/collections {name, items:[titleId...]} — items = внутрішні id тайтлів.
@@ -520,10 +525,12 @@ export async function getTitleSeries(id: number, lang: Lang): Promise<SeriesResp
 // той самий request()-хелпер (credentials same-origin, як для всіх запитів).
 export async function batchResolvePosters(
   titleIds: number[],
+  signal?: AbortSignal,
 ): Promise<PosterBatchResolveResponse> {
   return request<PosterBatchResolveResponse>("/api/posters/batch-resolve", {
     method: "POST",
     body: JSON.stringify({ titleIds }),
+    signal,
   });
 }
 
@@ -544,8 +551,10 @@ export async function getFilters(category: string | null): Promise<FiltersPayloa
 export async function getHomeRecommendations(
   lang: Lang,
   limit = 20,
+  signal?: AbortSignal,
 ): Promise<{ items: TitleCard[]; reason?: string | null }> {
   return request<{ items: TitleCard[]; reason?: string | null }>(
     `/api/recommendations/home${qs({ limit, lang })}`,
+    { signal },
   );
 }

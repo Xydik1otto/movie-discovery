@@ -242,7 +242,8 @@ export interface ImportJob {
 // --- FR-16/17/18: акаунти, discover, онбординг, статистика списків ---
 
 export interface AuthUser {
-  id: number;
+  // Бекенд (Identity) вертає GUID-рядок, не число.
+  id: string;
   email?: string | null;
   username: string;
   onboardingDone?: boolean | null;
@@ -405,7 +406,8 @@ export interface FiltersSections {
   countries?: FilterCountOption[] | null;
   studios?: FilterCountOption[] | null;
   statuses?: FilterCountOption[] | null;
-  sorts?: FilterCountOption[] | null;
+  // Бекенд FiltersPayload.Sorts — string[] (коди сортувань, без лічильників).
+  sorts?: string[] | null;
 }
 
 export interface FiltersCounts {

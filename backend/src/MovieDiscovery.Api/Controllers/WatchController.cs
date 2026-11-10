@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Infrastructure.Persistence;
@@ -33,6 +34,7 @@ public sealed class WatchController(
     PlexAvailabilityService plexAvailability) : ControllerBase
 {
     [HttpGet("watch")]
+    [EnableRateLimiting(YouTubeRatePolicy.PolicyName)] // 10/хв/IP — ЛИШЕ для ?enrich=youtube (див. RateLimitPolicies.cs)
     public async Task<IActionResult> Get(int id, string? enrich, CancellationToken ct)
     {
         var exists = await db.Titles.AnyAsync(t => t.Id == id, ct);
@@ -41,7 +43,17 @@ public sealed class WatchController(
 
         // FR-20: on-demand збагачення (кеш; 1 search максимум, лише якщо лінку ще нема)
         if (string.Equals(enrich?.Trim(), "youtube", StringComparison.OrdinalIgnoreCase))
-            await youtubeEnrich.EnsureYoutubeLinkAsync(id, ct);
+        {
+            try
+            {
+                await youtubeEnrich.EnsureYoutubeLinkAsync(id, ct);
+            }
+            catch (YouTubeQuotaExceededException ex)
+            {
+                // Денний глобальний ліміт search-викликів (90/день, YouTubeDailySearchQuota) вичерпано.
+                return StatusCode(429, new { error = "quota_exceeded", message = ex.Message });
+            }
+        }
 
         var links = await db.WatchLinks.AsNoTracking()
             .Where(w => w.TitleId == id)

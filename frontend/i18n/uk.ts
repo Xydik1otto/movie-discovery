@@ -45,7 +45,6 @@ export const uk = {
   "filters.seasons": "Сезони",
   "filters.excludeGenres": "Виключити жанри",
   "filters.hasTrailer": "Є трейлер",
-  "filters.hasProviders": "Є де подивитись (UA)",
   "filters.movie": "Фільм",
   "filters.series": "Серіал",
   "filters.show": "Телешоу",
@@ -71,13 +70,10 @@ export const uk = {
   "filters.studios": "Студії",
 
   "title.similar": "Схожі",
-  "title.why": "Чому схоже?",
   "title.watchlist": "Хочу подивитись",
-  "title.watched": "Переглянуте",
   "title.watchedAdd": "Переглянув",
   // Disabled-кнопка взаємно виключної дії: чесна причина, без «✓ виконано».
   "title.removeFirst": "Спочатку прибери тайтл зі списку «Хочу подивитись»",
-  "title.providers": "Де подивитись",
   "title.watch.where": "Де подивитись",
   "title.trailer": "Трейлер",
   "title.director": "Режисер",
@@ -94,14 +90,15 @@ export const uk = {
   "title.status.returning": "Триває",
   "title.status.ended": "Завершений",
   "title.status.canceled": "Закритий",
-  "title.noTrailer": "Трейлер недоступний",
   "title.added": "Додано",
+  "title.notFound": "Тайтл не знайдено",
+  "title.notFoundHint": "Такого тайтла немає в каталозі — можливо, його ще не індексовано.",
+  "title.notFoundSearch": "Пошук",
 
   "similar.seedsTitle": "Схоже на...",
   "similar.seedsHint": "Додай улюблені фільми й серіали — або просто жанри й настрій. Шукатимемо те, що їх поєднує: жанр, настрій, епоху, акторів.",
   "similar.searchSeed": "Пошук еталонів…",
   "similar.find": "Знайти схоже",
-  "similar.seeds": "Еталони",
   "similar.seedsCount": "Еталонів: {n}/10",
   "similar.seedsRequired": "Додай хоча б один еталон",
   "similar.seedsOrFiltersRequired": "Додай еталон або вибери жанри чи настрій",
@@ -110,8 +107,6 @@ export const uk = {
   "similar.byTextPlaceholder": "Наприклад: похмурий детектив про дощове місто й самотнього детектива",
   "similar.textFind": "Знайти за описом",
   "similar.history": "Історія добірок",
-  "similar.score": "Збіг",
-  "similar.resultsFor": "Добірка для: {seeds}",
   "similar.quickMode": "Швидко",
   "similar.seedsMode": "Еталони",
   "similar.quickHint": "Введи назву фільму чи серіалу — одразу знайдемо схожі тайтли.",
@@ -132,8 +127,9 @@ export const uk = {
   "lists.remove": "Видалити",
 
   "common.loading": "Завантаження…",
-  "common.showMore": "Показати ще",
   "common.error": "Помилка",
+  "notFound.title": "Сторінку не знайдено",
+  "notFound.text": "Такої сторінки немає — перевір адресу або повернись на головну.",
   "common.prev": "Назад",
   "common.next": "Далі",
   "common.pageOf": "Сторінка {p} з {t}",
@@ -144,16 +140,12 @@ export const uk = {
 
   "lang.switch": "Мова",
 
-  "providers.none": "Для цього регіону поки немає даних, де дивитись",
   "providers.stream": "Дивитись",
   "providers.rent": "Оренда",
   "providers.buy": "Купити",
   "providers.free": "Безкоштовно",
 
-  "watch.free": "Безкоштовно",
   "watch.subscription": "Передплата",
-  "watch.rent": "Оренда",
-  "watch.buy": "Купівля",
   "watch.badge.free": "FREE",
   "watch.badge.subscription": "Передплата",
   "watch.badge.rent": "Оренда",
@@ -191,7 +183,6 @@ export const uk = {
   "watch.audio.zho": "Китайська",
   "watch.audio.original": "Оригінал",
   "watch.audio.multi": "Багатомовна",
-  "watch.defaultGroup": "Дивитись",
 
   "provider.sweettv": "sweet.tv",
   "provider.archive": "Internet Archive (безкоштовно)",
@@ -261,12 +252,11 @@ export const uk = {
 
   "title.readAdd": "Прочитав",
 
-  "footer.attribution": "Дані про фільми надає TMDB. Інформація про доступність — JustWatch.",
+  "footer.attribution": "Дані про фільми: IMDb, AniList, Shikimori, Cinemeta (Stremio). Доступність — JustWatch.",
 
   // --- FR-16: акаунти ---
   "auth.login": "Увійти",
   "auth.logout": "Вийти",
-  "auth.guest": "Гість",
   "auth.loginTitle": "Вхід",
   "auth.loginSubtitle": "Увійди — списки, оцінки й «Кінотека» зберігатимуться в твоєму профілі.",
   "auth.registerTitle": "Реєстрація",
@@ -280,7 +270,6 @@ export const uk = {
   "auth.toRegister": "Немає акаунта? Зареєструватися",
   "auth.toLogin": "Вже є акаунт? Увійти",
   "auth.needLogin": "Цей розділ доступний після входу. Увійди — і продовжимо.",
-  "auth.afterRegister": "Акаунт створено. Увійди, щоб завершити налаштування.",
   "auth.err.required": "Заповни це поле",
   "auth.err.email": "Некоректний email",
   "auth.err.passwordShort": "Пароль має містити щонайменше 8 символів",
@@ -327,7 +316,6 @@ export const uk = {
   "nav.discover": "Кінотека",
   "discover.title": "Кінотека",
   "discover.subtitle": "Свайпай: вправо — подобається, вліво — ні. Або тисни кнопки.",
-  "discover.loading": "Збираємо добірку…",
   "discover.empty": "Ти вже все переглянув. Завітай пізніше — зробимо нову добірку.",
   "discover.again": "Ще добірку",
   "discover.like": "Подобається",
@@ -340,7 +328,6 @@ export const uk = {
   "discover.mode.exploit": "для тебе",
   "discover.mode.safe": "перевірене",
   "discover.mode.explore": "дослідження",
-  "discover.needLogin": "«Кінотека» доступна після входу — так підбір вчиться на твоїх діях.",
 
   // --- FR-18: онбординг ---
   "onboarding.title": "Налаштуємо підбір",
@@ -367,7 +354,6 @@ export const uk = {
 
   // --- FR-17: вкладка «Подобається», статистика, міграція гостя ---
   "lists.liked": "Подобається",
-  "lists.stats.title": "Статистика",
   "lists.stats.watched": "Переглянуто",
   "lists.stats.read": "Прочитане",
   "lists.stats.liked": "Подобається",
@@ -429,7 +415,6 @@ export const uk = {
   "studio.genres": "Жанровий акцент",
   "studio.genresHint": "до 3 жанрів",
 
-  "collections.title": "Збірники",
   "collections.subtitle": "Готові добірки і свої власні — зберігай в акаунті.",
   "collections.presets": "Пресети",
   "collections.preset.mood": "Настрій",

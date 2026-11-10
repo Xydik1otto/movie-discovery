@@ -235,10 +235,12 @@ export default function Header() {
     </Link>
   );
 
+  // Мобайл: nav ховаємо — на 390px flex-1 стискає його до ~8px і активний чіп
+  // виглядає як обрізаний рожевий півмісяць між лого і «Увійти».
   const navTop = (
     <nav
       aria-label="main"
-      className="no-scrollbar -mx-1 flex flex-1 items-center gap-1 overflow-x-auto px-1"
+      className="no-scrollbar -mx-1 hidden flex-1 items-center gap-1 overflow-x-auto px-1 md:flex"
     >
       {NAV.map((item) => {
         const active =

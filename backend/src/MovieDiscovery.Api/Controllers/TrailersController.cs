@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Infrastructure.Persistence;
@@ -24,7 +25,7 @@ public sealed class TrailersController(
     TitleTrailerSyncQueue trailerSyncQueue,
     TrailerVerifier verifier,
     ICacheStore cache,
-    IOptions<AdminOptions> adminOptions,
+    IConfiguration configuration,
     ILogger<TrailersController> log) : ControllerBase
 {
     private const string CacheSource = "trailers";
@@ -40,6 +41,7 @@ public sealed class TrailersController(
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
     [HttpGet("api/titles/{id:int}/trailers")]
+    [EnableRateLimiting(YouTubeRatePolicy.PolicyName)] // 10/хв/IP (RateLimitPolicies.cs): 1 on-demand search ≈ 100 units квоти
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
         // Single-flight: gate на titleId — повторний вхід після звільнення перевіряє кеш заново
@@ -54,9 +56,12 @@ public sealed class TrailersController(
         }
         finally
         {
-            // прибираємо gate під собою, якщо ніхто більше не чекає (без витоку на мільйонах тайтлів)
-            if (gate.CurrentCount == 1 && Gates.TryRemove(new KeyValuePair<string, SemaphoreSlim>($"title:{id}", gate)))
-                gate.Dispose();
+            // Семафор НЕ диспозимо і НЕ прибираємо зі словника: колишній патерн
+            // «CurrentCount == 1 → TryRemove + Dispose» має гонку — між перевіркою
+            // CurrentCount і Dispose інший запит міг уже зайти в WaitAsync (GetOrAdd
+            // вернув той самий семафор), і Release по диспознутому семафору давав
+            // ObjectDisposedException під навантаженням. Семафори дешеві, а словник
+            // обмежений id тайтлів за життя процесу — витік тут не проблема.
             gate.Release();
         }
     }
@@ -108,7 +113,16 @@ public sealed class TrailersController(
         // Під single-flight gate — максимум один search на cache-miss (квота 100 units не подвоюється).
         if (rows.Count == 0)
         {
-            await sync.SyncTitleAsync(id, ct);
+            try
+            {
+                await sync.SyncTitleAsync(id, ct);
+            }
+            catch (YouTubeQuotaExceededException ex)
+            {
+                // Денний глобальний ліміт search-викликів (90/день, YouTubeDailySearchQuota) вичерпано —
+                // чесна 429 замість порожньої відповіді (без gate анонім випалив би денну квоту API).
+                return StatusCode(429, new { error = "quota_exceeded", message = ex.Message });
+            }
             rows = await LoadRowsAsync(db, id, ct);
         }
 
@@ -149,16 +163,8 @@ public sealed class TrailersController(
         public int? Limit { get; set; } // ОБОВ'ЯЗКОВИЙ ліміт прогону; порожнє тіло → дефолт 20
     }
 
-    private IActionResult? CheckAdmin()
-    {
-        var expected = adminOptions.Value.Key;
-        if (string.IsNullOrEmpty(expected))
-            return StatusCode(500, new { error = "admin_not_configured", message = "ADMIN_KEY не задано в .env" });
-        var provided = Request.Headers["X-Admin-Key"].FirstOrDefault();
-        if (string.IsNullOrEmpty(provided) || !string.Equals(provided, expected, StringComparison.Ordinal))
-            return Unauthorized(new { error = "unauthorized", message = "Потрібен заголовок X-Admin-Key" });
-        return null;
-    }
+    /// <summary>Перевірка X-Admin-Key — спільний AdminGate (логіка колись була продубльована тут).</summary>
+    private IActionResult? CheckAdmin() => AdminGate.Verify(HttpContext, configuration);
 
     /// <summary>Рядки трейлерів тайтла (усі статуси — фільтрація показу в ToInfos).</summary>
     public static Task<List<TitleTrailer>> LoadRowsAsync(MovieDiscoveryDbContext dbContext, int titleId, CancellationToken ct) =>

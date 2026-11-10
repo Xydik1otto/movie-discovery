@@ -34,21 +34,12 @@ public sealed class AdminController(
     PosterStorageSyncQueue posterStorageSyncQueue,
     PosterSourceSyncQueue posterSourceSyncQueue,
     WatchLinkVerificationQueue watchLinkVerificationQueue,
-    Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
+    Microsoft.Extensions.Configuration.IConfiguration configuration,
     Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions,
     Microsoft.Extensions.Options.IOptions<TmdbOptions> tmdbOptions) : ControllerBase
 {
-    /// <summary>Перевірка X-Admin-Key. ADMIN_KEY не задано → 500 (конфіг-помилка), не збіг → 401.</summary>
-    private IActionResult? CheckAdmin()
-    {
-        var expected = adminOptions.Value.Key;
-        if (string.IsNullOrEmpty(expected))
-            return StatusCode(500, new { error = "admin_not_configured", message = "ADMIN_KEY не задано в .env" });
-        var provided = Request.Headers["X-Admin-Key"].FirstOrDefault();
-        if (string.IsNullOrEmpty(provided) || !string.Equals(provided, expected, StringComparison.Ordinal))
-            return Unauthorized(new { error = "unauthorized", message = "Потрібен заголовок X-Admin-Key" });
-        return null;
-    }
+    /// <summary>Перевірка X-Admin-Key — спільний AdminGate (логіка колись була продубльована тут).</summary>
+    private IActionResult? CheckAdmin() => AdminGate.Verify(HttpContext, configuration);
 
     /// <summary>Поставити popular/discover-синхронізацію у чергу: 202 {queued:true}.</summary>
     [HttpPost("sync/popular")]

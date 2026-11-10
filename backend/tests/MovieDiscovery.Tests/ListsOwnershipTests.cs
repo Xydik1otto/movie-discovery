@@ -236,8 +236,15 @@ public sealed class ListsOwnershipTests : IClassFixture<ApiTestFactory>
         var carol = await f.GuestLinkedLegacyAsync(); // реєстрація авто-логінить carol (cookie)
         var anon = f.NewClient();                     // саме АНОНІМНИЙ клієнт перевіряє guest-поверхню
 
+        // GET: гостьовий шлях вимкнено → чесний 401 «потрібен вхід» (узгоджено зі stats),
+        // а не оманливий 404 «Профіль не знайдено».
         var get = await anon.GetAsync("/api/lists");
-        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, get.StatusCode);
+        var getBody = await get.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("unauthorized", getBody.GetProperty("error").GetString());
+        Assert.Equal("Потрібен вхід, щоб бачити свої списки", getBody.GetProperty("message").GetString());
+
+        // POST/PATCH гостя залишаються відмовою доступу (404) — поза межами цього фіксу.
         var post = await ApiTestFactory.PostJson(anon, "/api/lists", new { kind = "watchlist", titleId = 5000 });
         Assert.Equal(HttpStatusCode.NotFound, post.StatusCode);
         var patch = await ApiTestFactory.PatchJson(anon, $"/api/lists/{GuestItemId}", new { rating = 3 });

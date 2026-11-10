@@ -259,6 +259,12 @@ export default function CollectionsPanel({
             {presets.map((p) => {
               const cards = cardsOf(p.items);
               const isOpen = openPreset === p.key;
+              // Бекенд шле ключі з префіксом ("preset.mood") — довідник локалізованих
+              // назв зберігає голі імена; зрізаємо префікс, незнане лишаємо як є.
+              const bareKey = p.key.replace(/^preset\./, "");
+              const presetLabel = PRESET_KEY[bareKey]
+                ? t(PRESET_KEY[bareKey])
+                : p.key;
               return (
                 <button
                   key={p.key}
@@ -272,9 +278,7 @@ export default function CollectionsPanel({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-ink">
-                      {PRESET_KEY[p.key] ? t(PRESET_KEY[p.key]) : p.key}
-                    </span>
+                    <span className="text-sm font-bold text-ink">{presetLabel}</span>
                     <span className="text-xs text-mute">{cards.length}</span>
                   </div>
                   <div className="mt-2 grid grid-cols-6 gap-1">

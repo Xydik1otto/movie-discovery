@@ -428,15 +428,17 @@ export default function FilterPanel({
           ? [{ value: "short", label: t("filters.short") }]
           : [];
 
+  // Сортування: бекенд вертає string[] кодів — мапимо на локалізовані лейбли
+  // через SORT_LABEL_KEY; невідомі коди лишаємо як є (не дискидемо тихо).
   const sortChoices = (() => {
-    const src: { value: string }[] = apiSorts ?? SORTS.map((s) => ({ value: s.value }));
-    const allowed = src.filter((s) => allowedSorts.includes(s.value));
+    const src: string[] = apiSorts ?? [];
+    const allowed = src.filter((s) => allowedSorts.includes(s));
     const list = allowed.length
       ? allowed
-      : SORTS.filter((s) => allowedSorts.includes(s.value)).map((s) => ({ value: s.value }));
-    return list.map((s) => ({
-      value: s.value,
-      label: SORT_LABEL_KEY[s.value] ? t(SORT_LABEL_KEY[s.value]) : s.value,
+      : SORTS.filter((s) => allowedSorts.includes(s.value)).map((s) => s.value);
+    return list.map((v) => ({
+      value: v,
+      label: SORT_LABEL_KEY[v] ? t(SORT_LABEL_KEY[v]) : v,
     }));
   })();
 
