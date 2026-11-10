@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.AnimeManga;
+using MovieDiscovery.Infrastructure.Cinemeta;
 using MovieDiscovery.Infrastructure.Embeddings; // IHttpClientFactoryAccessor
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
@@ -18,6 +19,23 @@ using MovieDiscovery.Infrastructure.Tmdb;
 using Xunit;
 
 namespace MovieDiscovery.Tests;
+
+/// <summary>Fake-Cinemeta: без HTTP; за замовчуванням вимкнений (IsConfigured=false).</summary>
+public sealed class CinemetaFake : ICinemetaImagesService
+{
+    public bool IsConfigured { get; set; }
+    public Dictionary<string, (string Name, string Poster, string? Background)> ByImdb { get; } = [];
+    public List<string> Calls { get; } = [];
+
+    public Task<TmdbImdbResolved?> ResolveByImdbAsync(string imdbId, string type, string? expectedTitle, CancellationToken ct = default)
+    {
+        Calls.Add(imdbId);
+        var expected = CinemetaImagesService.Normalize(expectedTitle);
+        if (!IsConfigured || expected is null || !ByImdb.TryGetValue(imdbId, out var hit)) return Task.FromResult<TmdbImdbResolved?>(null);
+        if (!string.Equals(CinemetaImagesService.Normalize(hit.Name), expected, StringComparison.Ordinal)) return Task.FromResult<TmdbImdbResolved?>(null);
+        return Task.FromResult<TmdbImdbResolved?>(new TmdbImdbResolved(0, hit.Poster, hit.Background));
+    }
+}
 
 /// <summary>Fake ITmdbImagesService: виклики записує, відповіді керує тестом (ById/Resolver/Delay).</summary>
 public sealed class FakeTmdbImagesService : ITmdbImagesService
@@ -78,7 +96,7 @@ public class PosterSourceSyncTests
             new ShikimoriThrottle(),
             new JikanThrottle(),
             Logs.Null<PosterCoverageService>());
-        var svc = new PosterSourceSyncService(fake ?? new FakeTmdbImagesService(), coverage, db, Logs.Null<PosterSourceSyncService>());
+        var svc = new PosterSourceSyncService(fake ?? new FakeTmdbImagesService(), new CinemetaFake(), coverage, db, Logs.Null<PosterSourceSyncService>());
         return (db, svc);
     }
 
@@ -566,6 +584,88 @@ public class PosterSourceSyncTests
             Assert.Equal("/terminator.jpg", title.PosterPath);
         }
     }
+
+    [Fact]
+    public async Task Sweep_Imdb_Only_Without_Tmdb_Key_Uses_Cinemeta_Fallback()
+    {
+        var factory = new PosterSourceTestFactory();
+        factory.Images.IsConfigured = false; // TMDB недоступний
+        factory.Cinemeta.IsConfigured = true;
+        factory.Cinemeta.ByImdb["tt0183523"] = ("Mission to Mars",
+            "https://images.metahub.space/poster/small/tt0183523/img",
+            "https://images.metahub.space/background/medium/tt0183523/img");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            db.Titles.Add(new Title { Id = 7003, Type = "movie", ImdbId = "tt0183523", TitleEn = "Mission to Mars", Popularity = 10 });
+            await db.SaveChangesAsync(TestCt);
+        }
+
+        var svc = factory.Services.GetRequiredService<PosterSourceSyncService>();
+        var (processed, updated) = await svc.RunAsync(10, null, TestCt);
+
+        Assert.Equal(1, processed);
+        Assert.Equal(1, updated);
+        Assert.Equal(1, factory.Cinemeta.Calls.Count);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            var title = await db.Titles.AsNoTracking().SingleAsync(t => t.Id == 7003, TestCt);
+            Assert.Equal("https://images.metahub.space/poster/small/tt0183523/img", title.PosterPath);
+            Assert.Equal("https://images.metahub.space/background/medium/tt0183523/img", title.BackdropPath);
+        }
+    }
+
+    [Fact]
+    public async Task Sweep_Cinemata_Name_Mismatch_Is_Rejected()
+    {
+        var factory = new PosterSourceTestFactory();
+        factory.Images.IsConfigured = false;
+        factory.Cinemeta.IsConfigured = true;
+        factory.Cinemeta.ByImdb["tt0000001"] = ("Some Other Movie", "https://images.metahub.space/poster/small/tt0000001/img", null);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            db.Titles.Add(new Title { Id = 7004, Type = "movie", ImdbId = "tt0000001", TitleEn = "Filtered Out", Popularity = 5 });
+            await db.SaveChangesAsync(TestCt);
+        }
+
+        var svc = factory.Services.GetRequiredService<PosterSourceSyncService>();
+        var (_, updated) = await svc.RunAsync(10, null, TestCt);
+
+        Assert.Equal(0, updated); // назва не збіглася → чесний нуль, фейковий постер НЕ пишеться
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            var title = await db.Titles.AsNoTracking().SingleAsync(t => t.Id == 7004, TestCt);
+            Assert.Null(title.PosterPath);
+        }
+    }
+
+    [Fact]
+    public void Cinemata_Parse_Upgrades_Small_Poster_And_Keeps_Background()
+    {
+        var json = """
+            {"meta":{"imdb_id":"tt0183523","name":"Mission to Mars",
+              "poster":"https://images.metahub.space/poster/small/tt0183523/img",
+              "background":"https://images.metahub.space/background/medium/tt0183523/img"}}
+            """;
+        var resolved = CinemetaImagesService.Parse(json, "missiontomars");
+        Assert.NotNull(resolved);
+        Assert.Equal(0, resolved!.TmdbId);
+        Assert.Equal("https://images.metahub.space/poster/original/tt0183523/img", resolved.PosterPath);
+        Assert.Equal("https://images.metahub.space/background/medium/tt0183523/img", resolved.BackdropPath);
+    }
+
+    [Fact]
+    public void Cinemata_Parse_Rejects_Fake_Match()
+    {
+        const string json = """
+            {"meta":{"imdb_id":"tt9999999","name":"Revolution","poster":"https://live.metahub.space/poster/small/tt9999999/img"}}
+            """;
+        Assert.Null(CinemetaImagesService.Parse(json, "missiontomars"));
+        Assert.Null(CinemetaImagesService.Parse("""{"meta":null}""", "anything"));
+    }
 }
 
 /// <summary>
@@ -578,6 +678,9 @@ public sealed class PosterSourceTestFactory : WebApplicationFactory<Program>
 
     /// <summary>Fake-резолвер TMDB (реєструється в DI, коли RegisterImages).</summary>
     public FakeTmdbImagesService Images { get; } = new();
+
+    /// <summary>Fake-Cinemeta (фолбек без ключа): реєструється завжди — жодних реальних HTTP у тестах.</summary>
+    public CinemetaFake Cinemeta => Services.GetRequiredService<CinemetaFake>();
 
     /// <summary>false → сервіс НЕ зареєстрований (регресія «до wiring Program.cs» — без 500).</summary>
     public bool RegisterImages { get; set; } = true;
@@ -598,6 +701,10 @@ public sealed class PosterSourceTestFactory : WebApplicationFactory<Program>
             services.AddDbContext<MovieDiscoveryDbContext>(o => o.UseInMemoryDatabase(DbName));
             if (RegisterImages)
                 services.AddSingleton<ITmdbImagesService>(Images);
+            services.RemoveAll<ICinemetaImagesService>();
+            services.AddSingleton<CinemetaFake>();
+            services.AddSingleton<ICinemetaImagesService>(sp => sp.GetRequiredService<CinemetaFake>());
+            services.AddSingleton<CinemetaThrottle>();
             services.AddSingleton<PosterSourceSyncQueue>();
         });
     }

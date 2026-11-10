@@ -21,6 +21,7 @@ using MovieDiscovery.Infrastructure.Localization;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
+using MovieDiscovery.Infrastructure.Cinemeta;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watch;
 using MovieDiscovery.Infrastructure.Storage;
@@ -308,6 +309,15 @@ public class Program
         // Джерела постерів (10.11): TMDB-резолв + масовий keyset-синк + аніме-покриття.
         builder.Services.AddSingleton<PosterSourceSyncQueue>();
         builder.Services.AddScoped<ITmdbImagesService, TmdbImagesService>();
+        // Cinemata (метадата Stremio): постери/бекдропи за imdb_id БЕЗ ключа і реєстрації —
+        // джерело-фолбек, коли TMDB_API_KEY не задано; валідація назви проти нашого каталогу.
+        builder.Services.AddSingleton<CinemetaThrottle>();
+        builder.Services.AddHttpClient<ICinemetaImagesService, CinemetaImagesService>(c =>
+        {
+            c.BaseAddress = new Uri("https://v3-cinemeta.strem.io/");
+            c.Timeout = TimeSpan.FromSeconds(15);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("MovieDiscovery/1.0 (self-hosted catalog)");
+        });
         builder.Services.AddScoped<PosterCoverageService>();
         builder.Services.AddScoped<PosterSourceSyncService>();
         // Watch-верифікація (10.11): coverage full|episode|unknown — фоновий обхід лінків.

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.AnimeManga;
+using MovieDiscovery.Infrastructure.Cinemeta; // ICinemetaImagesService
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Tmdb; // ITmdbImagesService
 
@@ -50,6 +51,7 @@ public sealed class PosterSourceSyncQueue
 /// </summary>
 public sealed class PosterSourceSyncService(
     ITmdbImagesService tmdbImages,
+    ICinemetaImagesService cinemeta,
     PosterCoverageService coverage,
     MovieDiscoveryDbContext db,
     ILogger<PosterSourceSyncService> log)
@@ -75,9 +77,10 @@ public sealed class PosterSourceSyncService(
         var processedTotal = 0;
         var updatedTotal = 0;
 
-        // Фаза 1: TMDB (фільми/серіали/шоу з tmdb_id, АБО IMDb-bulk з imdb_id — міст imdb→TMDB).
-        // Fail-closed: без TMDB_API_KEY свіп НЕ тікає по 2.86М тайтлів (жодних HTTP і warning-шторму).
-        if (tmdbImages.IsConfigured)
+        // Фаза 1: TMDB (фільми/серіали/шоу з tmdb_id, АБО IMDb-bulk з imdb_id — міст imdb→TMDB,
+        // фолбек без ключа — Cinemata). Fail-closed: жодного доступного джерела → свіп не тікає
+        // по 2.86М тайтлів (жодних HTTP і warning-шторму).
+        if (tmdbImages.IsConfigured || cinemeta.IsConfigured)
         {
             var tmdbSource = db.Titles.Where(t =>
                 (t.PosterPath == null || t.PosterPath == "") &&
@@ -90,7 +93,7 @@ public sealed class PosterSourceSyncService(
         }
         else
         {
-            log.LogWarning("TMDB_API_KEY не задано — фаза 1 (TMDB/imdb-міст) пропущена; аніме-гілка покриває Shikimori/Jikan");
+            log.LogWarning("Ні TMDB_API_KEY, ні Cinemata не задані — фаза 1 пропущена; аніме-гілка покриває Shikimori/Jikan");
         }
 
         // Фаза 2: аніме/манга без TMDB — покриття Shikimori/Jikan (залишок капу).
@@ -161,11 +164,19 @@ public sealed class PosterSourceSyncService(
         if (t.TmdbId is not null) return await ResolveTmdbAsync(t, ct);
         if (string.IsNullOrWhiteSpace(t.ImdbId)) return (null, null);
 
-        var found = await tmdbImages.ResolveByImdbAsync(t.ImdbId, t.Type, ct);
-        if (found is null) return (null, null);
+        if (tmdbImages.IsConfigured)
+        {
+            var found = await tmdbImages.ResolveByImdbAsync(t.ImdbId, t.Type, ct);
+            if (found is not null)
+            {
+                if (t.TmdbId is null && t.Id != 0) t.TmdbId = found.TmdbId; // бекфіл (SweepAsync збереже разом із картинками)
+                return (found.PosterPath, found.BackdropPath);
+            }
+        }
 
-        if (t.TmdbId is null && t.Id != 0) t.TmdbId = found.TmdbId; // бекфіл (SweepAsync збереже разом із картинками)
-        return (found.PosterPath, found.BackdropPath);
+        // Фолбек без ключа: Cinemata (абсолютні URL metahub; TmdbId=0 — бекфілу нема).
+        var viaCinemeta = await cinemeta.ResolveByImdbAsync(t.ImdbId, t.Type, t.TitleEn, ct);
+        return viaCinemeta is null ? (null, null) : (viaCinemeta.PosterPath, viaCinemeta.BackdropPath);
     }
 
     /// <summary>Аніме/манга-резолв: shikimori_id → Shikimori, mal_id → Jikan (готові абсолютні URL).</summary>

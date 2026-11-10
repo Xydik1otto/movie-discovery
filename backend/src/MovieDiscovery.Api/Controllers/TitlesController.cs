@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Cinemeta;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.YouTube;
@@ -111,7 +112,10 @@ public sealed class TitlesController(
         if (!hasTmdb && !hasImdb) return (null, null);
 
         var images = sp.GetService<ITmdbImagesService>();
-        if (images is null || !images.IsConfigured)
+        var cinemeta = sp.GetService<ICinemetaImagesService>();
+        var tmdbUsable = images is { IsConfigured: true };
+        var cinemetaUsable = hasImdb && cinemeta is { IsConfigured: true };
+        if (!tmdbUsable && !cinemetaUsable)
             return (null, null);
 
         try
@@ -120,11 +124,13 @@ public sealed class TitlesController(
             // poster-source-sync і fill-only оновить БД (якщо вже записали — ранній вихід без HTTP).
             sp.GetService<PosterSourceSyncQueue>()?.TryEnqueue(new PosterSourceSyncJob(MaxRows: null, TitleId: titleId));
 
-            var resolveTask = hasTmdb
-                ? images.ResolveAsync(t.TmdbId!.Value, t.Type, ct).ContinueWith(
+            Task<TmdbImdbResolved?> resolveTask = hasTmdb && tmdbUsable
+                ? images!.ResolveAsync(t.TmdbId!.Value, t.Type, ct).ContinueWith(
                     static r => r.Result is null ? null : new TmdbImdbResolved(int.MinValue, r.Result.PosterPath, r.Result.BackdropPath),
                     TaskScheduler.Default)
-                : images.ResolveByImdbAsync(t.ImdbId!, t.Type, ct);
+                : tmdbUsable
+                    ? images!.ResolveByImdbAsync(t.ImdbId!, t.Type, ct) // TMDB-міст imdb→tmdb (бекфіл у фоновій джобі)
+                    : cinemeta!.ResolveByImdbAsync(t.ImdbId!, t.Type, t.TitleEn, ct); // без ключа: Cinemata (absolute URL, TmdbId=0)
             var completed = await Task.WhenAny(resolveTask, Task.Delay(OnDemandPosterTimeoutMs, ct));
             if (completed != resolveTask)
             {
@@ -140,7 +146,7 @@ public sealed class TitlesController(
                     // Встигли: підставляємо у відповідь і одразу fill-only в БД
                     // (фонові перегляди цього тайтла вже побачать постер без HTTP).
                     await PersistResolvedPosterAsync(titleId, resolved.PosterPath, resolved.BackdropPath, ct);
-                    if (resolved.TmdbId != int.MinValue) await PersistResolvedTmdbIdAsync(titleId, resolved.TmdbId, ct);
+                    if (resolved.TmdbId > 0) await PersistResolvedTmdbIdAsync(titleId, resolved.TmdbId, ct);
                     return (TmdbImagesService.PosterUrl(resolved.PosterPath), TmdbImagesService.BackdropUrl(resolved.BackdropPath));
                 }
             }
