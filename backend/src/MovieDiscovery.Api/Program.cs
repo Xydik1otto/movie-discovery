@@ -279,6 +279,8 @@ public class Program
             if (!string.IsNullOrWhiteSpace(opt.UserAgent))
                 c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", opt.UserAgent);
         }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        // Фонова джоба megogo ресолвить сервіс зі scope (черга → SyncAsync)
+        builder.Services.AddScoped<MegogoSyncService>();
         // Plex movie-database: важкі year-сторінки (5MB+) → довгий таймаут
         builder.Services.AddHttpClient<PlexSyncService>((sp, c) =>
         {
