@@ -105,8 +105,10 @@ public sealed class TitlesController(
     {
         var posterMissing = string.IsNullOrWhiteSpace(t.PosterPath);
         var backdropMissing = string.IsNullOrWhiteSpace(t.BackdropPath);
-        if ((!posterMissing && !backdropMissing) || t.TmdbId is not int tmdbId)
-            return (null, null);
+        if (!posterMissing && !backdropMissing) return (null, null);
+        var hasTmdb = t.TmdbId is int;
+        var hasImdb = !string.IsNullOrWhiteSpace(t.ImdbId);
+        if (!hasTmdb && !hasImdb) return (null, null);
 
         var images = sp.GetService<ITmdbImagesService>();
         if (images is null || !images.IsConfigured)
@@ -118,7 +120,11 @@ public sealed class TitlesController(
             // poster-source-sync і fill-only оновить БД (якщо вже записали — ранній вихід без HTTP).
             sp.GetService<PosterSourceSyncQueue>()?.TryEnqueue(new PosterSourceSyncJob(MaxRows: null, TitleId: titleId));
 
-            var resolveTask = images.ResolveAsync(tmdbId, t.Type, ct);
+            var resolveTask = hasTmdb
+                ? images.ResolveAsync(t.TmdbId!.Value, t.Type, ct).ContinueWith(
+                    static r => r.Result is null ? null : new TmdbImdbResolved(int.MinValue, r.Result.PosterPath, r.Result.BackdropPath),
+                    TaskScheduler.Default)
+                : images.ResolveByImdbAsync(t.ImdbId!, t.Type, ct);
             var completed = await Task.WhenAny(resolveTask, Task.Delay(OnDemandPosterTimeoutMs, ct));
             if (completed != resolveTask)
             {
@@ -134,7 +140,8 @@ public sealed class TitlesController(
                     // Встигли: підставляємо у відповідь і одразу fill-only в БД
                     // (фонові перегляди цього тайтла вже побачать постер без HTTP).
                     await PersistResolvedPosterAsync(titleId, resolved.PosterPath, resolved.BackdropPath, ct);
-                    return (resolved.PosterUrl, resolved.BackdropUrl);
+                    if (resolved.TmdbId != int.MinValue) await PersistResolvedTmdbIdAsync(titleId, resolved.TmdbId, ct);
+                    return (TmdbImagesService.PosterUrl(resolved.PosterPath), TmdbImagesService.BackdropUrl(resolved.BackdropPath));
                 }
             }
         }
@@ -177,6 +184,24 @@ public sealed class TitlesController(
         {
             // Відповідь уже сформована з резолвнутим URL — збоєний запис добере фонова джоба.
             log.LogWarning(ex, "Запис on-demand постера не вдалося (title_id={TitleId}) — добере фонова джоба", titleId);
+        }
+    }
+
+    /// <summary>Fill-only бекфіл tmdb_id після imdb-місту (fill-only: наявний tmdb_id не чіпаємо).</summary>
+    private async Task PersistResolvedTmdbIdAsync(int titleId, int tmdbId, CancellationToken ct)
+    {
+        try
+        {
+            var tracked = await db.Titles.FirstOrDefaultAsync(x => x.Id == titleId, ct);
+            if (tracked is null || tracked.TmdbId is not null) return;
+            tracked.TmdbId = tmdbId;
+            tracked.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // Некритично: бекфіл добере фонова джоба poster-source-sync (вона теж бекфілить).
+            log.LogWarning(ex, "Бекфіл tmdb_id не вдалося (title_id={TitleId})", titleId);
         }
     }
 

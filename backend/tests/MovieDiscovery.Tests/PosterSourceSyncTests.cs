@@ -27,6 +27,14 @@ public sealed class FakeTmdbImagesService : ITmdbImagesService
     public Dictionary<int, TmdbResolvedImages> ById { get; } = [];
     public Func<int, string, TmdbResolvedImages?>? Resolver { get; set; }
     public TimeSpan? Delay { get; set; }
+    public Dictionary<string, TmdbImdbResolved> ByImdb { get; } = [];
+    public int ImdbCalls { get; private set; }
+
+    public Task<TmdbImdbResolved?> ResolveByImdbAsync(string imdbId, string type, CancellationToken ct = default)
+    {
+        ImdbCalls++;
+        return Task.FromResult(ByImdb.TryGetValue(imdbId, out var hit) ? hit : null);
+    }
 
     public async Task<TmdbResolvedImages?> ResolveAsync(int tmdbId, string type, CancellationToken ct = default)
     {
@@ -499,6 +507,64 @@ public class PosterSourceSyncTests
         Assert.Null(json.GetProperty("posterUrl").GetString());
         var queue = factory.Services.GetRequiredService<PosterSourceSyncQueue>();
         Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public async Task Sweep_Imdb_Only_Title_Resolves_Via_Imdb_Bridge_And_Backfills_TmdbId()
+    {
+        var factory = new PosterSourceTestFactory();
+        factory.Images.ByImdb["tt0183523"] = new TmdbImdbResolved(1701, "/mission-to-mars.jpg", null);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            db.Titles.Add(new Title { Id = 7001, Type = "movie", ImdbId = "tt0183523", TitleEn = "Mission to Mars", Popularity = 10 });
+            await db.SaveChangesAsync(TestCt);
+        }
+        var client = factory.CreateDefaultClient();
+
+        var resp = await client.GetAsync("/api/title/7001", TestCt);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(TestCt)).RootElement;
+        Assert.Contains("/mission-to-mars.jpg", json.GetProperty("posterUrl").GetString());
+
+        // on-demand поставив джобу точкового доціплення (hosted вимкнений → Count==1)
+        var queue = factory.Services.GetRequiredService<PosterSourceSyncQueue>();
+        Assert.Equal(1, queue.Count);
+        var svc = factory.Services.GetRequiredService<PosterSourceSyncService>();
+        await svc.RunAsync(null, 7001, TestCt);
+
+        Assert.Equal(1, factory.Images.ImdbCalls); // міст викликано рівно раз
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            var title = await db.Titles.AsNoTracking().SingleAsync(t => t.Id == 7001, TestCt);
+            Assert.Equal("/mission-to-mars.jpg", title.PosterPath);
+            Assert.Equal(1701, title.TmdbId); // бекфіл tmdb_id
+        }
+    }
+
+    [Fact]
+    public async Task Sweep_Tmdb_Id_Title_Does_Not_Call_Imdb_Bridge()
+    {
+        var factory = new PosterSourceTestFactory();
+        factory.Images.ById[871] = new TmdbResolvedImages("/terminator.jpg", null);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            db.Titles.Add(new Title { Id = 7002, Type = "movie", TmdbId = 871, TitleEn = "Terminator", Popularity = 9 });
+            await db.SaveChangesAsync(TestCt);
+        }
+
+        var svc = factory.Services.GetRequiredService<PosterSourceSyncService>();
+        await svc.RunAsync(10, null, TestCt);
+
+        Assert.Equal(0, factory.Images.ImdbCalls); // з tmdb_id міст не потрібен
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+            var title = await db.Titles.AsNoTracking().SingleAsync(t => t.Id == 7002, TestCt);
+            Assert.Equal("/terminator.jpg", title.PosterPath);
+        }
     }
 }
 

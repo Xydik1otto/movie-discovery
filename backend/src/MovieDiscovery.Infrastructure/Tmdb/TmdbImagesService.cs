@@ -34,7 +34,18 @@ public interface ITmdbImagesService
     /// append_to_response — нам потрібні лише шляхи картинок). Нема картинок/джерело недоступне → null.
     /// </summary>
     Task<TmdbResolvedImages?> ResolveAsync(int tmdbId, string type, CancellationToken ct = default);
+
+    /// <summary>
+    /// Міст imdb→TMDB: GET /3/find/{imdb_id}?external_source=imdb_id — для IMDb-bulk-тайтлів
+    /// (2.86М каталогу, tmdb_id = NULL). Повертає знайдений tmdb_id + шляхи картинок (щоб
+    /// викликач забекфіллив tmdb_id і надалі ходив дешевшим шляхом деталей). Нема збігу
+    /// (порожні movie_results/tv_results) → null.
+    /// </summary>
+    Task<TmdbImdbResolved?> ResolveByImdbAsync(string imdbId, string type, CancellationToken ct = default);
 }
+
+/// <summary>Результат imdb→TMDB-місту: знайдений TMDB-ідентифікатор + шляхи картинок.</summary>
+public sealed record TmdbImdbResolved(int TmdbId, string? PosterPath, string? BackdropPath);
 
 /// <summary>
 /// On-demand і масовий резолв постерів/бекдропів з TMDB. Легкий запит деталей (без
@@ -145,6 +156,65 @@ public sealed class TmdbImagesService : ITmdbImagesService
             _log.LogWarning(ex, "Не вдалося розібрати відповідь TMDB для {Type}:{Id}", cacheType, tmdbId);
             return null;
         }
+    }
+
+    public async Task<TmdbImdbResolved?> ResolveByImdbAsync(string imdbId, string type, CancellationToken ct = default)
+    {
+        if (!IsConfigured)
+        {
+            _log.LogWarning("TMDB_API_KEY не задано — imdb-міст пропущено (imdb_id={ImdbId})", imdbId);
+            return null;
+        }
+
+        var cacheType = type == "movie" ? "movie" : "series";
+        var cacheKey = TmdbCacheKeys.Find("imdb_id", imdbId);
+        var cached = await _cache.GetAsync(TmdbCacheKeys.Source, cacheKey, ct);
+        if (cached is not null)
+        {
+            try { return ParseFind(cached, cacheType); }
+            catch (JsonException ex)
+            {
+                _log.LogWarning(ex, "Пошкоджений кеш find TMDB ({ImdbId}) — тягну свіжі дані", imdbId);
+            }
+        }
+
+        var json = await FetchDetailsJsonAsync($"find/{Uri.EscapeDataString(imdbId)}?external_source=imdb_id", ct);
+        if (json is null) return null;
+
+        await _cache.SetAsync(TmdbCacheKeys.Source, cacheKey, json, 86400, ct); // find: доба (ім'я imdb стабільне, картинки міняються рідко)
+        try
+        {
+            return ParseFind(json, cacheType);
+        }
+        catch (JsonException ex)
+        {
+            _log.LogWarning(ex, "Не вдалося розібрати відповідь find TMDB для {ImdbId}", imdbId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Парсер відповіді /3/find?external_source=imdb_id: перший елемент потрібного масиву
+    /// (movie_results для "movie", tv_results для решти) з будь-яким шляхом картинки.
+    /// </summary>
+    public static TmdbImdbResolved? ParseFind(string json, string cacheType)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var arrayName = cacheType == "movie" ? "movie_results" : "tv_results";
+        if (!root.TryGetProperty(arrayName, out var arr) || arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0)
+            return null;
+
+        foreach (var hit in arr.EnumerateArray())
+        {
+            var id = hit.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number ? idEl.GetInt32() : 0;
+            if (id == 0) continue;
+            var poster = hit.TryGetProperty("poster_path", out var pp) && pp.ValueKind == JsonValueKind.String ? pp.GetString() : null;
+            var backdrop = hit.TryGetProperty("backdrop_path", out var bp) && bp.ValueKind == JsonValueKind.String ? bp.GetString() : null;
+            if (poster is null && backdrop is null) continue;
+            return new TmdbImdbResolved(id, poster, backdrop);
+        }
+        return null;
     }
 
     /// <summary>Парсер шляхів картинок з JSON деталей TMDB (poster_path/backdrop_path; нема поля → null).</summary>

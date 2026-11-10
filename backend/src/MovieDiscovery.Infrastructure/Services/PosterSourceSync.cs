@@ -75,14 +75,23 @@ public sealed class PosterSourceSyncService(
         var processedTotal = 0;
         var updatedTotal = 0;
 
-        // Фаза 1: TMDB (фільми/серіали/шоу з tmdb_id) — найпопулярніші перші.
-        var tmdbSource = db.Titles.Where(t =>
-            (t.PosterPath == null || t.PosterPath == "") && t.TmdbId != null);
-        var (tmdbProcessed, tmdbUpdated) = await SweepAsync(
-            tmdbSource, ResolveTmdbAsync, capLeft, processedTotal, ct);
-        processedTotal += tmdbProcessed;
-        updatedTotal += tmdbUpdated;
-        if (capLeft is { } leftA) capLeft = Math.Max(0, leftA - tmdbProcessed);
+        // Фаза 1: TMDB (фільми/серіали/шоу з tmdb_id, АБО IMDb-bulk з imdb_id — міст imdb→TMDB).
+        // Fail-closed: без TMDB_API_KEY свіп НЕ тікає по 2.86М тайтлів (жодних HTTP і warning-шторму).
+        if (tmdbImages.IsConfigured)
+        {
+            var tmdbSource = db.Titles.Where(t =>
+                (t.PosterPath == null || t.PosterPath == "") &&
+                (t.TmdbId != null || (t.ImdbId != null && t.ImdbId != "")));
+            var (tmdbProcessed, tmdbUpdated) = await SweepAsync(
+                tmdbSource, ResolveTmdbOrImdbAsync, capLeft, processedTotal, ct);
+            processedTotal += tmdbProcessed;
+            updatedTotal += tmdbUpdated;
+            if (capLeft is { } leftA) capLeft = Math.Max(0, leftA - tmdbProcessed);
+        }
+        else
+        {
+            log.LogWarning("TMDB_API_KEY не задано — фаза 1 (TMDB/imdb-міст) пропущена; аніме-гілка покриває Shikimori/Jikan");
+        }
 
         // Фаза 2: аніме/манга без TMDB — покриття Shikimori/Jikan (залишок капу).
         if (capLeft is not 0)
@@ -110,8 +119,8 @@ public sealed class PosterSourceSyncService(
         if (title is null) return (0, 0);
         if (!string.IsNullOrWhiteSpace(title.PosterPath)) return (0, 0); // уже заповнено — без HTTP
 
-        var (poster, backdrop) = title.TmdbId is not null
-            ? await ResolveTmdbAsync(title, ct)
+        var (poster, backdrop) = title.TmdbId is not null || !string.IsNullOrWhiteSpace(title.ImdbId)
+            ? await ResolveTmdbOrImdbAsync(title, ct)
             : await ResolveAnimeAsync(title, ct);
 
         var updated = 0;
@@ -140,6 +149,23 @@ public sealed class PosterSourceSyncService(
         if (t.TmdbId is not int tmdbId) return (null, null);
         var resolved = await tmdbImages.ResolveAsync(tmdbId, t.Type, ct);
         return (resolved?.PosterPath, resolved?.BackdropPath);
+    }
+
+    /// <summary>
+    /// Резолв фази 1: tmdb_id → дешевий шлях деталей; imdb-only → міст /3/find (потім
+    /// бекфіл tmdb_id — наступні звернення до тайтла ходять дешевшим шляхом деталей).
+    /// Backfill tmdb_id — fill-only (не перезаписує наявний).
+    /// </summary>
+    private async Task<(string? Poster, string? Backdrop)> ResolveTmdbOrImdbAsync(Title t, CancellationToken ct)
+    {
+        if (t.TmdbId is not null) return await ResolveTmdbAsync(t, ct);
+        if (string.IsNullOrWhiteSpace(t.ImdbId)) return (null, null);
+
+        var found = await tmdbImages.ResolveByImdbAsync(t.ImdbId, t.Type, ct);
+        if (found is null) return (null, null);
+
+        if (t.TmdbId is null && t.Id != 0) t.TmdbId = found.TmdbId; // бекфіл (SweepAsync збереже разом із картинками)
+        return (found.PosterPath, found.BackdropPath);
     }
 
     /// <summary>Аніме/манга-резолв: shikimori_id → Shikimori, mal_id → Jikan (готові абсолютні URL).</summary>
