@@ -5,9 +5,10 @@ using MovieDiscovery.Core.Domain;
 namespace MovieDiscovery.Infrastructure.AnimeManga;
 
 /// <summary>
-/// Shikimori rate → Title-патч. title_en — romaji (поле name); поле «russian» НІКОЛИ не пишемо
-/// у title_uk (свідоме рішення власника — російської мови немає ніде). Shikimori має власні id
-/// (не MAL) → зберігаємо в shikimori_id.
+/// Shikimori rate → Title-патч. title_en — ромадзі (поле name); поле «russian» (кирилиця) →
+/// title_ru fill-only (політика власника 10.11: підтягуємо російські назви, але існуючу
+/// ru-назву не перезаписуємо; у title_uk russian НЕ пише — uk Shikimori не має). Shikimori
+/// має власні id (не MAL) → зберігаємо в shikimori_id.
 /// </summary>
 public static class ShikimoriMapper
 {
@@ -30,8 +31,12 @@ public static class ShikimoriMapper
     {
         if (m is null) return;
         t.ShikimoriId = m.Id > 0 ? (int)m.Id : null;
-        // ЛИШЕ name (ромадзі). russian — ігноруємо: не title_en і особливо не title_uk.
+        // title_en — ЛИШЕ ромадзі (name). russian (кирилиця) → title_ru fill-only (політика
+        // власника 10.11): пишемо лише коли існуюча ru-назва порожня, непорожню не змінюємо;
+        // russian не потрапляє ні в title_en, ні в title_uk.
         t.TitleEn = JikanMediaMapper.FirstNonEmpty(m.Name) ?? t.TitleEn ?? "";
+        if (!string.IsNullOrWhiteSpace(m.Russian) && string.IsNullOrWhiteSpace(t.TitleRu))
+            t.TitleRu = m.Russian.Trim();
         t.Year = YearOf(m);
         t.Genres = (m.Genres ?? [])
             .Select(g => AnimeGenres.Canonical(g.Name))

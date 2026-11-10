@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
+import { getTitle } from "@/lib/api";
 import { guardedBySeedsEx, guardedByText } from "@/lib/fallback";
 import type {
   SimilarItem,
@@ -33,6 +34,7 @@ interface ChainEntry {
   unavailable: boolean;
   picked: TitleCardType | null;
   seeds: TitleCardType[];
+  seedFilters: SimilarSeedsFilters;
   studioSeeds: TitleCardType[];
   studioFilters: SimilarSeedsFilters;
 }
@@ -41,6 +43,95 @@ type Mode = "quick" | "seeds" | "studio" | "collections";
 
 const STUDIO_DEBOUNCE_MS = 500;
 const CHAIN_LIMIT = 10;
+
+// --- Режим «Еталони»: URL-стан (?types=&genres=&mood=&yearFrom=&yearTo=&seedIds=) ---
+// Перезавантаження/шерінг відновлюють добірку: фільтри — з query одразу,
+// еталони — резолв по внутрішніх id через singular /api/title/{id}.
+const SEED_PARAM_KEYS = ["types", "genres", "mood", "yearFrom", "yearTo", "seedIds"] as const;
+const MAX_URL_SEEDS = 10;
+// Валідні значення hard-фільтра типів бекенду (movie|series|show|anime|manga) —
+// сміття з поширених посилань тихо відкидаємо, щоб не ловити 400.
+const SEED_TYPE_VALUES = new Set(["movie", "series", "show", "anime", "manga"]);
+// Ключі пресетів настрою (бекенд: MoodPresets).
+const MOOD_KEYS = new Set([
+  "cozy",
+  "tense",
+  "funny",
+  "sad",
+  "epic",
+  "romantic",
+  "family",
+  "mindbender",
+]);
+
+function seedFiltersFromParams(p: URLSearchParams): SimilarSeedsFilters {
+  const csv = (k: string) =>
+    (p.get(k) ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const num = (k: string) => {
+    const raw = p.get(k);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const moodRaw = p.get("mood");
+  return {
+    types: csv("types").filter((v) => SEED_TYPE_VALUES.has(v)),
+    genres: csv("genres"),
+    mood: moodRaw && MOOD_KEYS.has(moodRaw) ? moodRaw : null,
+    yearFrom: num("yearFrom"),
+    yearTo: num("yearTo"),
+  };
+}
+
+function seedIdsFromParams(p: URLSearchParams): number[] {
+  return (p.get("seedIds") ?? "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .slice(0, MAX_URL_SEEDS);
+}
+
+// Канонічний вигляд seeds-параметрів стану (детермінований порядок ключів) —
+// порівнюється з поточним URL, щоб не робити зайвих router.replace.
+function seedQsFromState(seeds: TitleCardType[], f: SimilarSeedsFilters): string {
+  const sp = new URLSearchParams();
+  if (f.types?.length) sp.set("types", f.types.join(","));
+  if (f.genres?.length) sp.set("genres", f.genres.join(","));
+  if (f.mood) sp.set("mood", f.mood);
+  if (f.yearFrom != null) sp.set("yearFrom", String(f.yearFrom));
+  if (f.yearTo != null) sp.set("yearTo", String(f.yearTo));
+  if (seeds.length) sp.set("seedIds", seeds.map((s) => s.id).join(","));
+  return sp.toString();
+}
+
+function seedQsFromParams(p: URLSearchParams): string {
+  const sp = new URLSearchParams();
+  for (const k of SEED_PARAM_KEYS) {
+    const v = p.get(k);
+    if (v) sp.set(k, v);
+  }
+  return sp.toString();
+}
+
+// Чи є взагалі вхід для пошуку: еталони опційні — досить жанрів або настрою.
+function hasSeedInput(s: TitleCardType[], f: SimilarSeedsFilters): boolean {
+  return s.length >= 1 || (f.genres?.length ?? 0) >= 1 || Boolean(f.mood);
+}
+
+// Підпис добірки без еталонів (історія/лейбл результатів).
+function seedFiltersLabel(
+  f: SimilarSeedsFilters,
+  t: (k: string, vars?: Record<string, string | number>) => string,
+): string {
+  const parts: string[] = [];
+  if (f.mood) parts.push(`🎭 ${t(`mood.${f.mood}`)}`);
+  if (f.genres?.length) parts.push(f.genres.join(", "));
+  if (f.types?.length) parts.push(f.types.join(", "));
+  return parts.join(" · ") || "…";
+}
 
 // Чотирирежимна сторінка «Схоже на...» (FR-21):
 //  — «Швидко» (дефолт): один тайтл з дропдауна → одразу результати;
@@ -51,6 +142,7 @@ const CHAIN_LIMIT = 10;
 // тайтлом і шукає знову; ← повертає попередні еталони (stack у стані).
 function SimilarInner() {
   const { t, lang } = useI18n();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const seedParam = searchParams.get("seed");
 
@@ -66,6 +158,14 @@ function SimilarInner() {
   const [currentLabel, setCurrentLabel] = useState("");
   const [chainStack, setChainStack] = useState<ChainEntry[]>([]);
 
+  // Режим «Еталони»: вхідні фільтри (типи/жанри/настрій/роки). Початкове
+  // значення — з URL: Suspense-межа сторінки бейлаутить серверний рендер
+  // (fallback у HTML), тож перший клієнтський рендер уже бачить реальний
+  // query — hydration-місматчу нема (той самий патерн, що на головній).
+  const [seedFilters, setSeedFilters] = useState<SimilarSeedsFilters>(() =>
+    seedFiltersFromParams(searchParams),
+  );
+
   const [studioSeeds, setStudioSeeds] = useState<TitleCardType[]>([]);
   const [studioFilters, setStudioFilters] = useState<SimilarSeedsFilters>({ genres: [] });
 
@@ -79,6 +179,9 @@ function SimilarInner() {
   // Ключ останнього студійного прогону — щоб не перезапускати пошук при
   // перемиканні табів і коректно пропускати відновлений ланцюгом стан.
   const lastStudioRunRef = useRef("");
+  // Відновлення еталонів з ?seedIds= триває → sync-ефект не пише URL
+  // (інакше порожній seeds затер би seedIds до завершення фетчів).
+  const seedRestoringRef = useRef(false);
 
   function pushHistory(label: string, data: SimilarItem[], un: boolean) {
     setHistory((prev) => [{ label, items: data, unavailable: un }, ...prev].slice(0, 8));
@@ -97,7 +200,8 @@ function SimilarInner() {
   ) {
     // FR-21: сиди — внутрішні id (є в усіх тайтлів; tmdb_id є лише у частини каталогу).
     const seedIds = list.map((s) => s.id);
-    if (!seedIds.length) {
+    // Еталони опційні: 0 ids валідно, коли є жанри або настрій (бекенд-контракт).
+    if (!seedIds.length && !filters.mood && !(filters.genres?.length ?? 0)) {
       setError(true);
       return;
     }
@@ -121,10 +225,14 @@ function SimilarInner() {
     }
   }
 
-  // Режим «Еталони»: мультисід-пошук за кнопкою.
+  // Режим «Еталони»: еталони опційні — досить жанрів або настрою; фільтри
+  // (типи/жанри/настрій/роки) завжди летять у запит разом з еталонами.
   async function find() {
-    if (!seeds.length) return;
-    await runBySeedsEx(seeds, seeds.map((s) => s.title).join(" + "));
+    if (!hasSeedInput(seeds, seedFilters)) return;
+    const label = seeds.length
+      ? seeds.map((s) => s.title).join(" + ")
+      : seedFiltersLabel(seedFilters, t);
+    await runBySeedsEx(seeds, label, seedFilters);
   }
 
   // Режим «Швидко»: вибір тайтла в дропдауні = одразу пошук за одним сидом.
@@ -148,6 +256,14 @@ function SimilarInner() {
     setMode(next);
     // Студія без референсів — показуємо її порожній стан, а не чужі результати.
     if (next === "studio" && studioSeeds.length === 0) clearResults();
+    // ?seed={tmdbId} — deep-link швидкого режиму: зійшов, прибираємо з URL,
+    // інакше перезавантаження щоразу скидає користувача назад у «Швидко».
+    if (next !== "quick" && searchParams.get("seed")) {
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.delete("seed");
+      const rest = sp.toString();
+      router.replace(rest ? `/similar?${rest}` : "/similar", { scroll: false });
+    }
   }
 
   async function findByText() {
@@ -178,12 +294,57 @@ function SimilarInner() {
     if (seedParam) setMode("quick");
   }, [seedParam]);
 
+  // Відновлення режиму «Еталони» з URL (?seedIds= — внутрішні id): фільтри вже
+  // прийшли з URL в ініціалізаторі useState, еталони резолвимо singular-фетчем
+  // /api/title/{id}?lang= по кожному id; невідомі id тихо відкидаються.
+  // Один раз після монтування. Якщо користувач встиг щось додати, поки йшли
+  // фетчі — його стан перемагає (не перетираємо).
+  useEffect(() => {
+    const ids = seedIdsFromParams(searchParams);
+    if (!ids.length) return;
+    seedRestoringRef.current = true;
+    let alive = true;
+    void Promise.allSettled(ids.map((id) => getTitle(id, lang))).then((results) => {
+      if (!alive) return;
+      const restored: TitleCardType[] = [];
+      const seen = new Set<number>();
+      for (const r of results) {
+        const card = r.status === "fulfilled" ? r.value : null;
+        if (card && !seen.has(card.id)) {
+          seen.add(card.id);
+          restored.push(card);
+        }
+      }
+      seedRestoringRef.current = false;
+      setSeeds((prev) => (prev.length ? prev : restored));
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // URL-дзеркало режиму «Еталони»: кожна зміна еталонів/фільтрів оновлює query
+  // (router.replace без скролу, історію не засмічує). Інші параметри (?seed=)
+  // зберігаються; під час відновлення еталонів запис заблоковано.
+  const seedQsTarget = seedQsFromState(seeds, seedFilters);
+  const seedQsCurrent = seedQsFromParams(searchParams);
+  useEffect(() => {
+    if (seedRestoringRef.current) return;
+    if (seedQsTarget === seedQsCurrent) return;
+    const sp = new URLSearchParams(searchParams.toString());
+    for (const k of SEED_PARAM_KEYS) sp.delete(k);
+    for (const [k, v] of new URLSearchParams(seedQsTarget)) sp.set(k, v);
+    const rest = sp.toString();
+    router.replace(rest ? `/similar?${rest}` : "/similar", { scroll: false });
+  }, [seedQsTarget, seedQsCurrent, searchParams, router]);
+
   // Студія: живе оновлення з дебаунсом 500 мс, без кнопки (FR-21.3).
   useEffect(() => {
     const ids = studioSeeds.map((s) => s.id); // FR-21: внутрішні id
     if (!ids.length) return;
     const f = studioFilters;
-    const key = `${ids.join(",")}|${f.yearFrom ?? ""}|${f.yearTo ?? ""}|${f.type ?? ""}|${(f.genres ?? []).join(",")}|${lang}`;
+    const key = `${ids.join(",")}|${f.yearFrom ?? ""}|${f.yearTo ?? ""}|${(f.types ?? []).join(",")}|${(f.genres ?? []).join(",")}|${f.mood ?? ""}|${lang}`;
     if (key === lastStudioRunRef.current) return; // стан уже відпрацьований
     const timer = setTimeout(() => {
       lastStudioRunRef.current = key;
@@ -206,6 +367,7 @@ function SimilarInner() {
       unavailable,
       picked,
       seeds,
+      seedFilters,
       studioSeeds,
       studioFilters,
     };
@@ -221,8 +383,10 @@ function SimilarInner() {
       return;
     }
     if (mode === "seeds") {
+      // Ланцюг у «Еталонах»: підміняємо еталони, вхідні фільтри (жанри/настрій/
+      // роки/типи) зберігаємо — добірка продовжується в тому ж контексті.
       setSeeds([item]);
-      void runBySeedsEx([item], item.title);
+      void runBySeedsEx([item], item.title, seedFilters);
       return;
     }
     // «Швидко» і «Збірники» → швидкий режим з одним сидом
@@ -240,6 +404,7 @@ function SimilarInner() {
     setMode(head.mode);
     setPicked(head.picked);
     setSeeds(head.seeds);
+    setSeedFilters(head.seedFilters);
     setStudioSeeds(head.studioSeeds);
     setStudioFilters(head.studioFilters);
     setItems(head.items.length ? head.items : null);
@@ -364,10 +529,12 @@ function SimilarInner() {
           <div className="space-y-4">
             <SeedsBuilder
               seeds={seeds}
+              filters={seedFilters}
               onAdd={(x) => setSeeds((prev) => [...prev, x])}
               onRemove={(id) => setSeeds((prev) => prev.filter((s) => s.id !== id))}
               onClear={() => setSeeds([])}
               onFind={find}
+              onFilters={setSeedFilters}
               busy={busy}
             />
 

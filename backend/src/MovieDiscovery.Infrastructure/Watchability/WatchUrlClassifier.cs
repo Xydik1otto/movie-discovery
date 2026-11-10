@@ -105,4 +105,117 @@ public static partial class WatchUrlClassifier
 
     /// <summary>Регекс-пошук як у jw-класифікаторі (Match.Success замість IsMatch для GeneratedRegex).</summary>
     private static bool Search(this Regex re, string input) => re.Match(input).Success;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Покриття лінка (watch-верифікація): full | episode | unknown.
+    // ЧЕСНА класифікація за ФОРМОЮ URL: невідоме лишається unknown — false-positive
+    // «full» і є причиною скарги (Breaking Bad: YouTube watch?v= епізод показували
+    // як повний серіал). Живі сигнали (oEmbed-тайтл, duration сторінки) додає
+    // WatchLinkVerificationService — класифікатор лише хост/шлях-евристики.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    public const string Full = "full";
+    public const string Episode = "episode";
+    public const string Unknown = "unknown";
+
+    /// <summary>Епізодні шляхи Plex/HBO: /show/{slug}/season/2/episode/6, /…/episodes/.</summary>
+    [GeneratedRegex(@"/(?:season|episode)s?/", RegexOptions.IgnoreCase)]
+    private static partial Regex EpisodePathSegment();
+
+    /// <summary>
+    /// Класифікація покриття за формою URL (+ назва провайдера як підказка, mediaType
+    /// «movie|series» для неоднозначних гравців типу Netflix /watch/{id}).
+    /// Правила (консервативно, невідоме → unknown):
+    ///   • YouTube — ЗАВЖДИ unknown на рівні URL: форма watch?v= однакова для повного
+    ///     фільму й епізоду (реальний епізод-лінк Breaking Bad із БД — голий watch?v=),
+    ///   • IMDb /video/ → episode; /title/tt… → full;
+    ///   • Plex /movie/ або /show/ → full, /show/…/season|episode/ → episode;
+    ///   • Megogo /view/ → full; SweetTV /movie/ або /serial/ → full;
+    ///   • Netflix /title/ → full, /watch/{id} → episode (series) | full (movie);
+    ///   • Apple /movie|show/ → full, /episode/ → episode; HBO|Max /movie|show|series/
+    ///     → full, /seasons|episodes/ → episode; Crunchyroll /watch/ → episode,
+    ///     /series/ → full; Internet Archive /details/ → full.
+    /// </summary>
+    public static string ClassifyCoverage(string? url, string? providerName = null, string? mediaType = null)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return Unknown;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            uri.Host.Length == 0)
+            return Unknown;
+
+        var host = uri.Host.ToLowerInvariant();
+        if (host.StartsWith("www.", StringComparison.Ordinal)) host = host["www.".Length..];
+        var path = SafeUnescape(uri.AbsolutePath);
+        var p = (providerName ?? "").Trim().ToLowerInvariant();
+        var isSeries = string.Equals((mediaType ?? "").Trim(), "series", StringComparison.OrdinalIgnoreCase);
+
+        string? Family() =>
+            host.Contains("youtube") || host == "youtu.be" || p.Contains("youtube") ? "youtube" :
+            host.Contains("imdb.") || p.Contains("imdb") ? "imdb" :
+            host.Contains("plex.") || p.Contains("plex") ? "plex" :
+            host.Contains("megogo") || p.Contains("megogo") ? "megogo" :
+            host.Contains("sweet.tv") || p.Contains("sweet") ? "sweet" :
+            host.Contains("netflix") || p.Contains("netflix") ? "netflix" :
+            host.EndsWith("apple.com") || host.Contains("apple.tv") || p.Contains("apple") ? "apple" :
+            host.Contains("max.com") || host.Contains("hbo") || p.Contains("hbo") ? "hbo" :
+            host.Contains("crunchyroll") || p.Contains("crunchy") ? "crunchy" :
+            host.Contains("archive.org") || p.Contains("archive") ? "archive" :
+            null;
+
+        switch (Family())
+        {
+            case "youtube":
+                return Unknown; // див. док: форма watch?v= не розрізняє фільм/епізод — верифікатор вирішує
+
+            case "imdb":
+                if (path.StartsWith("/video/", StringComparison.OrdinalIgnoreCase)) return Episode;
+                if (path.StartsWith("/title/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "plex":
+                if (Search(EpisodePathSegment(), path)) return Episode;
+                if (path.Contains("/movie/", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("/show/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "megogo":
+                return path.Contains("/view/", StringComparison.OrdinalIgnoreCase) ? Full : Unknown;
+
+            case "sweet":
+                if (path.Contains("/movie/", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("/serial/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "netflix":
+                if (path.Contains("/title/", StringComparison.OrdinalIgnoreCase)) return Full;
+                if (path.Contains("/watch/", StringComparison.OrdinalIgnoreCase))
+                    return isSeries ? Episode : Full; // /watch/{id} — плеєр: епізод для серіалу, сам фільм для кіно
+                return Unknown;
+
+            case "apple":
+                if (path.Contains("/episode/", StringComparison.OrdinalIgnoreCase)) return Episode;
+                if (path.Contains("/movie/", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("/show/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "hbo":
+                if (Search(EpisodePathSegment(), path)) return Episode;
+                if (path.Contains("/movie/", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("/show/", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains("/series/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "crunchy":
+                if (path.Contains("/watch/", StringComparison.OrdinalIgnoreCase)) return Episode;  // /watch/{GUID} — епізодна сторінка
+                if (path.Contains("/series/", StringComparison.OrdinalIgnoreCase)) return Full;
+                return Unknown;
+
+            case "archive":
+                return path.Contains("/details/", StringComparison.OrdinalIgnoreCase) ? Full : Unknown;
+
+            default:
+                return Unknown; // невідомий хост/провайдер — чесна невизначеність
+        }
+    }
 }

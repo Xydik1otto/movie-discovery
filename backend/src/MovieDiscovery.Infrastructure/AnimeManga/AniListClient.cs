@@ -42,6 +42,7 @@ public sealed class AniListClient(
                 media {
                   id
                   title { romaji english }
+                  synonyms
                   coverImage { large }
                   description
                   episodes
@@ -60,8 +61,9 @@ public sealed class AniListClient(
         """;
 
     /// <summary>
-    /// Резерв ідентичний первинному запиту: title.ukrainian в API НЕ існує (GraphQL-валідація
-    /// відхиляла первинний запит), тому ukrainian прибрано й з первинного — fallback лишається страховкою.
+    /// Резерв-страховка: БЕЗ synonyms. Якщо primary (з новим полем) колись відхилено
+    /// GraphQL-валідацією (як це було з title.ukrainian), імпорт живе далі — просто без
+    /// synonyms-назв. Тому фолбек навмисно НЕ дублює нові поля.
     /// </summary>
     public const string MediaListQueryFallback = """
         query ($userId: Int, $type: MediaType) {
@@ -176,6 +178,7 @@ public sealed class AniListClient(
     /// Каталог-запит (sync аніме/манги): Page(perPage:50, page:N), sort=POPULARITY_DESC.
     /// title.ukrainian НЕ запитуємо — поля в API не існує (GraphQL-валідація відхиляє весь запит).
     /// description запитуємо завжди: HTML-опис → OverviewEn (санітизація в AniListMapper.CleanDescription).
+    /// synonyms (документоване поле Media) → розподіл uk/ru назв у AniListMapper.ApplySynonyms.
     /// </summary>
     public const string CatalogQuery = """
         query ($page: Int, $perPage: Int, $type: MediaType) {
@@ -183,6 +186,7 @@ public sealed class AniListClient(
             media(type: $type, sort: POPULARITY_DESC) {
               id
               title { romaji english }
+              synonyms
               coverImage { large }
               description
               episodes

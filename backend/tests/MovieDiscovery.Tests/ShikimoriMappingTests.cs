@@ -5,8 +5,9 @@ using MovieDiscovery.Infrastructure.Tmdb;
 namespace MovieDiscovery.Tests;
 
 /// <summary>
-/// Парсинг rates Shikimori + мапінг. КЛЮЧОВИЙ кейс: поле «russian» НІКОЛИ не потрапляє
-/// у title_uk (свідоме рішення власника — російської мови немає ніде).
+/// Парсинг rates Shikimori + мапінг. КЛЮЧОВИЙ кейс: поле «russian» НЕ потрапляє
+/// у title_uk (справжньої uk-назви в Shikimori немає) — тепер воно пише title_ru
+/// fill-only (політика власника 10.11).
 /// </summary>
 public class ShikimoriMappingTests
 {

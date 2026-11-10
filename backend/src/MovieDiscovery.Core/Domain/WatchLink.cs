@@ -28,4 +28,10 @@ public class WatchLink
     // мов НЕ заявило. Сигнатура входить до UNIQUE(title,provider,kind,region,COALESCE(audio_langs,'')).
     public string? AudioLangs { get; set; } // audio_langs
     public string? SubLangs { get; set; }   // sub_langs
+
+    // ── Watch-верифікація: покриття лінка ──
+    // coverage: full = перевірено — повний фільм/весь серіал; episode = фрагмент/епізод;
+    // NULL (або «unknown») = не перевірено. Пише лише WatchLinkVerificationService.
+    public string? Coverage { get; set; }     // coverage varchar(16)
+    public DateTime? VerifiedAt { get; set; } // verified_at — час останньої автоматичної верифікації
 }

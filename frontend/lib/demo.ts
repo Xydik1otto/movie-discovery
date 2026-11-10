@@ -12,7 +12,7 @@ import type {
   TitleDetail,
 } from "./types";
 import type { Lang } from "../i18n/I18nContext";
-import { GENRES } from "./constants";
+import { GENRES, type LocalizedOption } from "./constants";
 
 // FR-14: демо-провайдери перегляду (provider: sweettv|archive|tmdb-streaming).
 // Компактна форма → TitleCard.watchProviders; повна (+region/isAvailable) → detail.providers.
@@ -61,6 +61,8 @@ interface DemoTitle {
   type: "movie" | "series";
   uk: { title: string; overview: string; genres: string[] };
   en: { title: string; overview: string; genres: string[] };
+  // Рішення власника 10.11: ru — повноцінна третя мова UI (і демо-даних).
+  ru: { title: string; overview: string; genres: string[] };
   originalTitle: string;
   year: number;
   countries: string[];
@@ -86,6 +88,11 @@ const DEMO: DemoTitle[] = [
       overview: "A Kyiv detective investigates a string of disappearances. Every thread pulls him deeper into the city's past.",
       genres: ["thriller", "mystery", "crime"],
     },
+    ru: {
+      title: "Тень над Днепром",
+      overview: "Детектив киевского управления расследует серию исчезновений на Оболони. Каждая нить ведёт глубже в прошлое города.",
+      genres: ["триллер", "детектив", "криминал"],
+    },
     originalTitle: "Shadow Over the Dnipro",
     year: 2024, countries: ["UA"], ratingTmdb: 7.4, ratingImdb: 7.1,
     runtimeMin: 118, seasons: null,
@@ -104,6 +111,11 @@ const DEMO: DemoTitle[] = [
       title: "Night Hunters",
       overview: "A special investigations unit tracks a network that only operates after dark. Season three changes the rules.",
       genres: ["thriller", "crime", "drama"],
+    },
+    ru: {
+      title: "Ночные охотники",
+      overview: "Подразделение особых расследований выходит на след сети, которая работает только по ночам. Третий сезон — новые правила игры.",
+      genres: ["триллер", "криминал", "драма"],
     },
     originalTitle: "Night Hunters",
     year: 2022, countries: ["US"], ratingTmdb: 8.1, ratingImdb: 8.4,
@@ -124,6 +136,11 @@ const DEMO: DemoTitle[] = [
       overview: "Two rescuers are lost in the ice desert. Getting back means trusting each other more than their own voices.",
       genres: ["drama", "adventure"],
     },
+    ru: {
+      title: "Лёд",
+      overview: "Двое спасателей заблудились в ледяной пустыне. Чтобы вернуться, нужно доверять друг другу больше, чем собственным голосам.",
+      genres: ["драма", "приключения"],
+    },
     originalTitle: "The Frost",
     year: 2021, countries: ["IS", "SE"], ratingTmdb: 7.0, ratingImdb: 6.8,
     runtimeMin: 104, seasons: null,
@@ -142,6 +159,11 @@ const DEMO: DemoTitle[] = [
       title: "City Voices",
       overview: "A scrappy podcast studio becomes the unlikely heart of its neighborhood. Now it has listeners, debt and trouble.",
       genres: ["drama", "comedy"],
+    },
+    ru: {
+      title: "Голоса города",
+      overview: "Коммунальная подкаст-студия Харькова становится неожиданным центром района. Теперь у неё слушатели, долги и очень много проблем.",
+      genres: ["драма", "комедия"],
     },
     originalTitle: "City Voices",
     year: 2023, countries: ["UA"], ratingTmdb: 7.8, ratingImdb: 7.6,
@@ -162,6 +184,11 @@ const DEMO: DemoTitle[] = [
       overview: "A cinematographer on the edge of retirement gets one last job: to film a city that no longer exists.",
       genres: ["drama", "romance"],
     },
+    ru: {
+      title: "Последний кадр",
+      overview: "Кинооператор на грани отставки получает последнее задание: снять портрет города, которого больше нет.",
+      genres: ["драма", "мелодрама"],
+    },
     originalTitle: "The Last Frame",
     year: 2019, countries: ["FR"], ratingTmdb: 7.9, ratingImdb: 7.7,
     runtimeMin: 127, seasons: null,
@@ -180,6 +207,11 @@ const DEMO: DemoTitle[] = [
       title: "Powder and Ice",
       overview: "A former alpine racer is forced back onto the run he never finished five years ago.",
       genres: ["action", "thriller"],
+    },
+    ru: {
+      title: "Порох и лёд",
+      overview: "Бывший горнолыжник вынужден вернуться на трассу, которую так и не успел завершить пять лет назад.",
+      genres: ["боевик", "триллер"],
     },
     originalTitle: "Powder and Ice",
     year: 2025, countries: ["GB"], ratingTmdb: 6.9, ratingImdb: 6.5,
@@ -200,6 +232,11 @@ const DEMO: DemoTitle[] = [
       overview: "The crew of a research station at the edge of the solar system picks up a signal that should not exist. Season four: contact.",
       genres: ["sci-fi", "drama"],
     },
+    ru: {
+      title: "Тихая орбита",
+      overview: "Экипаж исследовательской станции на границе солнечной системы ловит сигнал, которого не должно существовать. Четвёртый сезон — контакт.",
+      genres: ["фантастика", "драма"],
+    },
     originalTitle: "The Quiet Orbit",
     year: 2020, countries: ["US", "CA"], ratingTmdb: 8.3, ratingImdb: 8.6,
     runtimeMin: 48, seasons: 4,
@@ -218,6 +255,11 @@ const DEMO: DemoTitle[] = [
       title: "Heart of the Steppe",
       overview: "1920s. A young cartographer sets out to map the steppe and finds a whole world missing from every map.",
       genres: ["history", "drama", "adventure"],
+    },
+    ru: {
+      title: "Сердце степи",
+      overview: "1920-е. Молодой картограф едет картографировать степь и находит там целый мир, которого не было ни на одной карте.",
+      genres: ["исторический", "драма", "приключения"],
     },
     originalTitle: "Heart of the Steppe",
     year: 2018, countries: ["UA", "PL"], ratingTmdb: 7.6, ratingImdb: 7.4,
@@ -385,8 +427,10 @@ export function demoSearch(
 export function demoSimilar(seedIds: number[], lang: Lang, limit = 20): SimilarItem[] {
   const seeds = DEMO.filter((d) => seedIds.includes(d.tmdbId) || seedIds.includes(d.id));
   const seedGenres = new Set(seeds.flatMap((s) => s[lang].genres));
-  const genreLabel = lang === "uk" ? "спільні жанри" : "shared genres";
-  const yearLabel = lang === "uk" ? "близький рік" : "close year";
+  const genreLabel =
+    lang === "uk" ? "спільні жанри" : lang === "ru" ? "общие жанры" : "shared genres";
+  const yearLabel =
+    lang === "uk" ? "близький рік" : lang === "ru" ? "близкий год" : "close year";
   return DEMO.filter((d) => !seedIds.includes(d.tmdbId) && !seedIds.includes(d.id))
     .map((d) => {
       const sharedGenres = d[lang].genres.filter((g) => seedGenres.has(g));
@@ -463,7 +507,7 @@ export function demoDiscover(lang: Lang, exclude: number[] = [], count = 10): Di
 
 // Статичні демо-питання онбордингу: 3 екрани постерів по жанрах + настрій + ера.
 export function demoOnboardingQuestions(lang: Lang): OnboardingQuestion[] {
-  const label = (g: { value: string; uk: string; en: string }) => (lang === "uk" ? g.uk : g.en);
+  const label = (g: LocalizedOption) => g[lang];
   const posterGroups = [GENRES.slice(0, 6), GENRES.slice(6, 11), GENRES.slice(11, 16)];
   const posters: OnboardingQuestion[] = posterGroups.map((g, i) => ({
     id: `posters-${i + 1}`,
@@ -471,21 +515,21 @@ export function demoOnboardingQuestions(lang: Lang): OnboardingQuestion[] {
     title: null,
     options: g.map((x) => ({ id: x.value, label: label(x), value: x.value })),
   }));
-  const moods: [string, string, string][] = [
-    ["fun", "Щось весале й легке", "Something fun and light"],
-    ["tense", "Напружене, на нервах", "Tense, on edge"],
-    ["cozy", "Затишне, під плед", "Cozy, blanket-level"],
-    ["sad", "Сумне, але чесне", "Sad but honest"],
-    ["epic", "Епічне, велике", "Epic, large-scale"],
-    ["mind", "Загадкове, для розуму", "Mysterious, brainy"],
+  const moods: [string, string, string, string][] = [
+    ["fun", "Щось весале й легке", "Something fun and light", "Что-то весёлое и лёгкое"],
+    ["tense", "Напружене, на нервах", "Tense, on edge", "Напряжённое, на нервах"],
+    ["cozy", "Затишне, під плед", "Cozy, blanket-level", "Уютное, под плед"],
+    ["sad", "Сумне, але чесне", "Sad but honest", "Грустное, но честное"],
+    ["epic", "Епічне, велике", "Epic, large-scale", "Эпичное, масштабное"],
+    ["mind", "Загадкове, для розуму", "Mysterious, brainy", "Загадочное, для ума"],
   ];
-  const eras: [string, string, string][] = [
-    ["1960s", "1960-ті", "1960s"],
-    ["1980s", "1980-ті", "1980s"],
-    ["1990s", "1990-ті", "1990s"],
-    ["2000s", "2000-ті", "2000s"],
-    ["2010s", "2010-ті", "2010s"],
-    ["2020s", "2020-ті", "2020s"],
+  const eras: [string, string, string, string][] = [
+    ["1960s", "1960-ті", "1960s", "1960-е"],
+    ["1980s", "1980-ті", "1980s", "1980-е"],
+    ["1990s", "1990-ті", "1990s", "1990-е"],
+    ["2000s", "2000-ті", "2000s", "2000-е"],
+    ["2010s", "2010-ті", "2010s", "2010-е"],
+    ["2020s", "2020-ті", "2020s", "2020-е"],
   ];
   return [
     ...posters,
@@ -493,13 +537,21 @@ export function demoOnboardingQuestions(lang: Lang): OnboardingQuestion[] {
       id: "mood",
       type: "mood",
       title: null,
-      options: moods.map(([id, uk, en]) => ({ id, label: lang === "uk" ? uk : en, value: id })),
+      options: moods.map(([id, uk, en, ru]) => ({
+        id,
+        label: lang === "uk" ? uk : lang === "ru" ? ru : en,
+        value: id,
+      })),
     },
     {
       id: "era",
       type: "era",
       title: null,
-      options: eras.map(([id, uk, en]) => ({ id, label: lang === "uk" ? uk : en, value: id })),
+      options: eras.map(([id, uk, en, ru]) => ({
+        id,
+        label: lang === "uk" ? uk : lang === "ru" ? ru : en,
+        value: id,
+      })),
     },
   ];
 }

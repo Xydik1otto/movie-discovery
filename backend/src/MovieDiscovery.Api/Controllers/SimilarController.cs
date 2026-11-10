@@ -27,6 +27,8 @@ public sealed class SimilarController(
         public int? YearTo { get; set; }
         public List<string>? Types { get; set; }
         public List<string>? Genres { get; set; }
+        /// <summary>Настрій (пресет MoodPresets, 10.11) — м'який жанровий вхід; працює і БЕЗ еталонів.</summary>
+        public string? Mood { get; set; }
     }
 
     public sealed class ByTextRequest
@@ -36,10 +38,12 @@ public sealed class SimilarController(
         public string? Lang { get; set; }
     }
 
-    /// <summary>Multi-seed GET (FR-21): ?ids=1,2,3&limit=20&lang=uk&yearFrom=&yearTo=&types=movie,series&genres=.
+    /// <summary>Multi-seed GET (FR-21): ?ids=1,2,3&limit=20&lang=uk&yearFrom=&yearTo=&types=movie,series&genres=&mood=tense.
     /// MD-03: ids — ЛИШЕ внутрішні title id (резолв строго по t.Id); невідомий id → 404 titles_not_found
     /// з переліком missing, без часткових результатів. Legacy tmdb-простір — лише POST by-seeds {tmdbIds}.
-    /// types/рік — hard-фільтри пулу (до сортування), genres — soft-boost (бонус до score, не відсікання).</summary>
+    /// types/рік — hard-фільтри пулу (до сортування), genres/mood — soft-boost (бонус до score, не відсікання).
+    /// Переписана система еталонів (10.11): еталони ОПЦІЙНІ — ids обов'язкові лише коли порожні І genres, І mood;
+    /// mood — ключ пресета MoodPresets (невідомий → 400 з переліком ключів).</summary>
     [HttpGet("by-seeds")]
     public async Task<IActionResult> BySeedsGet(
         [FromQuery] string? ids,
@@ -49,21 +53,35 @@ public sealed class SimilarController(
         [FromQuery] int? yearTo = null,
         [FromQuery] string? types = null,
         [FromQuery] string? genres = null,
+        [FromQuery] string? mood = null,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(ids))
-            return BadRequest(new { error = "invalid_request", message = "ids є обов'язковим (csv, від 1 до 10 ідентифікаторів)" });
+        // Опційні фільтри студії підборів (FR-21): type/рік — hard-фільтри пулу; жанри — soft-boost;
+        // настрій (10.11) — пресет MoodPresets, м'який жанровий вхід, працює і БЕЗ еталонів.
+        var genreList = SimilarFilters.NormalizeGenres(SimilarFilters.ParseCsv(genres), TmdbGenres.NormalizeToEn);
+        if (ValidateMood(mood, out var moodKey) is { } badMood) return badMood;
+        var hasExtras = genreList.Count > 0 || moodKey is not null;
 
-        var parsed = new List<int>();
-        foreach (var token in ids.Split(','))
+        // Еталони тепер ОПЦІЙНІ (10.11): ids обов'язкові лише коли немає ані жанрів, ані настрою;
+        // валідна комбінація «0 еталонів + genres/mood» — самодостатній запит.
+        List<int>? distinct = null;
+        if (!string.IsNullOrWhiteSpace(ids))
         {
-            if (!int.TryParse(token.Trim(), out var id))
-                return BadRequest(new { error = "invalid_request", message = $"Некоректний id: «{token.Trim()}»" });
-            parsed.Add(id);
+            var parsed = new List<int>();
+            foreach (var token in ids.Split(','))
+            {
+                if (!int.TryParse(token.Trim(), out var id))
+                    return BadRequest(new { error = "invalid_request", message = $"Некоректний id: «{token.Trim()}»" });
+                parsed.Add(id);
+            }
+            distinct = parsed.Distinct().ToList();
+            if (distinct is not { Count: >= 1 and <= 10 })
+                return BadRequest(new { error = "invalid_request", message = "ids має містити від 1 до 10 ідентифікаторів" });
         }
-        var distinct = parsed.Distinct().ToList();
-        if (distinct is not { Count: >= 1 and <= 10 })
-            return BadRequest(new { error = "invalid_request", message = "ids має містити від 1 до 10 ідентифікаторів" });
+        else if (!hasExtras)
+        {
+            return BadRequest(new { error = "invalid_request", message = "потрібні еталони, жанри або настрій" });
+        }
 
         if (ValidateYears(yearFrom, yearTo) is { } badYears) return badYears;
 
@@ -72,8 +90,12 @@ public sealed class SimilarController(
             YearFrom = yearFrom,
             YearTo = yearTo,
             Types = SimilarFilters.NormalizeTokens(SimilarFilters.ParseCsv(types)),
-            Genres = SimilarFilters.NormalizeGenres(SimilarFilters.ParseCsv(genres), TmdbGenres.NormalizeToEn),
+            Genres = genreList,
+            Mood = moodKey,
         };
+
+        if (distinct is null)
+            return await ScoreAsync([], limit, SearchController.Lang(lang), filters, ct);
 
         // MD-03: GET-простір — внутрішні id, резолв строго по t.Id (жодного tmdb-фолбеку).
         var found = await db.Titles.AsNoTracking()
@@ -91,7 +113,9 @@ public sealed class SimilarController(
     }
 
     /// <summary>
-    /// Multi-seed POST: 1–10 tmdbIds; незнайдені id → 404 з переліком. Фільтри FR-21 — опційні поля body.
+    /// Multi-seed POST: 1–10 tmdbIds, АБО genres/mood без еталонів (10.11: еталони опційні —
+    /// мінімум 1 еталон вимагається лише коли порожні І genres, І mood; верхня межа 10 не міняється).
+    /// Незнайдені id → 404 з переліком. Фільтри FR-21 — опційні поля body.
     /// LEGACY (MD-03): подвійний резолв — tmdb_id ПЕРШИЙ, fallback на внутрішній id. Через це існує
     /// контракт колізій: при A.Id == B.TmdbId запит POST tmdbIds=A повертає B (tmdb-приорітет),
     /// тоді як GET ?ids=A повертає A (внутрішній простір). Не змінювати резолв без узгодження контракту.
@@ -99,7 +123,16 @@ public sealed class SimilarController(
     [HttpPost("by-seeds")]
     public async Task<IActionResult> BySeeds([FromBody] BySeedsRequest req, CancellationToken ct)
     {
-        if (req.TmdbIds is not { Count: >= 1 and <= 10 })
+        if (ValidateMood(req.Mood, out var moodKey) is { } badMood) return badMood;
+
+        var genreList = SimilarFilters.NormalizeGenres(req.Genres ?? [], TmdbGenres.NormalizeToEn);
+        var hasExtras = genreList.Count > 0 || moodKey is not null;
+        var seedCount = req.TmdbIds?.Count ?? 0;
+
+        // Еталони опційні (10.11): 0 еталонів валідно при жанрах або настрої.
+        if (seedCount == 0 && !hasExtras)
+            return BadRequest(new { error = "invalid_request", message = "потрібні еталони, жанри або настрій" });
+        if (seedCount > 10)
             return BadRequest(new { error = "invalid_request", message = "tmdbIds має містити від 1 до 10 ідентифікаторів" });
 
         if (ValidateYears(req.YearFrom, req.YearTo) is { } badYears) return badYears;
@@ -109,9 +142,10 @@ public sealed class SimilarController(
             YearFrom = req.YearFrom,
             YearTo = req.YearTo,
             Types = SimilarFilters.NormalizeTokens(req.Types ?? []),
-            Genres = SimilarFilters.NormalizeGenres(req.Genres ?? [], TmdbGenres.NormalizeToEn),
+            Genres = genreList,
+            Mood = moodKey,
         };
-        return await RunBySeedsAsync(req.TmdbIds.Distinct().ToList(), req.Limit, SearchController.Lang(req.Lang), filters, ct);
+        return await RunBySeedsAsync(req.TmdbIds?.Distinct().ToList() ?? [], req.Limit, SearchController.Lang(req.Lang), filters, ct);
     }
 
     /// <summary>Вільний текст. Ollama недоступна → fallback Е0/Е1 (keywords/genres); нічого не спрацювало → 503.</summary>
@@ -188,4 +222,20 @@ public sealed class SimilarController(
         yearFrom is int from && yearTo is int to && from > to
             ? BadRequest(new { error = "invalid_request", message = "yearFrom не може бути більшим за yearTo" })
             : null;
+
+    /// <summary>Валідація mood (10.11): відсутній/порожній → ок (null у normalized); невідомий ключ
+    /// пресета → 400 invalid_request з переліком доступних ключів MoodPresets. Спільно для GET і POST.</summary>
+    private IActionResult? ValidateMood(string? mood, out string? normalized)
+    {
+        normalized = null;
+        if (string.IsNullOrWhiteSpace(mood)) return null;
+        if (!MoodPresets.IsValid(mood))
+            return BadRequest(new
+            {
+                error = "invalid_request",
+                message = $"Невідомий настрій «{mood.Trim()}». Доступні: {string.Join(", ", MoodPresets.Keys)}",
+            });
+        normalized = MoodPresets.Normalize(mood);
+        return null;
+    }
 }

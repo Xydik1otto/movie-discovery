@@ -35,14 +35,58 @@ public sealed class SimilarityService(
         Title seed, int limit, string lang, SimilarFilters? filters = null, CancellationToken ct = default) =>
         SimilarBySeedsAsync([seed], limit, lang, filters, ct);
 
-    /// <summary>Multi-seed: 1..10 еталонів. filters — опційні hard-фільтри type/рік + soft-boost жанрів (FR-21).</summary>
+    /// <summary>Multi-seed: 0..10 еталонів. filters — hard-фільтри type/рік + soft-boost жанрів (FR-21);
+    /// переписана система еталонів (10.11): 0 еталонів валідно, коли є жанри або настрій —
+    /// агрегат будує «віртуальний профіль» з явних жанрів (вага 1.0) і жанрів настрою (MoodGenreWeight).</summary>
     public async Task<List<ScoredTitle>> SimilarBySeedsAsync(
         IReadOnlyList<Title> seeds, int limit, string lang, SimilarFilters? filters = null, CancellationToken ct = default)
     {
-        var seedFeatures = await BuildSeedFeaturesAsync(seeds, ct);
-        var seedAgg = SeedAggregate.FromSeeds(seedFeatures);
+        var seedFeatures = seeds.Count > 0 ? await BuildSeedFeaturesAsync(seeds, ct) : [];
+        var seedAgg = MergeExtraGenres(SeedAggregate.FromSeeds(seedFeatures), filters);
         var candidates = await LoadCandidatesAsync(seedAgg, filters, ct);
         return await ScoreAndRankAsync(seedAgg, candidates, limit, lang, tokenizeKeywords: false, filters, ct);
+    }
+
+    /// <summary>Переписана система еталонів (10.11): явні жанри користувача (вага 1.0) і жанри
+    /// настрою (MoodGenreWeight) зливаються у жанровий сигнал агрегата за MAX-вагою — за ними
+    /// працюють і meta-пул кандидатів, і жанровий сигнал движка. Сід-derived жанри (ваги k/n)
+    /// не перекриваються: беремо максимум. Без extra-жанрів повертаємо вхідний агрегат.</summary>
+    private static SeedAggregate MergeExtraGenres(SeedAggregate agg, SimilarFilters? filters)
+    {
+        var extras = new List<(string Genre, double Weight)>();
+        if (filters?.Genres is { Count: > 0 } userGenres)
+            foreach (var g in userGenres)
+                extras.Add((g, 1.0));
+        if (filters?.Mood is { } mood)
+            foreach (var g in MoodPresets.GenresOf(mood))
+                extras.Add((g, MoodPresets.MoodGenreWeight));
+        if (extras.Count == 0) return agg;
+
+        var map = new Dictionary<string, (string Display, double Weight)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in agg.Genres)
+            map[f.Value.Trim()] = (f.Value.Trim(), f.Weight);
+        foreach (var (g, w) in extras)
+        {
+            var key = g.Trim();
+            var cur = map.TryGetValue(key, out var c) ? c.Weight : 0.0;
+            map[key] = (key, Math.Max(cur, w));
+        }
+
+        return new SeedAggregate
+        {
+            SeedTmdbIds = agg.SeedTmdbIds,
+            SeedLocalIds = agg.SeedLocalIds,
+            Type = agg.Type,
+            Genres = [.. map.Values.Select(v => new WeightedFeature(v.Display, v.Weight))],
+            Keywords = agg.Keywords,
+            Actors = agg.Actors,
+            Directors = agg.Directors,
+            Year = agg.Year,
+            Rating = agg.Rating,
+            RuntimeMin = agg.RuntimeMin,
+            Embedding = agg.Embedding,
+            TmdbSimilarWeights = agg.TmdbSimilarWeights,
+        };
     }
 
     /// <summary>
@@ -277,9 +321,17 @@ LIMIT 1500").ToListAsync(ct));
                 .ToDictionaryAsync(e => e.TitleId, e => e.Vec, ct);
 
         // Soft-boost жанрів (FR-21): перетин з жанрами-акцентами додає бонус до score (НЕ відсікання).
+        // Переписана система еталонів (10.11): у boost входять і жанри настрою (MoodPresets).
         HashSet<string>? boostSet = null;
-        if (filters?.Genres is { Count: > 0 } boostGenres)
-            boostSet = new HashSet<string>(boostGenres, StringComparer.OrdinalIgnoreCase);
+        var boostGenres = filters?.Genres;
+        var boostMood = filters?.Mood;
+        if (boostGenres is { Count: > 0 } || boostMood is not null)
+        {
+            boostSet = new HashSet<string>(boostGenres ?? [], StringComparer.OrdinalIgnoreCase);
+            if (boostMood is not null)
+                foreach (var g in MoodPresets.GenresOf(boostMood))
+                    boostSet.Add(g);
+        }
 
         var scored = new List<ScoredTitle>(candidates.Count);
         foreach (var t in candidates)

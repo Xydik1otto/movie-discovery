@@ -405,6 +405,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("audio_langs");
 
+                    b.Property<string>("Coverage")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("coverage");
+
                     b.Property<string>("Currency")
                         .HasMaxLength(8)
                         .HasColumnType("character varying(8)")
@@ -451,6 +456,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.Property<string>("Url")
                         .HasColumnType("text")
                         .HasColumnName("url");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
 
                     b.HasKey("Id")
                         .HasName("pk_providers");
@@ -694,6 +703,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.Property<double>("Popularity")
                         .HasColumnType("double precision")
                         .HasColumnName("popularity");
+
+                    b.Property<string>("PosterLocal")
+                        .HasColumnType("text")
+                        .HasColumnName("poster_local");
 
                     b.Property<string>("PosterPath")
                         .HasColumnType("text")
@@ -1028,6 +1041,11 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("checked_at");
 
+                    b.Property<string>("Coverage")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("coverage");
+
                     b.Property<string>("Dub")
                         .HasColumnType("text")
                         .HasColumnName("dub");
@@ -1068,6 +1086,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.Property<string>("Url")
                         .HasColumnType("text")
                         .HasColumnName("url");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
 
                     b.HasKey("Id")
                         .HasName("pk_watch_links");

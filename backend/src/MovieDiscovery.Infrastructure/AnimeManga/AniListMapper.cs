@@ -6,7 +6,9 @@ namespace MovieDiscovery.Infrastructure.AnimeManga;
 
 /// <summary>
 /// AniList MediaListCollection entry → Title-патч. title_uk пишемо ЛИШЕ зі справжньої
-/// uk-назви (media.title.ukrainian); score_anilist — meanScore (в імпорті averageScore) (0–100) / 10.
+/// uk-назви (media.title.ukrainian); synonyms розподіляємо за мовами (fill-only):
+/// кирилиця з ї/і/є/ґ → title_uk, кирилиця без них → title_ru, латиниця → title_en.
+/// score_anilist — meanScore (в імпорті averageScore) (0–100) / 10.
 /// Опис (description) — лише en: HTML санітизуємо в OverviewEn (uk-описів в AniList немає).
 /// </summary>
 public static class AniListMapper
@@ -37,6 +39,9 @@ public static class AniListMapper
         t.AnilistId = m.Id > 0 ? m.Id : null;
         t.TitleEn = JikanMediaMapper.FirstNonEmpty(m.Title?.Romaji, m.Title?.English) ?? t.TitleEn ?? "";
         t.TitleUk = JikanMediaMapper.FirstNonEmpty(m.Title?.Ukrainian) ?? t.TitleUk; // справжній uk, інакше null
+        // synonyms → назви за мовами (fill-only): справжні назви (romaji/ukrainian) мають пріоритет,
+        // synonyms лише дозаповнюють порожні (політика власника 10.11 — російські ТА українські назви)
+        ApplySynonyms(t, m.Synonyms);
         // Опис — тільки en (uk-описів в AniList не буває); порожній/відсутній не затирає наявний
         t.OverviewEn = CleanDescription(m.Description) ?? t.OverviewEn;
         t.Year = m.StartDate?.Year is > 1900 and < 3000 ? m.StartDate!.Year : null;
@@ -93,4 +98,43 @@ public static class AniListMapper
     }
 
     private static string? FirstNonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private static readonly char[] UkrainianOnlyLetters = ['\u0457', '\u0456', '\u0454', '\u0491']; // ї і є ґ
+
+    /// <summary>
+    /// Розподіл synonyms за мовами (fill-only, політика власника 10.11): кирилиця з
+    /// українськими літерами (ї/і/є/ґ) → title_uk, кирилиця без них → title_ru, латиниця →
+    /// title_en лише якщо той ще порожній. Перший відповідний синонім кожної мови виграє;
+    /// не-латиниця/не-кирилиця (кана, ієрогліфи) — ігноруємо.
+    /// </summary>
+    private static void ApplySynonyms(Title t, List<string>? synonyms)
+    {
+        if (synonyms is not { Count: > 0 }) return;
+        foreach (var raw in synonyms)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var name = raw.Trim();
+            if (HasCyrillic(name))
+            {
+                if (HasUkrainianMarks(name))
+                {
+                    if (string.IsNullOrWhiteSpace(t.TitleUk)) t.TitleUk = name;
+                }
+                else if (string.IsNullOrWhiteSpace(t.TitleRu))
+                {
+                    t.TitleRu = name;
+                }
+            }
+            else if (HasLatin(name) && string.IsNullOrWhiteSpace(t.TitleEn))
+            {
+                t.TitleEn = name;
+            }
+        }
+    }
+
+    private static bool HasCyrillic(string s) => s.Any(c => c is >= '\u0400' and <= '\u04FF');
+
+    private static bool HasUkrainianMarks(string s) => s.ToLowerInvariant().IndexOfAny(UkrainianOnlyLetters) >= 0;
+
+    private static bool HasLatin(string s) => s.Any(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z');
 }

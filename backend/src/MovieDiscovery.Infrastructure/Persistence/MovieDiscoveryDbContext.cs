@@ -94,6 +94,11 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.Property(x => x.SubLangs).HasColumnName("sub_langs");
             e.Property(x => x.Price).HasColumnName("retail_price");
             e.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(8);
+            // Watch-верифікація: покриття лінка (full = повний фільм/весь серіал, episode =
+            // фрагмент/епізод; NULL = не перевірено) + час верифікації. Міграція — оркестратор
+            // (ОБИДВІ таблиці: watch_links + providers).
+            e.Property(x => x.Coverage).HasColumnName("coverage").HasMaxLength(16);
+            e.Property(x => x.VerifiedAt).HasColumnName("verified_at");
             e.HasOne(x => x.Title)
                 .WithMany()
                 .HasForeignKey(x => x.TitleId)
@@ -199,6 +204,9 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.HasIndex(x => new { x.TitleId, x.Provider, x.Kind, x.Region, x.AudioLangs }).IsUnique();
             e.HasIndex(x => x.TitleId);
             e.HasIndex(x => new { x.Provider, x.IsAvailable });
+            // Watch-верифікація: покриття лінка + час верифікації (та сама міграція оркестратора).
+            e.Property(x => x.Coverage).HasColumnName("coverage").HasMaxLength(16);
+            e.Property(x => x.VerifiedAt).HasColumnName("verified_at");
         });
 
         // FR-16/17: профіль смаку юзера — зв'язка user_id → постійний профіль списків + jsonb-мапи ваг

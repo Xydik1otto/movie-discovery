@@ -1,58 +1,63 @@
-// Статичні довідники для фільтрів та бейджів. Локалізовані пари uk/en.
+// Статичні довідники для фільтрів та бейджів. Локалізовані трійки uk/en/ru
+// (рішення власника 10.11: російська — третя мова інтерфейсу).
 import type { AudioLangCode, CategoryCode, ProviderKind } from "./types";
+import type { Lang } from "../i18n/I18nContext";
 
-export const GENRES: { value: string; uk: string; en: string }[] = [
-  { value: "драма", uk: "драма", en: "drama" },
-  { value: "комедія", uk: "комедія", en: "comedy" },
-  { value: "бойовик", uk: "бойовик", en: "action" },
-  { value: "триллер", uk: "триллер", en: "thriller" },
-  { value: "детектив", uk: "детектив", en: "mystery" },
-  { value: "кримінал", uk: "кримінал", en: "crime" },
-  { value: "фантастика", uk: "фантастика", en: "sci-fi" },
-  { value: "фентезі", uk: "фентезі", en: "fantasy" },
-  { value: "жахи", uk: "жахи", en: "horror" },
-  { value: "пригоди", uk: "пригоди", en: "adventure" },
-  { value: "анімація", uk: "анімація", en: "animation" },
-  { value: "документальний", uk: "документальний", en: "documentary" },
-  { value: "мелодрама", uk: "мелодрама", en: "romance" },
-  { value: "історичний", uk: "історичний", en: "history" },
-  { value: "музика", uk: "музика", en: "music" },
-  { value: "військовий", uk: "військовий", en: "war" },
+// Форма довідникового елемента з локалізованими назвами всіх мов UI.
+export type LocalizedOption = { value: string; uk: string; en: string; ru: string };
+
+export const GENRES: LocalizedOption[] = [
+  { value: "драма", uk: "драма", en: "drama", ru: "драма" },
+  { value: "комедія", uk: "комедія", en: "comedy", ru: "комедия" },
+  { value: "бойовик", uk: "бойовик", en: "action", ru: "боевик" },
+  { value: "триллер", uk: "триллер", en: "thriller", ru: "триллер" },
+  { value: "детектив", uk: "детектив", en: "mystery", ru: "детектив" },
+  { value: "кримінал", uk: "кримінал", en: "crime", ru: "криминал" },
+  { value: "фантастика", uk: "фантастика", en: "sci-fi", ru: "фантастика" },
+  { value: "фентезі", uk: "фентезі", en: "fantasy", ru: "фэнтези" },
+  { value: "жахи", uk: "жахи", en: "horror", ru: "ужасы" },
+  { value: "пригоди", uk: "пригоди", en: "adventure", ru: "приключения" },
+  { value: "анімація", uk: "анімація", en: "animation", ru: "анимация" },
+  { value: "документальний", uk: "документальний", en: "documentary", ru: "документальный" },
+  { value: "мелодрама", uk: "мелодрама", en: "romance", ru: "мелодрама" },
+  { value: "історичний", uk: "історичний", en: "history", ru: "исторический" },
+  { value: "музика", uk: "музика", en: "music", ru: "музыка" },
+  { value: "військовий", uk: "військовий", en: "war", ru: "военный" },
 ];
 
 // FR-19: країна виробника (ISO-2) — основні варіанти для /api/search?country=.
-export const COUNTRY_OPTIONS: { value: string; uk: string; en: string }[] = [
-  { value: "US", uk: "США", en: "USA" },
-  { value: "GB", uk: "Велика Британія", en: "United Kingdom" },
-  { value: "JP", uk: "Японія", en: "Japan" },
-  { value: "KR", uk: "Південна Корея", en: "South Korea" },
-  { value: "CN", uk: "Китай", en: "China" },
-  { value: "UA", uk: "Україна", en: "Ukraine" },
-  { value: "FR", uk: "Франція", en: "France" },
-  { value: "DE", uk: "Німеччина", en: "Germany" },
-  { value: "IT", uk: "Італія", en: "Italy" },
-  { value: "ES", uk: "Іспанія", en: "Spain" },
-  { value: "IN", uk: "Індія", en: "India" },
-  { value: "CA", uk: "Канада", en: "Canada" },
-  { value: "AU", uk: "Австралія", en: "Australia" },
+export const COUNTRY_OPTIONS: LocalizedOption[] = [
+  { value: "US", uk: "США", en: "USA", ru: "США" },
+  { value: "GB", uk: "Велика Британія", en: "United Kingdom", ru: "Великобритания" },
+  { value: "JP", uk: "Японія", en: "Japan", ru: "Япония" },
+  { value: "KR", uk: "Південна Корея", en: "South Korea", ru: "Южная Корея" },
+  { value: "CN", uk: "Китай", en: "China", ru: "Китай" },
+  { value: "UA", uk: "Україна", en: "Ukraine", ru: "Украина" },
+  { value: "FR", uk: "Франція", en: "France", ru: "Франция" },
+  { value: "DE", uk: "Німеччина", en: "Germany", ru: "Германия" },
+  { value: "IT", uk: "Італія", en: "Italy", ru: "Италия" },
+  { value: "ES", uk: "Іспанія", en: "Spain", ru: "Испания" },
+  { value: "IN", uk: "Індія", en: "India", ru: "Индия" },
+  { value: "CA", uk: "Канада", en: "Canada", ru: "Канада" },
+  { value: "AU", uk: "Австралія", en: "Australia", ru: "Австралия" },
 ];
 
 export const REGIONS: string[] = ["UA", "PL", "US", "GB", "DE"];
 
 // Мови оригіналу (ISO 639-1) — для фільтра language.
-export const LANGUAGES: { value: string; uk: string; en: string }[] = [
-  { value: "uk", uk: "українська", en: "Ukrainian" },
-  { value: "en", uk: "англійська", en: "English" },
-  { value: "ja", uk: "японська", en: "Japanese" },
-  { value: "ko", uk: "корейська", en: "Korean" },
-  { value: "fr", uk: "французька", en: "French" },
-  { value: "de", uk: "німецька", en: "German" },
-  { value: "es", uk: "іспанська", en: "Spanish" },
-  { value: "it", uk: "італійська", en: "Italian" },
-  { value: "pl", uk: "польська", en: "Polish" },
+export const LANGUAGES: LocalizedOption[] = [
+  { value: "uk", uk: "українська", en: "Ukrainian", ru: "украинский" },
+  { value: "en", uk: "англійська", en: "English", ru: "английский" },
+  { value: "ja", uk: "японська", en: "Japanese", ru: "японский" },
+  { value: "ko", uk: "корейська", en: "Korean", ru: "корейский" },
+  { value: "fr", uk: "французька", en: "French", ru: "французский" },
+  { value: "de", uk: "німецька", en: "German", ru: "немецкий" },
+  { value: "es", uk: "іспанська", en: "Spanish", ru: "испанский" },
+  { value: "it", uk: "італійська", en: "Italian", ru: "итальянский" },
+  { value: "pl", uk: "польська", en: "Polish", ru: "польский" },
   // російської в списках мов НЕМА — свідоме рішення власника
-  { value: "zh", uk: "китайська", en: "Chinese" },
-  { value: "hi", uk: "гінді", en: "Hindi" },
+  { value: "zh", uk: "китайська", en: "Chinese", ru: "китайский" },
+  { value: "hi", uk: "гінді", en: "Hindi", ru: "хинди" },
 ];
 
 export const TITLE_TYPES: { value: "movie" | "series" | "show"; key: string }[] = [
@@ -137,17 +142,17 @@ export const WATCH_KIND_BADGE_STYLE: Record<ProviderKind, string> = {
 };
 
 // Формати аніме (tv/movie/ova/ona/special) та манги (manga/manhwa/one_shot/novel)
-// — значення зі схеми БД (titles.format), локалізовані підписи uk/en.
-export const ANIME_FORMATS: { value: string; uk: string; en: string }[] = [
-  { value: "tv", uk: "ТВ-серіал", en: "TV series" },
-  { value: "movie", uk: "Фільм", en: "Movie" },
-  { value: "ova", uk: "OVA", en: "OVA" },
-  { value: "ona", uk: "ONA", en: "ONA" },
-  { value: "special", uk: "Спешиал", en: "Special" },
-  { value: "manga", uk: "Манга", en: "Manga" },
-  { value: "manhwa", uk: "Манхва", en: "Manhwa" },
-  { value: "one_shot", uk: "Ван-шот", en: "One-shot" },
-  { value: "novel", uk: "Ранобе", en: "Novel" },
+// — значення зі схеми БД (titles.format), локалізовані підписи uk/en/ru.
+export const ANIME_FORMATS: LocalizedOption[] = [
+  { value: "tv", uk: "ТВ-серіал", en: "TV series", ru: "ТВ-сериал" },
+  { value: "movie", uk: "Фільм", en: "Movie", ru: "Фильм" },
+  { value: "ova", uk: "OVA", en: "OVA", ru: "OVA" },
+  { value: "ona", uk: "ONA", en: "ONA", ru: "ONA" },
+  { value: "special", uk: "Спешиал", en: "Special", ru: "Спешл" },
+  { value: "manga", uk: "Манга", en: "Manga", ru: "Манга" },
+  { value: "manhwa", uk: "Манхва", en: "Manhwa", ru: "Манхва" },
+  { value: "one_shot", uk: "Ван-шот", en: "One-shot", ru: "Ван-шот" },
+  { value: "novel", uk: "Ранобе", en: "Novel", ru: "Ранобэ" },
 ];
 
 // Підмножина для чіпів фільтра формату на сторінці /manga.
@@ -162,11 +167,11 @@ export const MANGA_FORMATS = ANIME_FORMATS.filter((f) =>
 // Локалізований підпис формату; невідоме значення показуємо «як є».
 export function formatLabel(
   value: string | null | undefined,
-  lang: "uk" | "en",
+  lang: Lang,
 ): string | null {
   if (!value) return null;
   const f = ANIME_FORMATS.find((x) => x.value === value);
-  return f ? (lang === "uk" ? f.uk : f.en) : value;
+  return f ? f[lang] : value;
 }
 
 const TMDB_IMG = "https://image.tmdb.org";

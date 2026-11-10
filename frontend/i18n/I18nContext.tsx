@@ -11,10 +11,12 @@ import {
 } from "react";
 import { uk } from "./uk";
 import { en } from "./en";
+import { ru } from "./ru";
 
-export type Lang = "uk" | "en";
+// Рішення власника 10.11: російська — повноцінна третя мова інтерфейсу.
+export type Lang = "uk" | "en" | "ru";
 
-const DICTS: Record<Lang, Record<string, string>> = { uk, en };
+const DICTS: Record<Lang, Record<string, string>> = { uk, en, ru };
 
 interface I18nContextValue {
   lang: Lang;
@@ -30,10 +32,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("lang");
-      if (saved === "uk" || saved === "en") {
+      if (saved === "uk" || saved === "en" || saved === "ru") {
         setLangState(saved);
         document.documentElement.lang = saved;
       }
+      // Невідома збережена мова → мовчки лишається дефолт "uk" (без крашу).
     } catch {
       // localStorage may be unavailable — uk default stays
     }

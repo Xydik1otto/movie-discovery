@@ -31,6 +31,48 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 const TABS: ListKind[] = ["watchlist", "liked", "watched", "read", "disliked"];
 const RATEABLE: ListKind[] = ["watched", "read"];
 
+// Категорії всередині списку: клієнтський фільтр поверх ПОТОЧНОГО kind-списку
+// (бекенд списків не змінюємо). Один item потрапляє в РІВНО одну категорію.
+type ListCategoryId =
+  | "movie"
+  | "series"
+  | "short"
+  | "animationMovie"
+  | "animationSeries";
+const CATEGORIES: ListCategoryId[] = [
+  "movie",
+  "series",
+  "short",
+  "animationMovie",
+  "animationSeries",
+];
+// «Усі» + категорії — порядок чіпів панелі.
+const CATEGORY_OPTIONS: ("all" | ListCategoryId)[] = ["all", ...CATEGORIES];
+
+// Мапінг категорії по item. Порядок перевірок: short → animation → movie →
+// series (short пріоритетніший за анімацію, анімація — за звичайні фільми/
+// серіали). Жанри — канонічні en-значення БД ("animation", "short");
+// format — значення titles.format ("tv"/"movie"/…, див. constants.ts).
+function listCategoryOf(item: ListItem): ListCategoryId {
+  const genres = item.genres ?? [];
+  if (genres.includes("short")) return "short"; // тип не важливий
+  const isAnimation = genres.includes("animation") || item.type === "anime";
+  if (isAnimation) {
+    if (
+      item.type === "movie" ||
+      (item.type === "anime" && item.format === "movie")
+    ) {
+      return "animationMovie";
+    }
+    // series/show, anime (tv/ova/ona/…), manga — багатосерійні.
+    return "animationSeries";
+  }
+  if (item.type === "movie") return "movie";
+  // series/show — серіали; решта (наприклад, не-анімаційна манґа) теж
+  // багатосерійна за змістом — щоб кожен item мав рівно одну категорію.
+  return "series";
+}
+
 // Гостьовий запис → форма ListItem для рендера картки (без серверних запитів).
 function guestToItem(e: GuestEntry): ListItem {
   return {
@@ -51,6 +93,9 @@ export default function ListsPage() {
   const { user, ready } = useAuth();
   const isGuest = ready && !user;
   const [kind, setKind] = useState<ListKind>("watchlist");
+  // Категорія всередині списку — ЛОКАЛЬНИЙ стан (без URL), скидається на
+  // «Усі» при зміні вкладки kind.
+  const [category, setCategory] = useState<ListCategoryId | "all">("all");
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
@@ -292,7 +337,10 @@ export default function ListsPage() {
       type="button"
       role="tab"
       aria-selected={kind === k}
-      onClick={() => setKind(k)}
+      onClick={() => {
+        setKind(k);
+        setCategory("all"); // нова вкладка — категорія скидається на «Усі»
+      }}
       className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
         kind === k ? "bg-accent text-white" : "bg-panel text-mute hover:text-ink"
       }`}
@@ -309,6 +357,29 @@ export default function ListsPage() {
   );
 
   const shownItems = user ? items : guestItems;
+  // Лічильники категорій по ПОТОЧНОМУ kind-списку. Під час завантаження —
+  // нулі, щоб не блимали лічильники попереднього kind.
+  const categoryCounts = useMemo(() => {
+    const counts: Record<ListCategoryId, number> = {
+      movie: 0,
+      series: 0,
+      short: 0,
+      animationMovie: 0,
+      animationSeries: 0,
+    };
+    if (!loading) {
+      for (const it of shownItems) counts[listCategoryOf(it)] += 1;
+    }
+    return counts;
+  }, [shownItems, loading]);
+  // Клієнтський фільтр вибраної категорії поверх показаного kind-списку.
+  const filteredItems = useMemo(
+    () =>
+      category === "all"
+        ? shownItems
+        : shownItems.filter((it) => listCategoryOf(it) === category),
+    [shownItems, category],
+  );
   const shownStats: ListStats | null = user
     ? stats
     : {
@@ -435,6 +506,38 @@ export default function ListsPage() {
         )}
       </div>
 
+      {/* Категорії всередині списку (усі kind-вкладки): лічильник по поточному
+          списку; чіп з нульовим лічильником видно, але він вимкнений. */}
+      <div role="group" className="mb-4 flex flex-wrap gap-2">
+        {CATEGORY_OPTIONS.map((c) => {
+          const count = c === "all" ? shownItems.length : categoryCounts[c];
+          const active = category === c;
+          return (
+            <button
+              key={c}
+              type="button"
+              disabled={count === 0}
+              aria-pressed={active}
+              onClick={() => setCategory(c)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
+                active
+                  ? "bg-accent text-white"
+                  : "bg-panel text-mute enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              }`}
+            >
+              {t(c === "all" ? "lists.cat.all" : `lists.cat.${c}`)}
+              <span
+                className={`ml-1.5 text-[11px] font-bold ${
+                  active ? "text-white/70" : "text-mute/80"
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {user && unavailable && <ApiBanner />}
       {actionError && (
         <p className="mb-3 text-sm text-amber-300">{t("common.error")}</p>
@@ -446,9 +549,12 @@ export default function ListsPage() {
         <EmptyState icon="⚠️" title={t("common.error")} />
       ) : shownItems.length === 0 ? (
         <EmptyState />
+      ) : filteredItems.length === 0 ? (
+        // Вибрана категорія порожня (наприклад, останній тайтл категорії видалили).
+        <EmptyState icon="🗂" title={t("lists.categoryEmpty")} />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {shownItems.map((item) => (
+          {filteredItems.map((item) => (
             <TitleCard
               key={`${kind}-${item.id}`}
               item={item}

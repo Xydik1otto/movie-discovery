@@ -29,12 +29,13 @@ public sealed class ShikimoriRate
     [JsonPropertyName("manga")] public ShikimoriMedia? Manga { get; set; }
 }
 
-/// <summary>Тайтл Shikimori у відповіді rates. Поле «russian» НІКОЛИ не потрапляє в title_uk.</summary>
+/// <summary>Тайтл Shikimori у відповіді rates. Поле «russian» (кирилиця) → title_ru (fill-only,
+/// політика власника 10.11); у title_uk воно НЕ потрапляє (справжня uk-назва в Shikimori відсутня).</summary>
 public sealed class ShikimoriMedia
 {
     [JsonPropertyName("id")] public long Id { get; set; }
     [JsonPropertyName("name")] public string? Name { get; set; }       // ромадзі/оригінал
-    [JsonPropertyName("russian")] public string? Russian { get; set; } // російська назва — ігноруємо повністю
+    [JsonPropertyName("russian")] public string? Russian { get; set; } // російська назва → title_ru (fill-only)
     [JsonPropertyName("image")] public JsonElement? Image { get; set; } // string-шлях або об'єкт (залежить від версії API)
     [JsonPropertyName("kind")] public string? Kind { get; set; }       // tv | movie | ova | ona | special | manga | manhwa | ...
     [JsonPropertyName("score")] public double? Score { get; set; }     // 0–10

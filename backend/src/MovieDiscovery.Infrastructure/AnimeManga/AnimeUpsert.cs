@@ -55,6 +55,10 @@ public static class AnimeUpsertCore
     {
         if (!string.IsNullOrWhiteSpace(patch.TitleEn)) target.TitleEn = patch.TitleEn;
         if (!string.IsNullOrWhiteSpace(patch.TitleUk)) target.TitleUk = patch.TitleUk;
+        // title_ru — fill-only (політика власника 10.11): Wikidata-синк або раніший імпорт
+        // вже можуть мати ru-назву → непорожню НЕ перезаписуємо (на відміну від en/uk)
+        if (string.IsNullOrWhiteSpace(target.TitleRu) && !string.IsNullOrWhiteSpace(patch.TitleRu))
+            target.TitleRu = patch.TitleRu;
         if (!string.IsNullOrWhiteSpace(patch.OverviewEn)) target.OverviewEn = patch.OverviewEn;
         if (!string.IsNullOrWhiteSpace(patch.OverviewUk)) target.OverviewUk = patch.OverviewUk;
         if (patch.Year is > 0) target.Year = patch.Year;

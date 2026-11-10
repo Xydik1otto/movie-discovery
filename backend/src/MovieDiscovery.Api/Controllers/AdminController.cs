@@ -31,6 +31,9 @@ public sealed class AdminController(
     PlexSyncQueue plexSyncQueue,
     WikipediaPosterSyncQueue wikipediaPosterSyncQueue,
     PosterCleanupQueue posterCleanupQueue,
+    PosterStorageSyncQueue posterStorageSyncQueue,
+    PosterSourceSyncQueue posterSourceSyncQueue,
+    WatchLinkVerificationQueue watchLinkVerificationQueue,
     Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
     Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions,
     Microsoft.Extensions.Options.IOptions<TmdbOptions> tmdbOptions) : ControllerBase
@@ -390,6 +393,57 @@ public sealed class AdminController(
             return StatusCode(503, new { error = "queue_full", message = "Черга переповнена" });
 
         return Accepted(new { queued = true, source = "posters-cleanup" });
+    }
+
+    /// <summary>Постери-MinIO (10.11): перенос існуючих poster_path у бакет (poster_local).</summary>
+    [HttpPost("sync/poster-storage")]
+    public IActionResult SyncPosterStorage([FromBody] PosterStorageSyncJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && (mr < 1 || mr > 500_000))
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–500 000" });
+
+        if (!posterStorageSyncQueue.TryEnqueue(new PosterStorageSyncJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга переповнена" });
+
+        return Accepted(new { queued = true, source = "poster-storage" });
+    }
+
+    /// <summary>Джерела постерів (10.11): TMDB/Shikimori/Jikan → poster_path+backdrop_path (fill-only, popularity DESC).</summary>
+    [HttpPost("sync/poster-source")]
+    public IActionResult SyncPosterSource([FromBody] PosterSourceSyncJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && (mr < 1 || mr > 2_000_000))
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–2 000 000" });
+
+        if (!posterSourceSyncQueue.TryEnqueue(new PosterSourceSyncJob(maxRows, req?.TitleId)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга переповнена" });
+
+        return Accepted(new { queued = true, source = "poster-source-sync" });
+    }
+
+    /// <summary>Watch-верифікація (10.11): coverage full|episode|unknown — жива перевірка лінків.</summary>
+    [HttpPost("sync/watch-verify")]
+    public IActionResult SyncWatchVerify([FromBody] WatchLinkVerificationJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && (mr < 1 || mr > 1_000_000))
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–1 000 000" });
+
+        if (!watchLinkVerificationQueue.TryEnqueue(new WatchLinkVerificationJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга переповнена" });
+
+        return Accepted(new { queued = true, source = "watch-verify" });
     }
 
     /// <summary>

@@ -17,7 +17,7 @@ const CODE_RE = /^(shared_genres|shared_actor|decade):(.+)$/i;
 
 // MD-08: у кодах reasons бекенд шле англійські жанрові ключі TMDB
 // («спільний жанр: adventure» у uk UI — неправильно). Мапимо через довідник
-// GENRES (uk-значення + en-назви) і докладаємо ключі, яких у довіднику нема.
+// GENRES (uk/ru-значення + en-назви) і докладаємо ключі, яких у довіднику нема.
 // Невідомі ключі лишаємо «як є» (не вигадуємо переклад).
 const GENRE_UK: Record<string, string> = (() => {
   const m: Record<string, string> = {};
@@ -34,7 +34,23 @@ const GENRE_UK: Record<string, string> = (() => {
   return m;
 })();
 
+// ru-варіанта тієї самої мапи (рішення власника 10.11: ru — третя мова UI).
+const GENRE_RU: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const g of GENRES) {
+    m[g.value.toLowerCase()] = g.ru;
+    m[g.en.toLowerCase()] = g.ru;
+  }
+  m["science fiction"] = "фантастика";
+  m["sci-fi"] = "фантастика";
+  m["family"] = "семейный";
+  m["western"] = "вестерн";
+  m["tv movie"] = "телефильм";
+  return m;
+})();
+
 function localizeGenre(value: string, lang: Lang): string {
+  if (lang === "ru") return GENRE_RU[value.toLowerCase()] ?? value;
   if (lang !== "uk") return value; // en-інтерфейс: англійські ключі доречні
   return GENRE_UK[value.toLowerCase()] ?? value;
 }
@@ -59,7 +75,7 @@ export function parseReasons(reasons: string[], lang: Lang): ReasonBadge[] {
       // decade:<1990s> (допускаємо і «1995») → «1990-ті» / «1990s».
       const y = /(\d{4})/.exec(value);
       const dec = y ? String(Math.floor(Number(y[1]) / 10) * 10) : value.replace(/s$/i, "");
-      out.push({ kind: "decade", label: lang === "uk" ? `${dec}-ті` : `${dec}s` });
+      out.push({ kind: "decade", label: lang === "uk" ? `${dec}-ті` : lang === "ru" ? `${dec}-е` : `${dec}s` });
     }
   }
   return out.slice(0, 4);

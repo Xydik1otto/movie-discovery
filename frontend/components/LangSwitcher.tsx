@@ -31,6 +31,7 @@ export default function LangSwitcher() {
     >
       {btn("uk", "UA")}
       {btn("en", "EN")}
+      {btn("ru", "RU")}
     </div>
   );
 }

@@ -46,12 +46,12 @@ public sealed class WatchController(
         var links = await db.WatchLinks.AsNoTracking()
             .Where(w => w.TitleId == id)
             .OrderBy(w => w.Provider).ThenBy(w => w.Kind)
-            .Select(w => new { w.Provider, w.Kind, w.Url, w.Region, w.IsAvailable, w.AudioLang, w.Quality, w.Dub, w.AudioLangs, w.SubLangs })
+            .Select(w => new { w.Provider, w.Kind, w.Url, w.Region, w.IsAvailable, w.AudioLang, w.Quality, w.Dub, w.AudioLangs, w.SubLangs, w.Coverage })
             .ToListAsync(ct);
 
         var catalog = await db.Providers.AsNoTracking()
             .Where(p => p.TitleId == id)
-            .Select(p => new { Provider = p.ProviderName, p.Kind, p.Url, p.Source, p.Region, p.AudioLangs, p.SubLangs, p.Price, p.Currency })
+            .Select(p => new { Provider = p.ProviderName, p.Kind, p.Url, p.Source, p.Region, p.AudioLangs, p.SubLangs, p.Price, p.Currency, p.Coverage })
             .ToListAsync(ct);
 
         var merged = WatchOptionsMerger.Merge(
@@ -61,6 +61,18 @@ public sealed class WatchController(
             catalog.Select(p => new WatchOptionRow(
                 p.Provider, p.Kind, p.Url, p.Source, p.Region, null, null, null, null,
                 p.AudioLangs, p.SubLangs, p.Price, p.Currency)));
+
+        // Покриття (watch-верифікатор) — властивість ЦІЛЬОВОГО URL (full = повний фільм/весь
+        // серіал, episode = фрагмент/епізод, NULL = не перевірено). Дедуп не міняє URL, тож
+        // coverage збираємо з обох джерел за (provider, url) — перший non-null перемагає
+        // (watch_links першими: верифіковані рядки).
+        var coverageByKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var w in links)
+            if (w.Url is { } wu && w.Coverage is { } wc)
+                coverageByKey.TryAdd(CoverageKey(w.Provider, wu), wc);
+        foreach (var p in catalog)
+            if (p.Url is { } pu && p.Coverage is { } pc)
+                coverageByKey.TryAdd(CoverageKey(p.Provider, pu), pc);
 
         // UX-04 tri-state: plex-рядки з каталогу (isAvailable=null) перевіряємо живцем
         // («Where to Watch» сторінки тайтла, кеш обмежений); усе інше — як у джерела.
@@ -109,8 +121,15 @@ public sealed class WatchController(
                     Currency = o.Currency,
                     UrlKind = WatchUrlClassifier.Classify(o.Url),
                     AvailabilityStatus = status,
+                    Coverage = o.Url is { } covUrl && coverageByKey.TryGetValue(CoverageKey(o.Provider, covUrl), out var cov)
+                        ? cov
+                        : null,
                 };
             })],
         });
     }
+
+    /// <summary>Ключ покриття: provider (lowercase) + url (trimmed) — та сама нормалізація, що в дедупі мерджера.</summary>
+    private static string CoverageKey(string provider, string url) =>
+        $"{provider.Trim().ToLowerInvariant()}\u0001{url.Trim()}";
 }

@@ -77,12 +77,17 @@ public sealed class TitleDetailResponse : TitleCard
     public string? OriginalLanguage { get; set; }
 }
 
-/// <summary>Мапінг Title → TitleCard з локалізацією uk/en (fallback en) і жанрів (en→uk).</summary>
+/// <summary>
+/// Мапінг Title → TitleCard з локалізацією uk/ru/en (рішення власника 10.11: ru —
+/// повноцінна мова відповідей; uk-режим → uk ?? ru ?? en, ru-режим → ru ?? uk ?? en)
+/// і жанрів (en→uk — ru-назв жанрів нема, ru-режим лишає uk-жанри).
+/// </summary>
 public static class TitleMapper
 {
     public static TitleCard ToCard(Core.Domain.Title t, string lang)
     {
-        var uk = Core.Similarity.SimilarityTexts.IsUk(lang);
+        // Канонізація мови одне джерело правди — SearchController.Lang (uk|ru|en, кейс-незалежно).
+        var mode = Controllers.SearchController.Lang(lang);
         var isAnimeOrManga = t.Type is "anime" or "manga";
         return new TitleCard
         {
@@ -91,18 +96,30 @@ public static class TitleMapper
             Type = t.Type,
             // Рішення власника 09.11: українська назва → російський фолбек (якщо
             // офіційної uk немає) → оригінальна en. Назви — з Wikidata/IMDb akas.
-            Title = uk ? (FirstNonEmpty(t.TitleUk) ?? FirstNonEmpty(t.TitleRu) ?? t.TitleEn) : t.TitleEn,
+            // 10.11: окремий ru-режим — title_ru з фолбеком ru → uk → en.
+            Title = mode switch
+            {
+                "ru" => FirstNonEmpty(t.TitleRu) ?? FirstNonEmpty(t.TitleUk) ?? t.TitleEn,
+                "en" => t.TitleEn,
+                _ => FirstNonEmpty(t.TitleUk) ?? FirstNonEmpty(t.TitleRu) ?? t.TitleEn,
+            },
             OriginalTitle = t.TitleEn,
             Year = t.Year,
-            Genres = uk ? t.Genres.Select(Infrastructure.Tmdb.TmdbGenres.ToUk).ToList() : [.. t.Genres],
+            Genres = mode == "en" ? [.. t.Genres] : t.Genres.Select(Infrastructure.Tmdb.TmdbGenres.ToUk).ToList(),
             Countries = [.. t.Countries],
             RatingTmdb = t.RatingTmdb,
             RatingImdb = t.RatingImdb,
             PosterUrl = ImgUrl(t.PosterPath, "w500"),
             RuntimeMin = t.RuntimeMin,
             Seasons = t.Seasons,
-            // Описи: uk → ru → en (рішення власника 09.11 для назв/описів; ru — Wikidata schema:description)
-            Overview = uk ? (FirstNonEmpty(t.OverviewUk) ?? FirstNonEmpty(t.OverviewRu) ?? t.OverviewEn) : t.OverviewEn,
+            // Описи: uk-режим uk → ru → en; ru-режим ru → uk → en (рішення власника 09.11/10.11;
+            // ru — Wikidata schema:description)
+            Overview = mode switch
+            {
+                "ru" => FirstNonEmpty(t.OverviewRu) ?? FirstNonEmpty(t.OverviewUk) ?? t.OverviewEn,
+                "en" => t.OverviewEn,
+                _ => FirstNonEmpty(t.OverviewUk) ?? FirstNonEmpty(t.OverviewRu) ?? t.OverviewEn,
+            },
             TrailerYtId = t.TrailerYtId,
             Format = isAnimeOrManga ? t.Format : null,
             Episodes = isAnimeOrManga ? t.Episodes : null,

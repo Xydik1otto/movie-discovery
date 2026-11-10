@@ -19,6 +19,8 @@ public sealed record SimilarFilters
     public IReadOnlyList<string> Types { get; init; } = [];
     /// <summary>Жанри-акценти у канонічній en lowercase-формі (нормалізація — на контролері).</summary>
     public IReadOnlyList<string> Genres { get; init; } = [];
+    /// <summary>Настрій (пресет MoodPresets) — м'який жанровий вхід; працює і БЕЗ еталонів.</summary>
+    public string? Mood { get; init; }
 
     /// <summary>Чи є hard-фільтри пулу (type/рік); жанри на пул не впливають.</summary>
     public bool HasPoolFilters => YearFrom is not null || YearTo is not null || Types.Count > 0;

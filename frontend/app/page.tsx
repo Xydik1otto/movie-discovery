@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
 import { guardedBySeedsEx, guardedSearch } from "@/lib/fallback";
+import { readCatalogCache, writeCatalogCache } from "@/lib/catalogCache";
 import { MAX_PAGES, PAGE_SIZE, usePagedSearch } from "@/lib/usePagedSearch";
 import type { FetchPageArgs } from "@/lib/usePagedSearch";
 import {
@@ -231,6 +232,14 @@ function HomePageInner() {
   const [applied, setApplied] = useState<Applied>(init.applied);
 
   // Серверна пагінація: page належить хуку, старт — з URL.
+  // SWR-кеш (10.11): дефолтний вигляд (/ без параметрів: порожні фільтри,
+  // sort=popularity, сторінка 1) малюється ОДРАЗУ з localStorage-кешу — перший
+  // fetch іде рефрешем у фоні без скелетона. Дефолтність перевіряємо через
+  // serializeHomeParams: порожній URL-рядок = усі значення за замовчуванням.
+  // Читаємо кеш ОДИН раз на маунт; інші види/фільтри кеш не чіпають.
+  const [initialCatalog] = useState(() =>
+    serializeHomeParams(init.applied, init.page) === "" ? readCatalogCache(lang) : null,
+  );
   const fetchPage = useCallback(
     ({ page: pg, omitTotal }: FetchPageArgs) =>
       guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE, omitTotal }, lang).then((r) => {
@@ -239,11 +248,24 @@ function HomePageInner() {
           e.name = "ApiUnavailableError";
           throw e;
         }
+        // SWR-кеш: успішна СТОРІНКА 1 дефолтного вигляду живить localStorage
+        // (демо-відповідь недоступного API сюди не потрапляє — вище throw).
+        if (pg === 1 && serializeHomeParams(applied, 1) === "") {
+          writeCatalogCache(lang, r.data.items, r.data.total, r.data.totalCapped === true);
+        }
         return r.data;
       }),
     [applied, lang],
   );
-  const list = usePagedSearch(fetchPage, JSON.stringify(applied) + "|" + lang, true, init.page);
+  const list = usePagedSearch(
+    fetchPage,
+    JSON.stringify(applied) + "|" + lang,
+    true,
+    init.page,
+    initialCatalog ? initialCatalog.items : null,
+    initialCatalog ? initialCatalog.total : null,
+    initialCatalog ? initialCatalog.capped : false,
+  );
 
   // ── URL-дзеркало: стан → ?params ──
   // replace — для зміни фільтрів (reset не засмічує історію);
@@ -489,7 +511,7 @@ function HomePageInner() {
                       )
                     }
                   >
-                    {lang === "uk" ? g.uk : g.en}
+                    {g[lang]}
                   </Chip>
                 ))}
               </ChipGroup>
@@ -640,7 +662,7 @@ function HomePageInner() {
                       <option value="">{t("filters.any")}</option>
                       {COUNTRY_OPTIONS.map((c) => (
                         <option key={c.value} value={c.value}>
-                          {lang === "uk" ? c.uk : c.en}
+                          {c[lang]}
                         </option>
                       ))}
                     </select>
@@ -724,7 +746,7 @@ function HomePageInner() {
                       <option value="">{t("filters.any")}</option>
                       {LANGUAGES.map((l) => (
                         <option key={l.value} value={l.value}>
-                          {lang === "uk" ? l.uk : l.en}
+                          {l[lang]}
                         </option>
                       ))}
                     </select>
@@ -820,7 +842,7 @@ function HomePageInner() {
                           )
                         }
                       >
-                        {lang === "uk" ? g.uk : g.en}
+                        {g[lang]}
                       </Chip>
                     ))}
                   </ChipGroup>

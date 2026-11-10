@@ -72,13 +72,23 @@ export function usePagedSearch<T>(
   resetKey: string,
   enabled = true,
   initialPage = 1,
+  // SWR-кеш дефолтного вигляду (10.11): якщо передано непорожні initialItems —
+  // каталог малюється ОДРАЗУ (firstLoad=false), а перший fetch усе одно виконується
+  // як рефреш: під час нього дані НЕ ховаються (скелетон лише коли items порожні,
+  // сітка з busy лише притлумлюється). Кеш прострочений/порожній → null → скелетон.
+  initialItems: T[] | null = null,
+  initialTotal: number | null = null,
+  initialTotalCapped = false,
 ): PagedList<T> {
-  const [items, setItems] = useState<T[]>([]);
+  const hasInitial = initialItems != null && initialItems.length > 0;
+  const [items, setItems] = useState<T[]>(() =>
+    initialItems != null && initialItems.length > 0 ? initialItems : []);
   const [page, setPage] = useState(() => Math.max(1, Math.floor(initialPage) || 1));
-  const [total, setTotal] = useState<number | null>(null);
-  const [totalCapped, setTotalCapped] = useState(false);
+  const [total, setTotal] = useState<number | null>(() =>
+    hasInitial && initialTotal != null && initialTotal >= 0 ? initialTotal : null);
+  const [totalCapped, setTotalCapped] = useState<boolean>(() => (hasInitial ? initialTotalCapped : false));
   const [busy, setBusy] = useState(false);
-  const [firstLoad, setFirstLoad] = useState(true);
+  const [firstLoad, setFirstLoad] = useState(() => !hasInitial);
   const [error, setError] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [nonce, setNonce] = useState(0); // retry-лічильник у deps fetch-ефекту

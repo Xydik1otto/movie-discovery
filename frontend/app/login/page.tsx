@@ -21,9 +21,19 @@ function LoginInner() {
 
   // needLogin=1 → /discover пояснює, чому користувач тут.
   const needLogin = params.get("needLogin") === "1";
+  // ?reset=1 → редірект із /reset-password: пароль змінено, чесне підтвердження.
+  const resetDone = params.get("reset") === "1";
 
   return (
     <div>
+      {resetDone && (
+        <p
+          role="status"
+          className="mx-auto mb-4 max-w-sm rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-300"
+        >
+          {t("auth.resetSuccess")}
+        </p>
+      )}
       {needLogin && (
         <p
           role="status"

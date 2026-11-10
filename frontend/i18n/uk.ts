@@ -1,4 +1,4 @@
-// Українська — мова за замовчуванням. Російської в проєкті НЕМАЄ і не буде.
+// Українська — мова за замовчуванням. Мови UI: uk/en/ru (рішення власника 10.11).
 export const uk = {
   "brand.name": "КіноНавігатор",
   "brand.tagline": "Знайди, що дивитись — за параметрами чи «схоже на…»",
@@ -83,12 +83,13 @@ export const uk = {
   "title.added": "Додано",
 
   "similar.seedsTitle": "Схоже на...",
-  "similar.seedsHint": "Додай 1–10 еталонів — шукатимемо спільний ДНК-код: жанри, настрій, епоху, акторів.",
+  "similar.seedsHint": "Додай улюблені фільми й серіали як еталони — або просто вибери жанри й настрій: шукатимемо спільний ДНК-код: жанри, настрій, епоху, акторів.",
   "similar.searchSeed": "Пошук еталонів…",
   "similar.find": "Знайти схоже",
   "similar.seeds": "Еталони",
   "similar.seedsCount": "Еталонів: {n}/10",
   "similar.seedsRequired": "Додай щонайменше один еталон",
+  "similar.seedsOrFiltersRequired": "Додай еталон або вибери жанри чи настрій",
   "similar.clear": "Очистити",
   "similar.byText": "Опиши словами",
   "similar.byTextPlaceholder": "Наприклад: похмурий детектив про дощове місто й самотнього детектива",
@@ -276,6 +277,33 @@ export const uk = {
   // MD-07: сервер не підтвердив вихід — чесне повідомлення замість фальшивого розлогіну.
   "auth.logoutUnavailable": "Не вдалося вийти — сервер недоступний. Ти все ще залогінений.",
 
+  // --- 10.11: підтвердження пошти, resend, forgot/reset password ---
+  "auth.password2": "Повторіть пароль",
+  "auth.passwordsMismatch": "Паролі не співпадають",
+  "auth.checkEmail": "Перевірте пошту",
+  "auth.checkEmailText": "Надіслали лист підтвердження на {email}. Перейди за посиланням із листа, щоб активувати акаунт.",
+  "auth.resendAgain": "Надіслати лист ще раз",
+  "auth.resendSent": "Лист надіслано ще раз — перевір пошту (і спам).",
+  "auth.resendTooFrequent": "Занадто часто — спробуйте пізніше",
+  "auth.resendError": "Не вдалося надіслати лист — спробуй ще раз",
+  "auth.emailNotConfirmed": "Підтвердіть пошту",
+  "auth.emailNotConfirmedText": "Ми надіслали лист підтвердження на {email}. Підтверди адресу і спробуй увійти знову.",
+  "auth.forgotPassword": "Забули пароль?",
+  "auth.forgotTitle": "Відновлення пароля",
+  "auth.forgotSubtitle": "Вкажи email — надішлемо посилання для зміни пароля.",
+  "auth.forgotSubmit": "Надіслати посилання",
+  "auth.forgotSent": "Якщо акаунт із таким email існує, ми надіслали лист із посиланням на зміну пароля. Перевір пошту (і спам).",
+  "auth.resetTitle": "Новий пароль",
+  "auth.resetSubtitle": "Придумай новий пароль для свого акаунта.",
+  "auth.resetSubmit": "Змінити пароль",
+  "auth.resetSuccess": "Пароль змінено — увійдіть новим",
+  "auth.confirmTitle": "Підтвердження пошти",
+  "auth.confirmVerifying": "Підтверджуємо пошту…",
+  "auth.confirmSuccess": "Пошту підтверджено",
+  "auth.confirmResendHint": "Вкажи email — надішлемо новий лист підтвердження.",
+  "auth.invalidLink": "Посилання недійсне або застаріле",
+  "auth.retry": "Спробувати ще",
+
   // --- FR-18: «Кінотека» (discover) ---
   "nav.discover": "Кінотека",
   "discover.title": "Кінотека",
@@ -338,6 +366,15 @@ export const uk = {
 
   // MD-04: гостьові списки у localStorage (FR-16)
   "lists.guestNotice": "Гостьовий режим: списки зберігаються лише в цьому браузері. Увійди, щоб зберегти їх в акаунті.",
+
+  // Категорії всередині списків (клієнтський фільтр поверх вкладок kind)
+  "lists.cat.all": "Усі",
+  "lists.cat.movie": "Фільми",
+  "lists.cat.series": "Серіали",
+  "lists.cat.short": "Короткометражки",
+  "lists.cat.animationMovie": "Анімація: фільми",
+  "lists.cat.animationSeries": "Анімація: багатосерійні",
+  "lists.categoryEmpty": "У цій категорії поки порожньо",
   "lists.storageUnavailable": "Локальне сховище недоступне (приватний режим) — гостьові списки не збережуться після закриття сторінки.",
 
   // --- FR-21: «Схоже на...» — студія, збірники, ланцюг, reasons ---
@@ -350,6 +387,21 @@ export const uk = {
   "similar.reason.genre": "спільний жанр: {value}",
   "similar.reason.actor": "спільний актор: {value}",
   "similar.reason.decade": "та сама декада: {decade}",
+
+  // Вхідні фільтри режиму «Еталони» (працюють і без еталонів).
+  "similar.fTypes": "Типи",
+  "similar.fGenres": "Жанри",
+  "similar.fMood": "Настрій",
+  "similar.yearRangeError": "Рік «від» не може бути більшим за рік «до»",
+  // Пресети настрою бекенду (MoodPresets) — ключі cozy..mindbender.
+  "mood.cozy": "затишний",
+  "mood.tense": "напружений",
+  "mood.funny": "веселий",
+  "mood.sad": "сумний",
+  "mood.epic": "епічний",
+  "mood.romantic": "романтичний",
+  "mood.family": "сімейний",
+  "mood.mindbender": "для розуму",
 
   "studio.title": "Студія підборів",
   "studio.hint": "Додай 1–10 еталонів і звуж рамки: роки, тип, жанровий акцент — результати оновлюються наживо.",

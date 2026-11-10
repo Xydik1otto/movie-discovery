@@ -43,6 +43,7 @@ export default function SettingsPage() {
             [
               ["uk", "Українська"],
               ["en", "English"],
+              ["ru", "Русский"],
             ] as [Lang, string][]
           ).map(([code, label]) => (
             <button

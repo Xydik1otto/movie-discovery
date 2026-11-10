@@ -307,13 +307,18 @@ export interface GuestListItem {
 
 // --- FR-21: «Схоже на...» — студія, збірники, reasons-коди ---
 
-// Опційні фільтри студії для GET /api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=.
-// genres — soft-boost (не hard-фільтр), type/рік — hard-рамки.
+// Опційні фільтри для GET /api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=&mood=.
+// genres — soft-boost (не hard-фільтр), types/рік — hard-фільтри, mood — пресет настрою
+// бекенду (cozy|tense|funny|sad|epic|romantic|family|mindbender).
+// Еталони тепер ОПЦІЙНІ: бекенд дозволяє 0 ids, коли є genres або mood.
 export interface SimilarSeedsFilters {
   yearFrom?: number | null;
   yearTo?: number | null;
-  // "" | "movie" | "series" | "anime" (null/"" = усі типи)
-  type?: string | null;
+  // hard-фільтр типів МАСИВОМ: movie|series|show|anime|manga (null/[] = усі типи).
+  // Раніше був одиночний type?: string — студійний select зберігає вибір як масив
+  // з одного елемента (сумісність studio-режиму).
+  types?: string[] | null;
+  mood?: string | null;
   genres?: string[] | null;
 }
 

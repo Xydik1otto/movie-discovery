@@ -23,6 +23,7 @@ using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watch;
+using MovieDiscovery.Infrastructure.Storage;
 using MovieDiscovery.Infrastructure.Watchability;
 using MovieDiscovery.Infrastructure.Wikipedia;
 using MovieDiscovery.Infrastructure.Wikidata;
@@ -66,6 +67,8 @@ public class Program
         // «Де подивитись»: JustWatch (усі провайдери, рішення власника 09.11) + Megogo free (UA) + Plex free.
         builder.Services.Configure<JustWatchSyncOptions>(builder.Configuration.GetSection("JustWatch"));
         builder.Services.Configure<MegogoOptions>(builder.Configuration.GetSection("Megogo"));
+        // Auth-листи (10.11): SMTP env-gated (MAIL_ENABLED=false → чесний лог-режим).
+        builder.Services.AddEmailing(builder.Configuration);
         builder.Services.Configure<PlexOptions>(builder.Configuration.GetSection("Plex"));
         // UX-02: Wikipedia-постери (QID-first) + чистки фейкових/wrong-Commons постерів.
         builder.Services.Configure<WikipediaPosterOptions>(builder.Configuration.GetSection("Wikipedia"));
@@ -298,6 +301,19 @@ public class Program
         });
         builder.Services.AddScoped<PosterFakeCleanupService>();
         builder.Services.AddScoped<CommonsWrongPosterCleanupService>();
+        // Постери-MinIO (10.11): сховище fail-closed (Enabled=false без env) + синк poster_path → бакет.
+        builder.Services.AddSingleton<IPosterStorage, MinioPosterStorage>();
+        builder.Services.AddSingleton<PosterStorageSyncQueue>();
+        builder.Services.AddHttpClient<PosterStorageSyncService>();
+        // Джерела постерів (10.11): TMDB-резолв + масовий keyset-синк + аніме-покриття.
+        builder.Services.AddSingleton<PosterSourceSyncQueue>();
+        builder.Services.AddScoped<ITmdbImagesService, TmdbImagesService>();
+        builder.Services.AddScoped<PosterCoverageService>();
+        builder.Services.AddScoped<PosterSourceSyncService>();
+        // Watch-верифікація (10.11): coverage full|episode|unknown — фоновий обхід лінків.
+        builder.Services.AddHttpClient<WatchLinkVerificationService>((sp, c) =>
+            c.Timeout = TimeSpan.FromSeconds(15));
+        builder.Services.AddSingleton<WatchLinkVerificationQueue>();
         // UX-04: перевірка «Where to Watch» сторінки тайтла (tri-state, обмежений кеш) —
         // окремий короткий таймаут (PlexOptions.AvailabilityTimeoutMs, 10s), не sync-таймаут.
         builder.Services.AddHttpClient<PlexAvailabilityService>((sp, c) =>
@@ -410,6 +426,9 @@ public class Program
             builder.Services.AddHostedService<PlexSyncBackgroundService>();
             builder.Services.AddHostedService<WikipediaPosterSyncBackgroundService>();
             builder.Services.AddHostedService<PosterCleanupBackgroundService>();
+            builder.Services.AddHostedService<PosterStorageSyncBackgroundService>();
+            builder.Services.AddHostedService<PosterSourceSyncBackgroundService>();
+            builder.Services.AddHostedService<WatchLinkVerificationBackgroundService>();
         }
 
         var app = builder.Build();

@@ -59,6 +59,8 @@ public sealed class AniListMedia
     [JsonPropertyName("volumes")] public int? Volumes { get; set; }
     [JsonPropertyName("format")] public string? Format { get; set; } // TV | MOVIE | OVA | ONA | SPECIAL | MANGA | NOVEL | ONE_SHOT
     [JsonPropertyName("genres")] public List<string>? Genres { get; set; }
+    // Alternative titles of the media — історично сюди потрапляють і кириличні (ru/uk) варіанти
+    [JsonPropertyName("synonyms")] public List<string>? Synonyms { get; set; }
     [JsonPropertyName("studios")] public AniListStudios? Studios { get; set; }
     [JsonPropertyName("startDate")] public AniListDate? StartDate { get; set; }
     [JsonPropertyName("averageScore")] public int? AverageScore { get; set; } // 0–100 → зберігаємо /10

@@ -24,4 +24,10 @@ public class Provider
     // NULL = ціна в даних відсутня — фронт нічого не вигадує.
     public string? Price { get; set; }    // retail_price (локалізований рядок джерела)
     public string? Currency { get; set; } // currency (ISO-4217, якщо джерело дало)
+
+    // ── Watch-верифікація: покриття лінка (та сама семантика, що в WatchLink) ──
+    // coverage: full = перевірено — повний фільм/весь серіал; episode = фрагмент/епізод;
+    // NULL (або «unknown») = не перевірено. verified_at — час останньої верифікації.
+    public string? Coverage { get; set; }     // coverage varchar(16)
+    public DateTime? VerifiedAt { get; set; } // verified_at
 }

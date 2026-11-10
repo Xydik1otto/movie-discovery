@@ -212,12 +212,14 @@ export default function StudioPanel({
         </label>
       </div>
 
-      {/* Рамки: тип */}
+      {/* Рамки: тип (одиночний вибір → зберігається як масив types, див. SimilarSeedsFilters) */}
       <label className="mt-3 block">
         <span className="mb-1 block text-xs font-semibold text-mute">{t("filters.type")}</span>
         <select
-          value={filters.type ?? ""}
-          onChange={(e) => onFilters({ ...filters, type: e.target.value || null })}
+          value={filters.types?.[0] ?? ""}
+          onChange={(e) =>
+            onFilters({ ...filters, types: e.target.value ? [e.target.value] : null })
+          }
           className={inputCls}
         >
           <option value="">{t("filters.any")}</option>
@@ -250,7 +252,7 @@ export default function StudioPanel({
                     : "border-line bg-bg text-mute hover:border-accent/50 hover:text-accent-2"
                 } disabled:opacity-40`}
               >
-                {lang === "uk" ? g.uk : g.en}
+                {g[lang]}
               </button>
             );
           })}

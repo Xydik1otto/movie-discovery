@@ -212,7 +212,7 @@ function CatalogInner({ kind }: { kind: CatalogKind }) {
                   setFormat(format === f.value ? null : f.value);
                 }}
               >
-                {lang === "uk" ? f.uk : f.en}
+                {f[lang]}
               </Chip>
             ))}
           </ChipGroup>

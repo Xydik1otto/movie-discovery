@@ -85,12 +85,13 @@ export const en: Dict = {
   "title.added": "Added",
 
   "similar.seedsTitle": "Similar to...",
-  "similar.seedsHint": "Add 1–10 reference titles — we look for the shared DNA: genres, mood, era, cast.",
+  "similar.seedsHint": "Add your favourite movies and series as seeds — or just pick genres and mood: we look for the shared DNA: genres, mood, era, cast.",
   "similar.searchSeed": "Search reference titles…",
   "similar.find": "Find similar",
   "similar.seeds": "Seeds",
   "similar.seedsCount": "Seeds: {n}/10",
   "similar.seedsRequired": "Add at least one seed first",
+  "similar.seedsOrFiltersRequired": "Add a seed or pick genres/mood",
   "similar.clear": "Clear",
   "similar.byText": "Describe in words",
   "similar.byTextPlaceholder": "For example: a grim detective story set in a rainy city",
@@ -278,6 +279,33 @@ export const en: Dict = {
   // MD-07: the server did not confirm logout — honest message instead of a fake sign-out.
   "auth.logoutUnavailable": "Could not log out — the server is unavailable. You are still logged in.",
 
+  // --- 10.11: email confirmation, resend, forgot/reset password ---
+  "auth.password2": "Repeat password",
+  "auth.passwordsMismatch": "Passwords don't match",
+  "auth.checkEmail": "Check your email",
+  "auth.checkEmailText": "We sent a confirmation email to {email}. Follow the link in it to activate your account.",
+  "auth.resendAgain": "Send the email again",
+  "auth.resendSent": "Email sent again — check your inbox (and spam).",
+  "auth.resendTooFrequent": "Too frequent — try again later",
+  "auth.resendError": "Could not send the email — try again",
+  "auth.emailNotConfirmed": "Confirm your email",
+  "auth.emailNotConfirmedText": "We sent a confirmation email to {email}. Confirm the address and try logging in again.",
+  "auth.forgotPassword": "Forgot password?",
+  "auth.forgotTitle": "Password recovery",
+  "auth.forgotSubtitle": "Enter your email — we will send a password reset link.",
+  "auth.forgotSubmit": "Send the link",
+  "auth.forgotSent": "If an account with this email exists, we've sent a message with a password reset link. Check your inbox (and spam).",
+  "auth.resetTitle": "New password",
+  "auth.resetSubtitle": "Choose a new password for your account.",
+  "auth.resetSubmit": "Change password",
+  "auth.resetSuccess": "Password changed — log in with the new one",
+  "auth.confirmTitle": "Email confirmation",
+  "auth.confirmVerifying": "Confirming your email…",
+  "auth.confirmSuccess": "Email confirmed",
+  "auth.confirmResendHint": "Enter your email — we will send a new confirmation email.",
+  "auth.invalidLink": "This link is invalid or expired",
+  "auth.retry": "Try again",
+
   // --- FR-18: Cinema Shelf (discover) ---
   "nav.discover": "Cinema Shelf",
   "discover.title": "Cinema Shelf",
@@ -340,6 +368,15 @@ export const en: Dict = {
 
   // MD-04: guest lists in localStorage (FR-16)
   "lists.guestNotice": "Guest mode: lists are kept in this browser only. Log in to save them to your account.",
+
+  // In-list categories (client-side filter on top of kind tabs)
+  "lists.cat.all": "All",
+  "lists.cat.movie": "Movies",
+  "lists.cat.series": "Series",
+  "lists.cat.short": "Shorts",
+  "lists.cat.animationMovie": "Animation: movies",
+  "lists.cat.animationSeries": "Animation: series",
+  "lists.categoryEmpty": "This category is still empty",
   "lists.storageUnavailable": "Local storage is unavailable (private mode) — guest lists will not survive closing the page.",
 
   // --- FR-21: “Similar to...” — studio, collections, chain, reasons ---
@@ -352,6 +389,21 @@ export const en: Dict = {
   "similar.reason.genre": "shared genre: {value}",
   "similar.reason.actor": "shared actor: {value}",
   "similar.reason.decade": "same decade: {decade}",
+
+  // Input filters of the Seeds mode (work without seeds too).
+  "similar.fTypes": "Types",
+  "similar.fGenres": "Genres",
+  "similar.fMood": "Mood",
+  "similar.yearRangeError": "The “from” year cannot be greater than the “to” year",
+  // Backend mood presets (MoodPresets) — keys cozy..mindbender.
+  "mood.cozy": "cozy",
+  "mood.tense": "tense",
+  "mood.funny": "funny",
+  "mood.sad": "sad",
+  "mood.epic": "epic",
+  "mood.romantic": "romantic",
+  "mood.family": "family",
+  "mood.mindbender": "mind-bender",
 
   "studio.title": "Selection studio",
   "studio.hint": "Add 1–10 reference titles and set the frame: years, type, genre accent — results refresh live.",

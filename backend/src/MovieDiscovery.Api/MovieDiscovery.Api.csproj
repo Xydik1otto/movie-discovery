@@ -20,4 +20,9 @@
     <ProjectReference Include="..\MovieDiscovery.Infrastructure\MovieDiscovery.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Тести ходять до internal SearchController.Lang (канонізація мов відповідей). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="MovieDiscovery.Tests" />
+  </ItemGroup>
+
 </Project>

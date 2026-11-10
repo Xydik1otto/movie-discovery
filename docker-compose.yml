@@ -20,6 +20,33 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Постери — власне S3-сховище MinIO (фото плакатів в окремій БД-сховищі, наказ власника):
+  # конфіг скопійований з Security CVE bot (ті самі пін-дайджести), але БЕЗ даних і з НОВИМИ
+  # креденшелами. Хост-порти 9002/9003 — щоб не конфліктувати з майбутнім cve_minio (9000/9001).
+  minio:
+    build:
+      context: ./minio
+      dockerfile: Dockerfile
+    image: moviediscovery-minio:local
+    container_name: moviediscovery-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_MINIO_USER:-movie_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_MINIO_PASSWORD}
+    ports:
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9003:9001"
+    volumes:
+      # bind як ./data/pg — бакети живуть на хості, пережидають recreate (data/ у .gitignore)
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   api:
     build: ./backend
     container_name: moviediscovery-api
@@ -45,6 +72,25 @@ services:
       # MD-05/CR-01: спільний ключ бота (той самий у bot). Порожній → bot-header
       # авторизація вимкнена на API (X-Bot-Key запити → 403).
       BOT_API_KEY: ${BOT_API_KEY:-}
+      # Постери — власне S3-сховище MinIO (контейнер moviediscovery-minio, хост-порти 9002/9003):
+      # авто-завантаження плакатів у бакет (PosterStorageSync) і віддача сайту з власного сховища
+      # (GET /api/img/posters/*). Fail-closed: POSTER_STORAGE_ENABLED!=true або порожній пароль
+      # → сховище вимкнено, запитів до MinIO нема.
+      MINIO_ENDPOINT: http://moviediscovery-minio:9000
+      MINIO_ROOT_USER: ${MINIO_MINIO_USER:-movie_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_MINIO_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-md-posters}
+      POSTER_STORAGE_ENABLED: ${POSTER_STORAGE_ENABLED:-true}
+      # Auth-листи (10.11): SMTP env-gated. MAIL_ENABLED=false → чесний лог-режим
+      # (лінки підтвердження/скидання пишуться в лог api, листи не шлються).
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      FRONT_PUBLIC_URL: ${FRONT_PUBLIC_URL:-http://localhost:3001}
+      MAIL_REQUIRE_CONFIRMED_EMAIL: ${MAIL_REQUIRE_CONFIRMED_EMAIL:-}
     ports:
       - "${API_PORT:-5200}:5200"
     volumes:

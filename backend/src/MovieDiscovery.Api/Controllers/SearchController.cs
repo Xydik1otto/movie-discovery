@@ -1,4 +1,6 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
@@ -8,8 +10,14 @@ namespace MovieDiscovery.Api.Controllers;
 
 [ApiController]
 [Route("api/search")]
-public sealed class SearchController(SearchService search, MovieDiscoveryDbContext db) : ControllerBase
+public sealed class SearchController(SearchService search, MovieDiscoveryDbContext db, IMemoryCache cache) : ControllerBase
 {
+    /// <summary>
+    /// TTL кешу дефолтного каталогу: короткий (каталог живий), але достатній, щоб
+    /// повторні навігації на «Головну» в межах хвилин не перераховували той самий запит.
+    /// </summary>
+    internal static readonly TimeSpan DefaultCacheTtl = TimeSpan.FromSeconds(90);
+
     [HttpGet]
     public async Task<IActionResult> Get(
         [FromQuery] string? q,
@@ -78,7 +86,7 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         if (minQuality is { } mq && !Core.Search.VirtualCategories.Qualities.Contains(mq))
             return BadRequest(new { error = "invalid_request", message = "minQuality має бути 480 | 720 | 1080 | 2160" });
 
-        var result = await search.SearchAsync(new SearchQuery(
+        var query = new SearchQuery(
             q, type, genreList, yearFrom, yearTo, country,
             minRating, maxRating, minRuntime, maxRuntime, status,
             sort ?? "relevance", page, pageSize,
@@ -90,13 +98,24 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA",
             Watchable: watchable,
             Category: category, AudioLang: audioLangSafe, MinQuality: minQuality,
-            OmitTotal: omitTotal), ct);
+            OmitTotal: omitTotal);
+
+        // TTL-кеш дефолтного каталогу (10.11): повторний GET /api/search того самого
+        // «каталожного» вигляду (без q/actor/director/keyword) не перераховує пошук.
+        // Персоналізовані/точкові пошуки НЕ кешуємо.
+        var cacheKey = IsCacheable(q, actor, director, keyword) ? BuildCacheKey(query, langSafe) : null;
+        if (cacheKey is not null && cache.TryGetValue(cacheKey, out object? cached) && cached is not null)
+            // ct клієнта свідомо НЕ застосовується: кешований результат уже готовий,
+            // його не можна зірвати скасуванням запиту.
+            return Ok(cached);
+
+        var result = await search.SearchAsync(query, ct);
 
         // FR-14: компактні бейджі «де подивитись» на картках (лише is_available=true)
         var watchLinks = await Infrastructure.Watchability.WatchLinkLoader.LoadAvailableAsync(
             db, result.Items.Select(t => t.Id), ct);
 
-        return Ok(new
+        object response = new
         {
             items = result.Items.Select(t =>
             {
@@ -110,7 +129,68 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             totalCapped = result.TotalCapped,
             page = result.Page,
             pageSize = result.PageSize,
-        });
+        };
+
+        // Кешуємо лише успішну відповідь: 4xx (валідація вище) і винятки пошуку
+        // сюди не доходять — у кеші лише 200 OK.
+        if (cacheKey is not null)
+            cache.Set(cacheKey, response, DefaultCacheTtl);
+
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Кешувати можна лише «каталожні» видачі: q порожній/whitespace І actor/director/keyword
+    /// порожні. Пошук за назвою/персоною/ключовим словом — точковий, не кешуємо.
+    /// </summary>
+    internal static bool IsCacheable(string? q, string? actor, string? director, string? keyword) =>
+        string.IsNullOrWhiteSpace(q)
+        && string.IsNullOrWhiteSpace(actor)
+        && string.IsNullOrWhiteSpace(director)
+        && string.IsNullOrWhiteSpace(keyword);
+
+    /// <summary>
+    /// Ключ TTL-кешу: нормалізований набір УСІХ параметрів, що впливають на результат.
+    /// SearchQuery вже несе нормалізовані значення (жанри — канонічні en, sort — дефолт
+    /// «relevance», audioLang — lowercase, providerRegion — дефолт «UA», omitTotal — bool),
+    /// тож «відсутній параметр = дефолт» дає той самий ключ. «v2» — інвалідація при
+    /// зміні форми відповіді/ключа.
+    /// </summary>
+    internal static string BuildCacheKey(SearchQuery q, string lang)
+    {
+        static string D(double? v) => v?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        static string I(int? v) => v?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        static string B(bool? v) => v?.ToString() ?? string.Empty;
+        return string.Join("|",
+            "search:v2",
+            $"q={q.Q?.Trim() ?? string.Empty}",
+            $"type={q.Type ?? string.Empty}",
+            $"genres={string.Join(',', q.Genres)}",
+            $"year={I(q.YearFrom)}-{I(q.YearTo)}",
+            $"country={q.Country ?? string.Empty}",
+            $"lang={lang}",
+            $"rating={D(q.MinRating)}-{D(q.MaxRating)}",
+            $"runtime={I(q.MinRuntime)}-{I(q.MaxRuntime)}",
+            $"status={q.Status ?? string.Empty}",
+            $"sort={q.Sort}",
+            $"page={q.Page}",
+            $"size={q.PageSize}",
+            $"actor={q.Actor ?? string.Empty}",
+            $"director={q.Director ?? string.Empty}",
+            $"keyword={q.Keyword ?? string.Empty}",
+            $"language={q.Language ?? string.Empty}",
+            $"votes={I(q.MinVotes)}",
+            $"seasons={I(q.SeasonsFrom)}-{I(q.SeasonsTo)}",
+            $"exg={(q.ExcludeGenres is { Length: > 0 } ex ? string.Join(',', ex) : string.Empty)}",
+            $"trailer={B(q.HasTrailer)}",
+            $"providers={B(q.HasProviders)}",
+            $"rsource={q.RatingSource ?? string.Empty}",
+            $"region={q.ProviderRegion ?? string.Empty}",
+            $"watchable={B(q.Watchable)}",
+            $"category={q.Category ?? string.Empty}",
+            $"audio={q.AudioLang ?? string.Empty}",
+            $"quality={I(q.MinQuality)}",
+            $"omit={q.OmitTotal}");
     }
 
     /// <summary>Жанри-фільтри: uk-назви нормалізуємо в канонічні en (як зберігаємо в БД).</summary>
@@ -128,6 +208,12 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         return [.. list];
     }
 
+    /// <summary>
+    /// Канонічна мова відповідей: en → en, ru → ru (рішення власника 10.11 — російська
+    /// повноцінна мова API-відповідей), усе інше → uk. Кейс-незалежно.
+    /// </summary>
     internal static string Lang(string? lang) =>
-        string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "uk";
+        string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase) ? "en"
+        : string.Equals(lang, "ru", StringComparison.OrdinalIgnoreCase) ? "ru"
+        : "uk";
 }

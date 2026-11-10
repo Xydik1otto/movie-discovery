@@ -182,7 +182,13 @@ export async function guardedByText(
       const items: SimilarItem[] = scored.map(({ c }, i) => ({
         ...c,
         score: Math.max(0.4, 0.9 - i * 0.05),
-        reasons: [lang === "uk" ? "семантичний збіг опису (демо)" : "semantic overview match (demo)"],
+        reasons: [
+          lang === "uk"
+            ? "семантичний збіг опису (демо)"
+            : lang === "ru"
+              ? "семантическое совпадение описания (демо)"
+              : "semantic overview match (demo)",
+        ],
       }));
       return { data: items, unavailable: true };
     }

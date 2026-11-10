@@ -204,10 +204,12 @@ export async function similarByText(
   });
 }
 
-// FR-21: GET-форма by-seeds з опційними фільтрами студії
-// (/api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=).
+// FR-21: GET-форма by-seeds з опційними фільтрами
+// (/api/similar/by-seeds?ids=...&yearFrom=&yearTo=&types=&genres=&mood=).
 // MD-03: ids — внутрішні title ids (єдина однозначна простір імен; tmdbId є
 // лише в частини каталогу, тому GET-форма НІКОЛИ не отримує tmdb-ідентифікатори).
+// Еталони опційні: порожній ids НЕ додаємо в query — бекенд приймає 0 еталонів,
+// коли є genres або mood (пресет настрою).
 export async function similarBySeedsEx(
   internalIds: number[],
   lang: Lang,
@@ -215,10 +217,11 @@ export async function similarBySeedsEx(
   limit = 20,
 ): Promise<{ items: SimilarItem[] }> {
   const sp = new URLSearchParams();
-  sp.set("ids", internalIds.join(","));
+  if (internalIds.length) sp.set("ids", internalIds.join(","));
   if (filters.yearFrom != null) sp.set("yearFrom", String(filters.yearFrom));
   if (filters.yearTo != null) sp.set("yearTo", String(filters.yearTo));
-  if (filters.type) sp.set("types", filters.type);
+  if (filters.types?.length) sp.set("types", filters.types.join(","));
+  if (filters.mood) sp.set("mood", filters.mood);
   if (filters.genres?.length) sp.set("genres", filters.genres.join(","));
   sp.set("limit", String(limit));
   sp.set("lang", lang);

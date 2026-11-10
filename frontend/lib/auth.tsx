@@ -13,16 +13,113 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiError, getMe, loginUser, logoutUser, registerUser } from "./api";
+import {
+  API_URL,
+  ApiError,
+  ApiUnavailableError,
+  getMe,
+  loginUser,
+  logoutUser,
+  registerUser,
+} from "./api";
 import type { AuthFieldErrors, AuthUser } from "./types";
 
-export type AuthErrorKind = "credentials" | "lockout" | "unavailable" | "rate_limited" | "generic";
+// --- 10.11: підтвердження пошти, resend, forgot/reset password ---
+// lib/api.ts поза зоною цього агента, тому request-хелпер тут локальний —
+// з тією самою семантикою (credentials: include, JSON, ApiError із тілом).
+
+async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch {
+    throw new ApiUnavailableError();
+  }
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      const text = await res.text();
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+    throw new ApiError(res.status, `${res.status} ${res.statusText}`, body);
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+// POST /api/auth/confirm-email {userId, token} → 200 {confirmed:true} | 400 invalid_token.
+export async function confirmEmail(
+  userId: string,
+  token: string,
+): Promise<{ confirmed?: boolean }> {
+  const r = await authRequest<{ confirmed?: boolean } | null>("/api/auth/confirm-email", {
+    method: "POST",
+    body: JSON.stringify({ userId, token }),
+  });
+  return r ?? {};
+}
+
+// POST /api/auth/resend-confirmation {email} → завжди 200; 429 — зловживання
+// (UI показує чесне «Занадто часто», а не мовчить).
+export async function resendConfirmation(email: string): Promise<void> {
+  await authRequest<void>("/api/auth/resend-confirmation", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+// POST /api/auth/forgot-password {email} → завжди 200 — чесний текст
+// «якщо акаунт існує — лист надіслано» (існування акаунта не розкриваємо).
+export async function forgotPassword(email: string): Promise<void> {
+  await authRequest<void>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+// POST /api/auth/reset-password {userId, token, newPassword} → 200 |
+// 400 {error, errors?} — errors (Identity-політика) показуємо списком у UI.
+export async function resetPassword(
+  userId: string,
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await authRequest<void>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ userId, token, newPassword }),
+  });
+}
+
+export type AuthErrorKind =
+  | "credentials"
+  | "lockout"
+  | "unavailable"
+  | "rate_limited"
+  // 403 {error:"email_not_confirmed"} — логін непідтвердженого акаунта (контракт 10.11).
+  | "email_not_confirmed"
+  | "generic";
 
 export interface AuthFailure {
   kind: AuthErrorKind;
   fieldErrors: AuthFieldErrors;
   // Codex-додаток: 429 register-лімітера — чесне «через ~N хв» (backend дає retryAfterMinutes).
   retryAfterMinutes?: number | null;
+}
+
+// Результат реєстрації: ok + прапорець «потрібне підтвердження пошти»
+// ({emailConfirmationRequired:true} — новий бекенд) або failure.
+export interface RegisterOutcome {
+  ok: boolean;
+  emailConfirmationRequired?: boolean;
+  failure?: AuthFailure;
 }
 
 interface AuthContextValue {
@@ -42,14 +139,15 @@ interface AuthContextValue {
     email: string,
     username: string,
     password: string,
-  ) => Promise<AuthFailure | null>;
+  ) => Promise<RegisterOutcome>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 // {errors: {Email: ["..."], password: "..."}} → нормалізовані fieldErrors.
-function fieldErrorsFromBody(body: unknown): AuthFieldErrors {
+// Експорт: reset-password показує помилки Identity-політики списком (10.11).
+export function fieldErrorsFromBody(body: unknown): AuthFieldErrors {
   const out: AuthFieldErrors = {};
   if (!body || typeof body !== "object") return out;
   const raw = (body as { errors?: unknown }).errors ?? body;
@@ -77,6 +175,14 @@ function failureFrom(e: unknown): AuthFailure {
   if (e instanceof ApiError) {
     if (e.status === 401) return { kind: "credentials", fieldErrors: {} };
     if (e.status === 423) return { kind: "lockout", fieldErrors: {} };
+    // 403 email_not_confirmed — окремий чесний стан: панель «Підтвердіть пошту»
+    // з кнопкою resend, а не загальне «Не вдалося».
+    if (
+      e.status === 403 &&
+      (e.body as { error?: unknown } | null)?.error === "email_not_confirmed"
+    ) {
+      return { kind: "email_not_confirmed", fieldErrors: {} };
+    }
     // 429 — ліміт бекенд-лімітера (register 3/год, login 5/хв). Бекенд повертає
     // розпізнаване {error:"rate_limited", retryAfterMinutes}; чесне повідомлення
     // замість загального «Не вдалося» (юзер інакше стукає марно).
@@ -133,21 +239,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  // Реєстрація: новий бекенд повертає {emailConfirmationRequired:true} —
+  // автологін тоді НЕ пробуємо (логін непідтвердженого дає 403
+  // email_not_confirmed), UI показує екран «Перевірте пошту».
+  // Старий бекенд (без поля) — як і було: пробуємо увійти тими самими даними.
   const register = useCallback(
-    async (email: string, username: string, password: string): Promise<AuthFailure | null> => {
+    async (
+      email: string,
+      username: string,
+      password: string,
+    ): Promise<RegisterOutcome> => {
       try {
-        await registerUser(email, username, password);
-        // Реєстрація може не логінити автоматично — пробуємо увійти тими самими
-        // даними; якщо вийшло, одразу ведемо на онбординг.
-        try {
-          await loginUser(email, password);
-        } catch {
-          // Автологін необов'язковий — бекенд міг сам залогінити при register.
+        // registerUser у lib/api.ts (поза зоною) типізує лише userId —
+        // нове опційне поле читаємо приведенням типу (несумісності немає).
+        const r = (await registerUser(email, username, password)) as {
+          emailConfirmationRequired?: boolean;
+        };
+        const needsConfirm = r.emailConfirmationRequired === true;
+        if (!needsConfirm) {
+          try {
+            await loginUser(email, password);
+          } catch {
+            // Автологін необов'язковий — бекенд міг сам залогінити при register.
+          }
         }
         await refresh();
-        return null;
+        return { ok: true, emailConfirmationRequired: needsConfirm };
       } catch (e) {
-        return failureFrom(e);
+        return { ok: false, failure: failureFrom(e) };
       }
     },
     [refresh],

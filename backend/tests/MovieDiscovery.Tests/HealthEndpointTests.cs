@@ -35,8 +35,11 @@ public sealed class HealthEndpointTests : IClassFixture<ApiTestFactory>
         Assert.Equal("ok", body.GetProperty("status").GetString()); // БД жива → чесний ok
         Assert.True(body.GetProperty("db").GetBoolean());
         Assert.True(body.GetProperty("titlesCount").GetInt32() >= 2); // засіяні фікстури
-        // ollama — поле присутнє і чесне (у тестовому середовищі недоступне).
-        Assert.False(body.GetProperty("ollama").GetBoolean());
+        // ollama — поле присутнє і чесне. ЗНАЧЕННЯ env-залежне: на хості з живим Ollama
+        // embedder чесно каже true (поле не «обман», а стан). Тут перевіряємо саме чесність
+        // наявності булевого поля, а не конкретне значення.
+        Assert.True(body.TryGetProperty("ollama", out var ollama));
+        Assert.True(ollama.ValueKind is JsonValueKind.True or JsonValueKind.False);
     }
 
     [Fact]

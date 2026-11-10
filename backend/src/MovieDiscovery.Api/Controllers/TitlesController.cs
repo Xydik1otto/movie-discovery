@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.Persistence;
@@ -11,8 +13,16 @@ namespace MovieDiscovery.Api.Controllers;
 
 [ApiController]
 [Route("api/title")]
-public sealed class TitlesController(TitleService titles, SimilarityService similarity, MovieDiscoveryDbContext db) : ControllerBase
+public sealed class TitlesController(
+    TitleService titles,
+    SimilarityService similarity,
+    MovieDiscoveryDbContext db,
+    IServiceProvider sp, // on-demand-сервіси резолвимо м'яко: до реєстрації в Program.cs GetService → null (без 500)
+    ILogger<TitlesController> log) : ControllerBase
 {
+    /// <summary>Кап очікування on-demand резолву постера — відповідь не блокується довше 1.5с.</summary>
+    internal const int OnDemandPosterTimeoutMs = 1500;
+
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id, [FromQuery] string? lang, CancellationToken ct)
     {
@@ -23,7 +33,15 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
 
         var t = detail.Title;
         var card = TitleMapper.ToCard(t, langSafe);
+
+        // On-demand доціплення постера/бекдропа (джерело №1 — TMDB): якщо в БД порожньо і є
+        // tmdb_id — резолвимо (кеш деталей → один легкий GET), НЕ блокуючи відповідь довше 1.5с;
+        // в ОБОХ випадках ставимо точкову фонову джобу, яка оновить БД (черга poster-source-sync).
+        var (posterOverride, backdropOverride) = await ResolvePosterOnDemandAsync(t, id, ct);
+
         var uk = SimilarityTexts.IsUk(langSafe);
+        // 10.11: ru — повноцінна мова: повний опис ru → uk → en (фолбек як в Overview картки).
+        var isRu = string.Equals(langSafe, "ru", StringComparison.Ordinal);
         return Ok(new TitleDetailResponse
         {
             Id = card.Id,
@@ -36,15 +54,17 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             Countries = card.Countries,
             RatingTmdb = card.RatingTmdb,
             RatingImdb = card.RatingImdb,
-            PosterUrl = card.PosterUrl,
+            PosterUrl = posterOverride ?? card.PosterUrl,
             RuntimeMin = card.RuntimeMin,
             Seasons = card.Seasons,
             Overview = card.Overview,
             Actors = [.. t.Actors],
             Director = t.Director,
             Keywords = [.. t.Keywords],
-            OverviewFull = uk ? (t.OverviewUk ?? t.OverviewEn) : t.OverviewEn,
-            BackdropUrl = TitleMapper.ImgUrl(t.BackdropPath, "w780"),
+            OverviewFull = isRu
+                ? (t.OverviewRu ?? t.OverviewUk ?? t.OverviewEn)
+                : uk ? (t.OverviewUk ?? t.OverviewEn) : t.OverviewEn,
+            BackdropUrl = backdropOverride ?? TitleMapper.ImgUrl(t.BackdropPath, "w780"),
             TrailerYtId = t.TrailerYtId,
             Providers = detail.Providers
                 .Select(p => new ProviderInfo(p.ProviderName, p.Kind, p.Url, p.Source))
@@ -71,6 +91,93 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             ScoreAnilist = card.ScoreAnilist,
             ScoreShikimori = card.ScoreShikimori,
         });
+    }
+
+    /// <summary>
+    /// On-demand доціплення постера/бекдропа з TMDB (fill-only): умова — у БД порожній постер
+    /// АБО бекдроп і є tmdb_id. Резолв = кеш деталей → один легкий GET; чекаємо максимум
+    /// OnDemandPosterTimeoutMs (Task.WhenAny) — що встигли, те підставляється у відповідь;
+    /// у ОБОХ випадках (встиг/не встиг) ставимо точкову фонову джобу poster-source-sync,
+    /// яка оновить БД. Джерело не сконфігуроване/не зареєстроване → тихий no-op (без 500).
+    /// </summary>
+    private async Task<(string? PosterUrl, string? BackdropUrl)> ResolvePosterOnDemandAsync(
+        Core.Domain.Title t, int titleId, CancellationToken ct)
+    {
+        var posterMissing = string.IsNullOrWhiteSpace(t.PosterPath);
+        var backdropMissing = string.IsNullOrWhiteSpace(t.BackdropPath);
+        if ((!posterMissing && !backdropMissing) || t.TmdbId is not int tmdbId)
+            return (null, null);
+
+        var images = sp.GetService<ITmdbImagesService>();
+        if (images is null || !images.IsConfigured)
+            return (null, null);
+
+        try
+        {
+            // В ОБОХ випадках (встиг/не встиг за кап) — точкова фонова джоба: догорне в черзі
+            // poster-source-sync і fill-only оновить БД (якщо вже записали — ранній вихід без HTTP).
+            sp.GetService<PosterSourceSyncQueue>()?.TryEnqueue(new PosterSourceSyncJob(MaxRows: null, TitleId: titleId));
+
+            var resolveTask = images.ResolveAsync(tmdbId, t.Type, ct);
+            var completed = await Task.WhenAny(resolveTask, Task.Delay(OnDemandPosterTimeoutMs, ct));
+            if (completed != resolveTask)
+            {
+                // Не встигли за 1.5с — віддаємо відповідь без очікування; таск лишається
+                // дофоново (ResolveAsync не кидає, але спостереження безкоштовне).
+                _ = resolveTask.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
+            }
+            else
+            {
+                var resolved = await resolveTask; // completed — більше не чекає
+                if (resolved is not null)
+                {
+                    // Встигли: підставляємо у відповідь і одразу fill-only в БД
+                    // (фонові перегляди цього тайтла вже побачать постер без HTTP).
+                    await PersistResolvedPosterAsync(titleId, resolved.PosterPath, resolved.BackdropPath, ct);
+                    return (resolved.PosterUrl, resolved.BackdropUrl);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "On-demand доціплення постера не вдалося (title_id={TitleId})", titleId);
+        }
+        return (null, null);
+    }
+
+    /// <summary>Fill-only запис резолвнутих шляхів у titles (наявні значення не перебиваємо).</summary>
+    private async Task PersistResolvedPosterAsync(int titleId, string? posterPath, string? backdropPath, CancellationToken ct)
+    {
+        try
+        {
+            var tracked = await db.Titles.FirstOrDefaultAsync(x => x.Id == titleId, ct);
+            if (tracked is null) return;
+            var changed = false;
+            if (!string.IsNullOrWhiteSpace(posterPath) && string.IsNullOrWhiteSpace(tracked.PosterPath))
+            {
+                tracked.PosterPath = posterPath;
+                changed = true;
+            }
+            if (!string.IsNullOrWhiteSpace(backdropPath) && string.IsNullOrWhiteSpace(tracked.BackdropPath))
+            {
+                tracked.BackdropPath = backdropPath;
+                changed = true;
+            }
+            if (changed)
+            {
+                tracked.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Відповідь уже сформована з резолвнутим URL — збоєний запис добере фонова джоба.
+            log.LogWarning(ex, "Запис on-demand постера не вдалося (title_id={TitleId}) — добере фонова джоба", titleId);
+        }
     }
 
     /// <summary>«Схожі» від картки: 1..limit результатів з поясненнями (uk/en).</summary>

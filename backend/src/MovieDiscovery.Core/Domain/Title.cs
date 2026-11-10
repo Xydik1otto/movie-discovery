@@ -33,6 +33,10 @@ public class Title
     public string? PosterPath { get; set; }
     public string? BackdropPath { get; set; }
     public string? TrailerYtId { get; set; }
+    // Постер у ВЛАСНОМУ сховищі MinIO (фото плакатів — окрема БД MinIO, наказ власника):
+    // публічний API-шлях /api/img/posters/{key} (стрім з бакета md-posters). Заповнює
+    // PosterStorageSync (poster_path → MinIO → poster_local); null = локальної копії нема.
+    public string? PosterLocal { get; set; }
 
     // ── Аніме/манга-специфіка (FR-12/FR-13; для фільмів/серіалів — null/порожньо) ──
     public int? MalId { get; set; }

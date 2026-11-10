@@ -111,11 +111,13 @@ public sealed class SeriesController(
         });
     }
 
-    /// <summary>Назва серії: uk → uk ?? ru ?? en; en → en ?? uk ?? ru (лапки/порожні — null).</summary>
+    /// <summary>Назва серії: uk → uk ?? ru ?? en; ru → ru ?? uk ?? en (10.11); en → en ?? uk ?? ru (лапки/порожні — null).</summary>
     public static string? SeriesName(string lang, string? uk, string? ru, string? en) =>
         string.Equals(lang, "uk", StringComparison.OrdinalIgnoreCase)
             ? NonEmpty(uk) ?? NonEmpty(ru) ?? NonEmpty(en)
-            : NonEmpty(en) ?? NonEmpty(uk) ?? NonEmpty(ru);
+            : string.Equals(lang, "ru", StringComparison.OrdinalIgnoreCase)
+                ? NonEmpty(ru) ?? NonEmpty(uk) ?? NonEmpty(en)
+                : NonEmpty(en) ?? NonEmpty(uk) ?? NonEmpty(ru);
 
     private static string? NonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 

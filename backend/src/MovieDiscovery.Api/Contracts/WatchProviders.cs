@@ -15,6 +15,10 @@ namespace MovieDiscovery.Api.Contracts;
 ///   • urlKind — direct | find (WatchUrlClassifier): find-URL чесно підписується
 ///     «Знайти на сервісу» на фронті, не подається як пряме переглядання.
 ///   • price/currency — чесна ціна платного оффера, якщо джерело її дало (інакше null).
+///   • coverage — full | episode | unknown (NULL = не перевірено верифікатором): full =
+///     ПЕРЕВІРЕНО лінк веде на повний фільм/весь серіал; episode = фрагмент/епізод
+///     (фронт може ховати такі рядки у дефолтному free-фільтрі); unknown/NULL — чесна
+///     невизначеність, а не «повний». Пише WatchLinkVerificationService (coverage + verified_at).
 /// </summary>
 public sealed record WatchProviderInfo(
     string Provider,
@@ -31,7 +35,8 @@ public sealed record WatchProviderInfo(
     string? Price = null,
     string? Currency = null,
     string? UrlKind = null,
-    string? AvailabilityStatus = null);
+    string? AvailabilityStatus = null,
+    string? Coverage = null);
 
 /// <summary>Компактний бейдж провайдера для TitleCard (лише is_available=true).</summary>
 public sealed record CardWatchProvider(string Provider, string Kind, string? Url);
