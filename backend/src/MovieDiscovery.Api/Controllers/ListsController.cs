@@ -224,7 +224,7 @@ public sealed class ListsController(
     public Task<IActionResult> PostWatched([FromBody] PostKindRequest req, CancellationToken ct) =>
         PostKind(Core.Domain.ListKinds.Watched, req, ct);
 
-    /// <summary>GET /api/lists/stats (FR-17): {watchedCount, likedCount, dislikedCount, avgRating, topGenres}.</summary>
+    /// <summary>GET /api/lists/stats (FR-17): {watchedCount, readCount, likedCount, dislikedCount, avgRating, topGenres}.</summary>
     [Authorize]
     [HttpGet("stats")]
     public async Task<IActionResult> Stats(CancellationToken ct)
@@ -235,6 +235,7 @@ public sealed class ListsController(
         return Ok(new
         {
             watchedCount = s.WatchedCount,
+            readCount = s.ReadCount,
             likedCount = s.LikedCount,
             dislikedCount = s.DislikedCount,
             avgRating = s.AvgRating,

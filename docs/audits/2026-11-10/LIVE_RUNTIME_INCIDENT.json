@@ -1,0 +1,51 @@
+{
+  "utc": "2026-11-10T01:02:46.086355+00:00",
+  "http://localhost:3001": {
+    "error": "timed out"
+  },
+  "http://localhost:3201": {
+    "http": 200,
+    "body": {
+      "status": "ok",
+      "db": true,
+      "ollama": false,
+      "titlesCount": 1429
+    }
+  },
+  "databaseHealth": {
+    "Status": "healthy",
+    "FailingStreak": 0,
+    "Log": [
+      {
+        "Start": "2026-11-10T01:02:27.838116555Z",
+        "End": "2026-11-10T01:02:28.516882922Z",
+        "ExitCode": 0,
+        "Output": "/var/run/postgresql:5432 - accepting connections\n"
+      },
+      {
+        "Start": "2026-11-10T01:02:33.523551653Z",
+        "End": "2026-11-10T01:02:34.283697238Z",
+        "ExitCode": 0,
+        "Output": "/var/run/postgresql:5432 - accepting connections\n"
+      },
+      {
+        "Start": "2026-11-10T01:02:39.311862872Z",
+        "End": "2026-11-10T01:02:39.969979635Z",
+        "ExitCode": 0,
+        "Output": "/var/run/postgresql:5432 - accepting connections\n"
+      },
+      {
+        "Start": "2026-11-10T01:02:45.001432865Z",
+        "End": "2026-11-10T01:02:45.863944823Z",
+        "ExitCode": 0,
+        "Output": "/var/run/postgresql:5432 - accepting connections\n"
+      },
+      {
+        "Start": "2026-11-10T01:02:50.865284913Z",
+        "End": "2026-11-10T01:02:51.028933015Z",
+        "ExitCode": 0,
+        "Output": "/var/run/postgresql:5432 - accepting connections\n"
+      }
+    ]
+  }
+}

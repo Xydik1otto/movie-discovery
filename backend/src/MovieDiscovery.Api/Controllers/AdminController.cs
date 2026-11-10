@@ -4,10 +4,12 @@ using MovieDiscovery.Api.Contracts;
 using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Embeddings;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watch;
 using MovieDiscovery.Infrastructure.Watchability;
+using MovieDiscovery.Infrastructure.Wikipedia;
 
 namespace MovieDiscovery.Api.Controllers;
 
@@ -27,6 +29,8 @@ public sealed class AdminController(
     JustWatchSyncQueue justWatchSyncQueue,
     MegogoSyncQueue megogoSyncQueue,
     PlexSyncQueue plexSyncQueue,
+    WikipediaPosterSyncQueue wikipediaPosterSyncQueue,
+    PosterCleanupQueue posterCleanupQueue,
     Microsoft.Extensions.Options.IOptions<AdminOptions> adminOptions,
     Microsoft.Extensions.Options.IOptions<MalOfficialOptions> malOptions,
     Microsoft.Extensions.Options.IOptions<TmdbOptions> tmdbOptions) : ControllerBase
@@ -352,6 +356,40 @@ public sealed class AdminController(
             return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
 
         return Accepted(new { queued = true, source = "plex" });
+    }
+
+    /// <summary>UX-02: Wikipedia-постери (QID-first, fill-only): 202 {queued:true, source:"wikipedia-posters"}.</summary>
+    [HttpPost("sync/wikipedia-posters")]
+    public IActionResult SyncWikipediaPosters([FromBody] WikipediaPosterSyncJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && (mr < 1 || mr > 3_000_000))
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–3 000 000" });
+
+        if (!wikipediaPosterSyncQueue.TryEnqueue(new WikipediaPosterSyncJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга синхронізації переповнена" });
+
+        return Accepted(new { queued = true, source = "wikipedia-posters" });
+    }
+
+    /// <summary>UX-02/IV-09: чистка фейкових (ytimg/missing_original) + заміна підтверджених wrong-Commons постерів.</summary>
+    [HttpPost("cleanup/posters")]
+    public IActionResult CleanupPosters([FromBody] PosterCleanupJob? req)
+    {
+        var denied = CheckAdmin();
+        if (denied is not null) return denied;
+
+        var maxRows = req?.MaxRows;
+        if (maxRows is { } mr && (mr < 1 || mr > 100_000))
+            return BadRequest(new { error = "invalid_request", message = "maxRows має бути 1–100 000" });
+
+        if (!posterCleanupQueue.TryEnqueue(new PosterCleanupJob(maxRows)))
+            return StatusCode(503, new { error = "queue_full", message = "Черга переповнена" });
+
+        return Accepted(new { queued = true, source = "posters-cleanup" });
     }
 
     /// <summary>

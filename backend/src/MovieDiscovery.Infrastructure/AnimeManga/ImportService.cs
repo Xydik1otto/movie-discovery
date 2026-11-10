@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Services;
 
 namespace MovieDiscovery.Infrastructure.AnimeManga;
 
@@ -17,6 +18,7 @@ public sealed class ImportService(
     JikanClient jikan,
     ShikimoriClient shikimori,
     AniListClient anilist,
+    GuestProfileService guest,
     ILogger<ImportService> log)
 {
     private const int BatchSize = 20;
@@ -35,8 +37,8 @@ public sealed class ImportService(
             var profile = await ResolveProfileAsync(job, ct)
                 ?? throw new SourceAccessException(
                     job.ProfileId is { } pid
-                        ? $"Профіль з id={pid} не знайдено — передайте існуючий profileId або залишіть порожнім (використається «Головний»)"
-                        : "Профіль за замовчуванням не знайдено — створіть профіль");
+                        ? $"Профіль з id={pid} не знайдено — джобу імпорту з невідомим профілем виконано не буде"
+                        : "Гостьовий профіль імпорту недоступний (не знайдено або приріплений до акаунта) — анонімний імпорт вимкнено");
 
             switch (job.Source)
             {
@@ -318,13 +320,16 @@ public sealed class ImportService(
         return all;
     }
 
+    /// <summary>
+    /// Профіль джоби: заданий ProfileId (контролер гарантує ownership — Codex IV-01) → цей профіль;
+    /// NULL (legacy анонім) → designated guest profile (MD-01: GuestProfileService відмовить,
+    /// якщо профіль приріплений до акаунта). «Перший дефолтний підряд» більше НЕ фолбек —
+    /// це був шлях витоку імпорту в чужі/спільні профілі.
+    /// </summary>
     private async Task<Profile?> ResolveProfileAsync(ImportJob job, CancellationToken ct) =>
         job.ProfileId is { } pid
             ? await db.Profiles.FirstOrDefaultAsync(p => p.Id == pid, ct)
-            : await db.Profiles
-                .OrderByDescending(p => p.IsDefault)
-                .ThenBy(p => p.Id)
-                .FirstOrDefaultAsync(ct);
+            : await guest.ResolveAsync(ct);
 
     private async Task FailAsync(ImportJob job, ImportStats stats, string message, CancellationToken ct)
     {

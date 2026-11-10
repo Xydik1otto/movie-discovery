@@ -7,15 +7,23 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Infrastructure.Watch;
 
-/// <summary>Оффер JustWatch: тип монетизації + посилання + пакет (провайдер).</summary>
+/// <summary>Оффер JustWatch: тип монетизації + посилання + пакет (провайдер).
+/// UX-04 (хвиля 2): мови озвучки/субтитрів (ISO-коди JW) + чесна ціна (локалізований
+/// рядок retailPrice(language) + код валюти) — поля, які синк до хвилі-2 кидав на порозі.</summary>
 public sealed record JustWatchOffer(
     string? MonetizationType,
     string? StandardWebUrl,
     string? PackageClearName,
-    string? PackageTechnicalName);
+    string? PackageTechnicalName,
+    string? PresentationType = null,
+    IReadOnlyList<string>? AudioLanguages = null,
+    IReadOnlyList<string>? SubtitleLanguages = null,
+    string? RetailPrice = null,
+    string? Currency = null);
 
 /// <summary>Тайтл JustWatch з відповіді popularTitles (id, тип, назва/рік, imdb/tmdb, оффери).</summary>
 public sealed record JustWatchTitle(
@@ -103,9 +111,13 @@ public static class JustWatchMapper
     }
 
     /// <summary>
-    /// Оффери одного тайтла → рядки Provider: дедуп за (провайдер, kind) —
-    /// один пакет повторюється на кожен presentation-type (4K/HD/SD),
-    /// нам потрібен лише факт доступності; невідомі kind і безіменні пакети — пропускаємо.
+    /// Оффери одного тайтла → рядки Provider: дедуп за (провайдер, kind, мова-сигнатура) —
+    /// один пакет повторюється на кожен presentation-type (4K/HD/SD) з ОДНАКОВИМ
+    /// аудіо-набором, такі дублі зливаються (перша ціна виграє); оффери з РІЗНИМИ
+    /// аудіо-наборами лишаються окремими рядками — мовні варіанти не губляться (UX-04).
+    /// Мови нормалізуються WatchLanguages (ISO-639-1 csv; невідомі токени відкидаємо —
+    /// не вигадуємо); немає жодної відомої мови → NULL (невідома ≠ порожня).
+    /// Невідомі kind і безіменні пакети — пропускаємо.
     /// </summary>
     public static List<Provider> BuildProviders(int titleId, IEnumerable<JustWatchOffer> offers, string region, DateTime now)
     {
@@ -119,8 +131,10 @@ public static class JustWatchMapper
             var name = ProviderName(o.PackageClearName, o.PackageTechnicalName);
             if (name is null) continue; // провайдер не ідентифікований
 
-            var key = $"{name}|{kind}";
-            if (!seen.Add(key)) continue; // дублікат presentation-type
+            var audioLangs = WatchLanguages.NormalizeSet(o.AudioLanguages);
+            var subLangs = WatchLanguages.NormalizeSet(o.SubtitleLanguages);
+            var key = $"{name}|{kind}|{WatchLanguages.Signature(audioLangs)}";
+            if (!seen.Add(key)) continue; // дублікат presentation-type з тим самим аудіо-набором
 
             rows.Add(new Provider
             {
@@ -130,6 +144,10 @@ public static class JustWatchMapper
                 Url = string.IsNullOrWhiteSpace(o.StandardWebUrl) ? null : o.StandardWebUrl,
                 Source = Source,
                 Region = region,
+                AudioLangs = audioLangs,
+                SubLangs = subLangs,
+                Price = string.IsNullOrWhiteSpace(o.RetailPrice) ? null : o.RetailPrice.Trim(),
+                Currency = string.IsNullOrWhiteSpace(o.Currency) ? null : o.Currency.Trim(),
                 UpdatedAt = now,
             });
         }
@@ -152,6 +170,18 @@ public static class JustWatchMapper
             ["query"] = query,
             ["variables"] = variables,
         });
+
+    /// <summary>Рядковий масив з елемента оффера (audioLanguages/subtitleLanguages); порожнє → пустий масив.</summary>
+    private static string[] StringArray(JsonElement el, string prop)
+    {
+        if (!el.TryGetProperty(prop, out var v)) return [];
+        if (v.ValueKind != JsonValueKind.Array) return [];
+        return v.EnumerateArray()
+            .Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => x.GetString() ?? "")
+            .Where(s => s.Length > 0)
+            .ToArray();
+    }
 
     /// <summary>Фільтр popular-проходу (objectTypes MOVIE/SHOW; excludeIrrelevantTitles ОБОВ'ЯЗКОВО false — true вимагає авторизації, перевірено 422-помилкою).</summary>
     public static IReadOnlyDictionary<string, object?> PopularFilter() => new Dictionary<string, object?>
@@ -269,7 +299,14 @@ public static class JustWatchMapper
                     if (pkg.TryGetProperty("clearName", out var cn) && cn.ValueKind == JsonValueKind.String) clear = cn.GetString();
                     if (pkg.TryGetProperty("technicalName", out var tn) && tn.ValueKind == JsonValueKind.String) tech = tn.GetString();
                 }
-                offers.Add(new JustWatchOffer(mt, url, clear, tech));
+
+                // UX-04: презентація + мови озвучки/субтитрів + ціна (толерантно до відсутніх полів)
+                var presentation = o.TryGetProperty("presentationType", out var ptEl) && ptEl.ValueKind == JsonValueKind.String ? ptEl.GetString() : null;
+                var audio = StringArray(o, "audioLanguages");
+                var subs = StringArray(o, "subtitleLanguages");
+                var price = o.TryGetProperty("retailPrice", out var rpEl) && rpEl.ValueKind == JsonValueKind.String ? rpEl.GetString() : null;
+                var currency = o.TryGetProperty("currency", out var curEl) && curEl.ValueKind == JsonValueKind.String ? curEl.GetString() : null;
+                offers.Add(new JustWatchOffer(mt, url, clear, tech, presentation, audio, subs, price, currency));
             }
 
         return new JustWatchTitle(id, objectType, title, year, imdb, tmdb, offers);
@@ -328,6 +365,15 @@ public sealed class JustWatchSyncService(
                 offers(country: $country, platform: WEB) {
                   monetizationType
                   standardWebURL
+                  presentationType
+                  # UX-04: мови озвучки/субтитрів оффера (доведено пробою 09.11: 422-підказка
+                  # валідатора; жива проба хвилі-2: 200, Матриця — Apple TV audio [en,ru]).
+                  audioLanguages
+                  subtitleLanguages
+                  # Чесна ціна: retailPrice вимагає language (підказка валідатора) —
+                  # локалізований рядок («3,99₴») + окремий код валюти.
+                  retailPrice(language: $language)
+                  currency
                   package { clearName technicalName }
                 }
               }
@@ -501,6 +547,8 @@ public sealed class JustWatchSyncService(
     /// Upsert провайдерів тайтла: DELETE source=justwatch (усі регіони) + INSERT свіжі
     /// — двома SaveChanges всередині транзакції (реляційний провайдер) / послідовно
     /// (InMemory). Ідемпотентно: повторний прогін дає той самий набір рядків.
+    /// UX-04: UNIQUE тепер (title, provider, kind, source, region, COALESCE(audio_langs,'')) —
+    /// різні аудіо-набори одного провайдера лишаються окремими рядками.
     /// </summary>
     public static async Task ReplaceProvidersAsync(MovieDiscoveryDbContext db, int titleId, List<Provider> rows, CancellationToken ct)
     {

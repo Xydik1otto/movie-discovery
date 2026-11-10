@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Persistence;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 
 namespace MovieDiscovery.Infrastructure.Watch;
 
@@ -166,7 +168,10 @@ public sealed class PlexSyncService(
         }
     }
 
-    /// <summary>Рядок providers для матча: source=plex, kind=free, region=UA, url=BaseUrl+href.</summary>
+    /// <summary>Рядок providers для матча: source=plex, kind=free, region=UA, url=BaseUrl+href.
+    /// UX-04: мови НЕ вигадуємо — audio_langs/sub_langs лишаються NULL (каталог Plex мови
+    /// озвучки не зявляє; невідома мова = NULL, ніколи не uk/ru за замовчуванням).
+    /// isAvailable вердикт дає PlexAvailabilityService (перевірка «Where to Watch»), не каталог.</summary>
     public static Provider BuildProvider(int titleId, PlexCatalogItem item, string baseUrl) => new()
     {
         TitleId = titleId,
@@ -175,6 +180,8 @@ public sealed class PlexSyncService(
         Url = PlexParser.MovieUrl(baseUrl, item.Href),
         Source = Source,
         Region = Region,
+        AudioLangs = null, // свідомо NULL: мови не вигадуємо (UX-04)
+        SubLangs = null,   // свідомо NULL
         UpdatedAt = DateTime.UtcNow,
     };
 
@@ -264,6 +271,152 @@ public sealed class PlexSyncBackgroundService(
                 log.LogWarning(ex, "Помилка plex-синхронізації (maxPages={MaxPages}, years={From}..{To})",
                     job.MaxPages, job.YearFrom, job.YearTo);
             }
+        }
+    }
+}
+
+// ─── UX-04 (хвиля 2): tri-state доступності Plex («Where to Watch» на сторінці тайтла) ───
+
+/// <summary>Вердикт перевірки доступності Plex: available | unavailable | unknown.</summary>
+public sealed record PlexAvailabilityResult(string Status, IReadOnlyList<string> Services)
+{
+    public const string Available = "available";
+    public const string Unavailable = "unavailable";
+    public const string Unknown = "unknown";
+
+    public static readonly PlexAvailabilityResult UnknownResult = new(Unknown, []);
+}
+
+/// <summary>
+/// Парсер вердикту «Where to Watch» з SSR/RSC-розмітки сторінки тайтла (чисті функції — тести).
+/// Реальна структура (проби хвилі-2, mtm_plex.html / plex_matrix.html у scratch):
+///   available  — RSC-флайт містить AvailabilityCard-компоненти
+///                ({"title":"Apple TV","subtitles":["Buy UAH 7.99"],…,"_component":"AvailabilityCard"});
+///   unavailable — дія {"visible":true,"id":"noAvailabilities","label":"No Streaming Availability"};
+///   unknown    — флайт не зібрався/ні того, ні іншого (bot-wall, змінена розмітка) — НЕ оцінюємо.
+/// Картки описують пропозиції СТОРІНКИ (в т.ч. інші сервіси, гео-регіон запитувача) —
+/// це ТІЛЬКИ факт «у Plex є розділ where-to-watch з пропозиціями», мови звідси НЕ беруться.
+/// </summary>
+public static partial class PlexAvailabilityParser
+{
+    public static PlexAvailabilityResult Parse(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return PlexAvailabilityResult.UnknownResult;
+        var flight = PlexParser.ParseFlightChunks(html);
+        if (flight.Length == 0) return PlexAvailabilityResult.UnknownResult; // RSC не зібрався — вердикту нема
+
+        if (flight.Contains("\"id\":\"noAvailabilities\"", StringComparison.Ordinal))
+            return new PlexAvailabilityResult(PlexAvailabilityResult.Unavailable, []);
+
+        var chunks = flight.Split("\"_component\":\"AvailabilityCard\"");
+        if (chunks.Length <= 1) return PlexAvailabilityResult.UnknownResult; // ні карток, ні маркера відсутності
+
+        var services = new List<string>();
+        for (var i = 1; i < chunks.Length; i++)
+        {
+            var svc = LastServiceBefore(chunks[i - 1]);
+            if (svc is not null && !services.Contains(svc, StringComparer.OrdinalIgnoreCase)) services.Add(svc);
+        }
+        return new PlexAvailabilityResult(PlexAvailabilityResult.Available, services);
+    }
+
+    /// <summary>Сервіс картки: "title":"X","subtitles": — сусідство title+subtitles є тільки в AvailabilityCard
+    /// (метадата тайтла теж має "title", але без "subtitles" поруч — не хибне спрацювання).</summary>
+    private static string? LastServiceBefore(string chunk)
+    {
+        var best = -1;
+        string? value = null;
+        foreach (Match m in ServiceTitle().Matches(chunk))
+        {
+            best = m.Index;
+            value = m.Groups["svc"].Value;
+        }
+        return best >= 0 ? value : null;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("\"title\":\"(?<svc>[^\"]+)\",\"subtitles\":")]
+    private static partial System.Text.RegularExpressions.Regex ServiceTitle();
+}
+
+/// <summary>
+/// Перевірка «Where to Watch» сторінки тайтла Plex (UX-04 tri-state): isAvailable=true
+/// ЛИШЕ після живої перевірки сторінки /movie/{slug}; до того — unknown («у каталозі
+/// Plex, доступність неперевірена»), unknown ≠ «Безкоштовно»-бейдж.
+/// Кеш ОБМЕЖЕНИЙ: TTL (PlexOptions.AvailabilityCacheMinutes, 12 год) + максимум записів
+/// (AvailabilityCacheMax, prune найстаріших). robots.txt watch.plex.tv: /movie/* дозволено
+/// (Disallow лише /account,/embed,/libraries,/live,/search,/watch/*, more-services/share/review).
+/// Збій мережі/bot-wall → unknown (НЕ available і НЕ unavailable) — чесна невизначеність.
+/// </summary>
+public sealed class PlexAvailabilityService(
+    HttpClient http,
+    IOptions<PlexOptions> options,
+    ILogger<PlexAvailabilityService> log)
+{
+    private sealed record Entry(DateTime At, PlexAvailabilityResult Verdict);
+
+    private readonly PlexOptions _opt = options.Value;
+    private readonly ConcurrentDictionary<string, Entry> _cache = new(StringComparer.Ordinal);
+
+    /// <summary>Вердикт для title-URL (cached). Ніколи не кидає: збій → unknown.</summary>
+    public async Task<PlexAvailabilityResult> GetAsync(string? url, CancellationToken ct = default)
+    {
+        var key = (url ?? "").Trim();
+        if (key.Length == 0) return PlexAvailabilityResult.UnknownResult;
+
+        var now = DateTime.UtcNow;
+        var ttl = TimeSpan.FromMinutes(Math.Max(1, _opt.AvailabilityCacheMinutes));
+        if (_cache.TryGetValue(key, out var hit) && now - hit.At < ttl)
+            return hit.Verdict;
+
+        var verdict = await FetchAsync(key, ct);
+        // unknown кешуємо на коротший TTL: могла бути транзитна помилка edge/bot-wall
+        var entryTtl = verdict.Status == PlexAvailabilityResult.Unknown ? TimeSpan.FromMinutes(30) : ttl;
+        _cache[key] = new Entry(now + entryTtl, verdict);
+        Prune(now);
+        log.LogInformation("plex availability: {Url} → {Status} ({Count} сервісів)", key, verdict.Status, verdict.Services.Count);
+        return verdict;
+    }
+
+    private async Task<PlexAvailabilityResult> FetchAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(Math.Max(1000, _opt.AvailabilityTimeoutMs));
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.UserAgent.ParseAdd(_opt.UserAgent);
+            req.Headers.Accept.ParseAdd("text/html");
+            using var resp = await http.SendAsync(req, timeout.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                log.LogWarning("plex availability: {Url} → HTTP {Status} — unknown", url, (int)resp.StatusCode);
+                return PlexAvailabilityResult.UnknownResult; // bot-wall/edge — чесно невідомо
+            }
+            var html = await resp.Content.ReadAsStringAsync(timeout.Token);
+            return PlexAvailabilityParser.Parse(html);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return PlexAvailabilityResult.UnknownResult; // таймаут — unknown, не фейлимо /watch
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "plex availability: {Url} — помилка, unknown", url);
+            return PlexAvailabilityResult.UnknownResult;
+        }
+    }
+
+    /// <summary>Prune: викидаємо прострочені й найстаріші, поки не вліземо в ліміт.</summary>
+    private void Prune(DateTime now)
+    {
+        var max = Math.Max(100, _opt.AvailabilityCacheMax);
+        if (_cache.Count <= max) return;
+        var expired = _cache.Where(kv => now >= kv.Value.At).Select(kv => kv.Key).Take(_cache.Count - max).ToList();
+        foreach (var k in expired) _cache.TryRemove(k, out _);
+        while (_cache.Count > max)
+        {
+            var oldest = _cache.MinBy(kv => kv.Value.At);
+            if (oldest.Key is null || !_cache.TryRemove(oldest.Key, out _)) break;
         }
     }
 }

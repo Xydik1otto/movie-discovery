@@ -60,6 +60,27 @@ export interface TitleCard {
   // FR-14: компактні провайдери перегляду (лише is_available=true;
   // provider: sweettv|archive|tmdb-streaming).
   watchProviders?: WatchProvider[];
+  // UX-05: кандидати трейлерів (заповнюється лише у TitleDetail; на картках null).
+  trailers?: TrailerInfo[] | null;
+}
+
+// UX-05: кандидат трейлера (title_trailers). lang — uk|ru|en|…|null = невідома мова
+// (чесний unknown). verifiedStatus: ok|gone|nonembeddable|private|null — бекенд не
+// віддає не-ok синк-кандидатів; виняток — швидкий шлях titles.trailer_yt_id з
+// перевіреним статусом (фронт показує повідомлення/зовнішнє посилання, не iframe).
+export interface TrailerInfo {
+  ytId: string;
+  lang?: string | null;
+  official?: boolean | null;
+  source?: string | null;
+  verifiedAt?: string | null;
+  verifiedStatus?: string | null;
+}
+
+// Відповідь GET /api/titles/{id}/trailers (кеш бекенда 24 год; on-demand search за потреби).
+export interface TitleTrailersResponse {
+  titleId: number;
+  trailers: TrailerInfo[];
 }
 
 // Провайдер перегляду (FR-14, watch_links). Компактна форма — у TitleCard
@@ -78,6 +99,18 @@ export interface WatchProvider {
   // Уніфікований watch-ендпоінт (09.11): джерело рядка
   // (sweettv|megogo|plex|youtube|internet-archive|justwatch|…).
   source?: string | null;
+  // UX-04 (хвиля 2): ПОВНІ набори мов озвучки/субтитрів — csv ISO-639-1 («en,ru»);
+  // null = джерело мов НЕ заявило (невідома мова, НІКОЛИ не uk/ru за замовчуванням).
+  audioLangs?: string | null;
+  subLangs?: string | null;
+  // UX-04: чесна ціна платного оффера, якщо джерело її дало («3,99₴» + UAH).
+  price?: string | null;
+  currency?: string | null;
+  // UX-04: direct (deep-link на тайтл) | find («Знайти на сервісу»).
+  urlKind?: string | null;
+  // UX-04: точний tri-state доступності: available | unavailable | unknown.
+  // isAvailable=true лише для перевірених рядків; неперевірений каталог = unknown.
+  availabilityStatus?: string | null;
 }
 
 export interface TitleDetail extends TitleCard {
@@ -158,6 +191,9 @@ export interface SearchParams {
   sort?: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
   page?: number;
   pageSize?: number;
+  // UX-01: швидкі перегортання (page>1 з кешованим total) — бекенд пропускає
+  // COUNT і повертає total=-1. Опційний; без нього поведінка без змін.
+  omitTotal?: boolean;
 }
 
 // --- Імпорт списків (PLAN §Аніме і манга: «Імпорт списків») ---
@@ -219,6 +255,9 @@ export interface DiscoverResponse {
 
 export interface ListStats {
   watchedCount?: number | null;
+  // FR-17: «прочитане» (манґа) — окремий лічильник, НЕ змішується з watched
+  // (вкладки «Переглянуте»/«Прочитане» роздільні; чесні числа з БД на обох).
+  readCount?: number | null;
   likedCount?: number | null;
   dislikedCount?: number | null;
   avgRating?: number | null;

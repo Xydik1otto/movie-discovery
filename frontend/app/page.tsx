@@ -1,10 +1,19 @@
 "use client";
 
-import { useCallback, useState } from "react";
+// Головна: пошук за параметрами + «Схоже на...».
+// UX-01 (10.11): серверна пагінація по 20 (usePagedSearch замість прогресивного
+// акумулятора) — наступна сторінка ЗАМІНЮЄ поточну. Зміна запиту/фільтрів/
+// сортування скидає page=1. Стан (q+фільтри+sort+page) синхронізується з URL
+// (useSearchParams у <Suspense> — пастка Next 15 на пререндері), тож
+// посилання/reload/back-forward відновлюють результати.
+
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
 import { guardedBySeedsEx, guardedSearch } from "@/lib/fallback";
-import { useProgressiveSearch } from "@/lib/useProgressiveSearch";
+import { MAX_PAGES, PAGE_SIZE, usePagedSearch } from "@/lib/usePagedSearch";
+import type { FetchPageArgs } from "@/lib/usePagedSearch";
 import {
   AUDIO_LANG_OPTIONS,
   CATEGORY_OPTIONS,
@@ -20,10 +29,9 @@ import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import Pagination from "@/components/Pagination";
 import SeedsBuilder from "@/components/SeedsBuilder";
 import { Chip, ChipGroup } from "@/components/FilterChips";
-
-const PAGE_SIZE = 24;
 
 interface Applied {
   q: string;
@@ -68,7 +76,7 @@ const EMPTY: Applied = {
   actor: "",
   director: "",
   keyword: "",
-  language: "",
+  language: null,
   minVotes: null,
   seasonsFrom: null,
   seasonsTo: null,
@@ -82,6 +90,8 @@ const EMPTY: Applied = {
   sort: "popularity",
 };
 
+const SORT_VALUES = ["relevance", "rating", "imdb", "votes", "year", "popularity"] as const;
+
 function numOrNull(s: string): number | null {
   const v = s.trim();
   if (!v) return null;
@@ -89,45 +99,141 @@ function numOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Розбір URL (?q=&type=&genres=&...&sort=&page=) у застосовані фільтри + page. */
+function parseHomeParams(sp: URLSearchParams) {
+  const csv = (k: string): string[] => {
+    const v = sp.get(k);
+    return v
+      ? v
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : [];
+  };
+  const num = (k: string): number | null => numOrNull(sp.get(k) ?? "");
+  const q = sp.get("q") ?? "";
+  const sortRaw = sp.get("sort");
+  const sort = (SORT_VALUES as readonly string[]).includes(sortRaw ?? "")
+    ? (sortRaw as Applied["sort"])
+    : q
+      ? "relevance"
+      : "popularity";
+  const applied: Applied = {
+    q,
+    type: sp.get("type") || null,
+    genres: csv("genres"),
+    yearFrom: num("yearFrom"),
+    yearTo: num("yearTo"),
+    country: sp.get("country") || null,
+    minRating: num("minRating"),
+    maxRating: num("maxRating"),
+    minRuntime: num("minRuntime"),
+    maxRuntime: num("maxRuntime"),
+    actor: sp.get("actor") ?? "",
+    director: sp.get("director") ?? "",
+    keyword: sp.get("keyword") ?? "",
+    language: sp.get("language") || null,
+    minVotes: num("minVotes"),
+    seasonsFrom: num("seasonsFrom"),
+    seasonsTo: num("seasonsTo"),
+    excludeGenres: csv("excludeGenres"),
+    hasTrailer: sp.get("hasTrailer") === "1" ? true : null,
+    watchable: sp.get("watchable") === "1" ? true : null,
+    ratingSource: sp.get("ratingSource") || null,
+    category: sp.get("category") || null,
+    audioLang: sp.get("audioLang") || null,
+    minQuality: num("minQuality"),
+    sort,
+  };
+  const page = Math.min(MAX_PAGES, Math.max(1, Number(sp.get("page")) || 1));
+  return { applied, page };
+}
+
+/** Застосовані фільтри + page → URL-рядок (лише не-дефолтні значення). */
+function serializeHomeParams(a: Applied, page: number): string {
+  const sp = new URLSearchParams();
+  if (a.q) sp.set("q", a.q);
+  if (a.type) sp.set("type", a.type);
+  if (a.genres.length) sp.set("genres", a.genres.join(","));
+  if (a.yearFrom != null) sp.set("yearFrom", String(a.yearFrom));
+  if (a.yearTo != null) sp.set("yearTo", String(a.yearTo));
+  if (a.country) sp.set("country", a.country);
+  if (a.minRating != null) sp.set("minRating", String(a.minRating));
+  if (a.maxRating != null) sp.set("maxRating", String(a.maxRating));
+  if (a.minRuntime != null) sp.set("minRuntime", String(a.minRuntime));
+  if (a.maxRuntime != null) sp.set("maxRuntime", String(a.maxRuntime));
+  if (a.actor) sp.set("actor", a.actor);
+  if (a.director) sp.set("director", a.director);
+  if (a.keyword) sp.set("keyword", a.keyword);
+  if (a.language) sp.set("language", a.language);
+  if (a.minVotes != null) sp.set("minVotes", String(a.minVotes));
+  if (a.seasonsFrom != null) sp.set("seasonsFrom", String(a.seasonsFrom));
+  if (a.seasonsTo != null) sp.set("seasonsTo", String(a.seasonsTo));
+  if (a.excludeGenres.length) sp.set("excludeGenres", a.excludeGenres.join(","));
+  if (a.hasTrailer) sp.set("hasTrailer", "1");
+  if (a.watchable) sp.set("watchable", "1");
+  if (a.ratingSource) sp.set("ratingSource", a.ratingSource);
+  if (a.category) sp.set("category", a.category);
+  if (a.audioLang) sp.set("audioLang", a.audioLang);
+  if (a.minQuality != null) sp.set("minQuality", String(a.minQuality));
+  const defaultSort = a.q ? "relevance" : "popularity";
+  if (a.sort !== defaultSort) sp.set("sort", a.sort);
+  if (page > 1) sp.set("page", String(page));
+  return sp.toString();
+}
+
 export default function HomePage() {
+  // useSearchParams на пререндері без Suspense ламає next build (Next 15).
+  return (
+    <Suspense fallback={<LoadingSkeleton count={4} />}>
+      <HomePageInner />
+    </Suspense>
+  );
+}
+
+function HomePageInner() {
   const { t, lang } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"filters" | "similar">("filters");
 
-  // --- Вкладка «За параметрами» ---
-  const [qForm, setQForm] = useState("");
-  const [type, setType] = useState<string | null>(null);
-  const [genres, setGenres] = useState<string[]>([]);
-  const [yearFrom, setYearFrom] = useState("");
-  const [yearTo, setYearTo] = useState("");
-  const [country, setCountry] = useState("");
-  const [minRating, setMinRating] = useState("");
-  const [maxRating, setMaxRating] = useState("");
-  const [minRuntime, setMinRuntime] = useState("");
-  const [maxRuntime, setMaxRuntime] = useState("");
-  const [actor, setActor] = useState("");
-  const [director, setDirector] = useState("");
-  const [keyword, setKeyword] = useState("");
-  const [language, setLanguage] = useState("");
-  const [minVotes, setMinVotes] = useState("");
-  const [seasonsFrom, setSeasonsFrom] = useState("");
-  const [seasonsTo, setSeasonsTo] = useState("");
-  const [excludeGenres, setExcludeGenres] = useState<string[]>([]);
-  const [hasTrailer, setHasTrailer] = useState(false);
-  // FR-14: «Можна подивитись» → ?watchable=true (лише тайтли з watch_links).
-  const [watchable, setWatchable] = useState(false);
-  const [ratingSource, setRatingSource] = useState("");
-  // FR-19: категорія/країна/озвучка/якість — dropdown'и, порожнє = не фільтр.
-  const [category, setCategory] = useState("");
-  const [audioLang, setAudioLang] = useState("");
-  const [minQuality, setMinQuality] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [applied, setApplied] = useState<Applied>(EMPTY);
+  // Початковий стан — з URL (переживає reload/back-forward); далі URL — дзеркало.
+  const [init] = useState(() => parseHomeParams(new URLSearchParams(searchParams.toString())));
 
-  // Прогресивне завантаження: перша сторінка одразу, решта — інфініт-скролом;
-  // під час нового запиту попередні результати лишаються видимими (opacity).
+  // --- Вкладка «За параметрами» ---
+  const [qForm, setQForm] = useState(init.applied.q);
+  const [type, setType] = useState<string | null>(init.applied.type);
+  const [genres, setGenres] = useState<string[]>(init.applied.genres);
+  const [yearFrom, setYearFrom] = useState(init.applied.yearFrom != null ? String(init.applied.yearFrom) : "");
+  const [yearTo, setYearTo] = useState(init.applied.yearTo != null ? String(init.applied.yearTo) : "");
+  const [country, setCountry] = useState(init.applied.country ?? "");
+  const [minRating, setMinRating] = useState(init.applied.minRating != null ? String(init.applied.minRating) : "");
+  const [maxRating, setMaxRating] = useState(init.applied.maxRating != null ? String(init.applied.maxRating) : "");
+  const [minRuntime, setMinRuntime] = useState(init.applied.minRuntime != null ? String(init.applied.minRuntime) : "");
+  const [maxRuntime, setMaxRuntime] = useState(init.applied.maxRuntime != null ? String(init.applied.maxRuntime) : "");
+  const [actor, setActor] = useState(init.applied.actor);
+  const [director, setDirector] = useState(init.applied.director);
+  const [keyword, setKeyword] = useState(init.applied.keyword);
+  const [language, setLanguage] = useState(init.applied.language ?? "");
+  const [minVotes, setMinVotes] = useState(init.applied.minVotes != null ? String(init.applied.minVotes) : "");
+  const [seasonsFrom, setSeasonsFrom] = useState(init.applied.seasonsFrom != null ? String(init.applied.seasonsFrom) : "");
+  const [seasonsTo, setSeasonsTo] = useState(init.applied.seasonsTo != null ? String(init.applied.seasonsTo) : "");
+  const [excludeGenres, setExcludeGenres] = useState<string[]>(init.applied.excludeGenres);
+  const [hasTrailer, setHasTrailer] = useState(init.applied.hasTrailer === true);
+  // FR-14: «Можна подивитись» → ?watchable=true (лише тайтли з watch_links).
+  const [watchable, setWatchable] = useState(init.applied.watchable === true);
+  const [ratingSource, setRatingSource] = useState(init.applied.ratingSource ?? "");
+  // FR-19: категорія/країна/озвучка/якість — dropdown'и, порожнє = не фільтр.
+  const [category, setCategory] = useState(init.applied.category ?? "");
+  const [audioLang, setAudioLang] = useState(init.applied.audioLang ?? "");
+  const [minQuality, setMinQuality] = useState(init.applied.minQuality != null ? String(init.applied.minQuality) : "");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [applied, setApplied] = useState<Applied>(init.applied);
+
+  // Серверна пагінація: page належить хуку, старт — з URL.
   const fetchPage = useCallback(
-    (pg: number) =>
-      guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE }, lang).then((r) => {
+    ({ page: pg, omitTotal }: FetchPageArgs) =>
+      guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE, omitTotal }, lang).then((r) => {
         if (r.unavailable) {
           const e = new Error("api_unavailable");
           e.name = "ApiUnavailableError";
@@ -137,7 +243,58 @@ export default function HomePage() {
       }),
     [applied, lang],
   );
-  const list = useProgressiveSearch(fetchPage, JSON.stringify(applied) + "|" + lang);
+  const list = usePagedSearch(fetchPage, JSON.stringify(applied) + "|" + lang, true, init.page);
+
+  // ── URL-дзеркало: стан → ?params ──
+  // replace — для зміни фільтрів (reset не засмічує історію);
+  // push — для перегортань сторінок (Back повертає до попередньої сторінки результатів).
+  const buildQs = useCallback(
+    (page: number) => serializeHomeParams(applied, page),
+    [applied],
+  );
+  const urlQs = buildQs(list.page);
+  const lastWrittenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastWrittenRef.current === urlQs) return;
+    lastWrittenRef.current = urlQs;
+    router.replace(urlQs ? `/?${urlQs}` : "/", { scroll: false });
+  }, [urlQs, router]);
+
+  // ── Back/forward: URL змінили зовнішньо → гідратуємо форму/фільтри/page ──
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (current === lastWrittenRef.current) return; // наш власний запис — ехо
+    lastWrittenRef.current = current;
+    const p = parseHomeParams(new URLSearchParams(current));
+    setQForm(p.applied.q);
+    setType(p.applied.type);
+    setGenres(p.applied.genres);
+    setYearFrom(p.applied.yearFrom != null ? String(p.applied.yearFrom) : "");
+    setYearTo(p.applied.yearTo != null ? String(p.applied.yearTo) : "");
+    setCountry(p.applied.country ?? "");
+    setMinRating(p.applied.minRating != null ? String(p.applied.minRating) : "");
+    setMaxRating(p.applied.maxRating != null ? String(p.applied.maxRating) : "");
+    setMinRuntime(p.applied.minRuntime != null ? String(p.applied.minRuntime) : "");
+    setMaxRuntime(p.applied.maxRuntime != null ? String(p.applied.maxRuntime) : "");
+    setActor(p.applied.actor);
+    setDirector(p.applied.director);
+    setKeyword(p.applied.keyword);
+    setLanguage(p.applied.language ?? "");
+    setMinVotes(p.applied.minVotes != null ? String(p.applied.minVotes) : "");
+    setSeasonsFrom(p.applied.seasonsFrom != null ? String(p.applied.seasonsFrom) : "");
+    setSeasonsTo(p.applied.seasonsTo != null ? String(p.applied.seasonsTo) : "");
+    setExcludeGenres(p.applied.excludeGenres);
+    setHasTrailer(p.applied.hasTrailer === true);
+    setWatchable(p.applied.watchable === true);
+    setRatingSource(p.applied.ratingSource ?? "");
+    setCategory(p.applied.category ?? "");
+    setAudioLang(p.applied.audioLang ?? "");
+    setMinQuality(p.applied.minQuality != null ? String(p.applied.minQuality) : "");
+    setApplied(p.applied);
+    list.goTo(p.page);
+    // list.goTo стабільний; читаємо лише searchParams, інакше цикл на кожен рендер
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function apply() {
     const q = qForm.trim();
@@ -197,6 +354,20 @@ export default function HomePage() {
     setMinQuality("");
     setApplied(EMPTY);
   }
+
+  // Перегортання: нова сторінка замінює поточну. PUSH-навігація (not replace):
+  // кожна сторінка — запис історії, Back повертає до попередньої сторінки результатів.
+  const { goTo: listGoTo } = list;
+  const changePage = useCallback(
+    (p: number) => {
+      const qs = buildQs(p);
+      lastWrittenRef.current = qs; // push сам оновлює URL — дзеркало не дублює
+      router.push(qs ? `/?${qs}` : "/");
+      listGoTo(p);
+      window.scrollTo({ top: 0 });
+    },
+    [buildQs, router, listGoTo],
+  );
 
   // --- Вкладка «Схоже на...» ---
   const [seeds, setSeeds] = useState<TitleCardType[]>([]);
@@ -676,12 +847,23 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Результати — прогресивно: перша сторінка одразу, решта догружається скролом */}
+          {/* Результати — серверні сторінки по 20: наступна замінює поточну */}
           {list.unavailable && <ApiBanner />}
           {list.firstLoad ? (
             <LoadingSkeleton />
           ) : list.error ? (
-            <EmptyState icon="⚠️" title={t("common.error")} />
+            <div>
+              <EmptyState icon="⚠️" title={t("common.error")} />
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={list.retry}
+                  className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
+                >
+                  {t("common.retry")}
+                </button>
+              </div>
+            </div>
           ) : list.items.length === 0 && !list.busy ? (
             <EmptyState title={t("search.noResults")} />
           ) : (
@@ -706,18 +888,16 @@ export default function HomePage() {
                   {t("common.loading")}
                 </div>
               )}
-              {list.canMore && !list.busy && (
-                <div className="mt-4 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={list.showMore}
-                    className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
-                  >
-                    {t("common.showMore")}
-                  </button>
-                </div>
+              {!list.busy && list.total != null && (
+                <Pagination
+                  page={list.page}
+                  total={list.total}
+                  pageSize={list.pageSize}
+                  capped={list.totalCapped}
+                  maxPage={MAX_PAGES}
+                  onChange={changePage}
+                />
               )}
-              <div ref={list.sentinelRef} aria-hidden className="h-px w-full" />
             </>
           )}
         </section>

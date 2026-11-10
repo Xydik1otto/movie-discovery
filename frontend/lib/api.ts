@@ -28,6 +28,7 @@ import type {
   SimilarSeedsFilters,
   TitleCard,
   TitleDetail,
+  TitleTrailersResponse,
   WatchProvider,
 } from "./types";
 import type { Lang } from "../i18n/I18nContext";
@@ -156,13 +157,21 @@ export async function searchTitles(
       minQuality: p.minQuality ?? undefined,
       sort: p.sort,
       page: p.page ?? 1,
-      pageSize: p.pageSize ?? 24,
+      pageSize: p.pageSize ?? 20,
+      // UX-01: перегортання без повторного COUNT (total бере клієнт із кешу).
+      omitTotal: p.omitTotal ? "1" : undefined,
     })}&lang=${lang}`;
   return request<Paged<TitleCard>>(path);
 }
 
 export async function getTitle(id: number | string, lang: Lang): Promise<TitleDetail> {
   return request<TitleDetail>(`/api/title/${id}${qs({ lang })}`);
+}
+
+// UX-05: кандидати трейлерів (бекенд кешує відповідь 24 год; on-demand search лише
+// коли кандидатів нема). Викликається компонентом TrailerSection.
+export async function getTrailers(id: number | string): Promise<TitleTrailersResponse> {
+  return request<TitleTrailersResponse>(`/api/titles/${id}/trailers`);
 }
 
 export async function getTitleSimilar(

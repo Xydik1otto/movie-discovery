@@ -42,6 +42,9 @@ public static partial class MegogoParser
     /// <summary>Хост за замовчуванням (посилання на тайтл регіону UA).</summary>
     public const string SiteBase = "https://megogo.ua";
 
+    /// <summary>Шлях view-сторінки тайтла (єдине джерело правди для клієнта і синку).</summary>
+    public static string ViewPath(int id, string slug) => $"/ua/view/{id}-{slug}.html";
+
     // межі картки: кожна картка починається з <div class="card videoItem …" (з обрізаним класом у зразках)
     [GeneratedRegex("(?=<div class=\"card videoItem)")]
     private static partial Regex CardStart();
@@ -139,6 +142,48 @@ public static partial class MegogoParser
         return m.Success && int.TryParse(m.Value, out var y) ? y : null;
     }
 
+    /// <summary>Мови «Переклад»/«Субтитри» view-сторінки тайтла Megogo (UX-04): csv ISO-639-1 або null.</summary>
+    public sealed record MegogoViewLanguages(string? AudioLangs, string? SubLangs);
+
+    /// <summary>
+    /// Блок «Переклад» (div.video-block.video-audio) і «Субтитри» (div.video-block.video-cc)
+    /// на view-сторінці /ua/view/{id}-{slug}.html: &lt;h4&gt;Переклад&lt;/h4&gt; + &lt;span&gt;Українська&lt;/span&gt;,…
+    /// СЕМАНТИКА per-movie: мови САМЕ ЦЬОГО тайтла (контрольна перевірка хвилі-2 — сторінка
+    /// без рос. перекладу не містить «Російська» в блоці). Лейбли нормалізує WatchLanguages
+    /// (Українська→uk, Російська→ru…); невідомі лейбли відкидаємо (не вигадуємо), дублі злиті.
+    /// </summary>
+    public static MegogoViewLanguages ParseViewLanguages(string html)
+    {
+        var audio = Labels(VideoAudioBlock().Match(html ?? "").Groups["body"].Value);
+        var subs = Labels(VideoCcBlock().Match(html ?? "").Groups["body"].Value);
+        return new MegogoViewLanguages(
+            WatchLanguages.NormalizeSet(audio),
+            WatchLanguages.NormalizeSet(subs));
+    }
+
+    /// <summary>Всі &lt;span&gt;-лейбли в тілі блоку (без h4-заголовка).</summary>
+    private static List<string> Labels(string body)
+    {
+        var labels = new List<string>();
+        foreach (Match m in BlockSpan().Matches(body ?? ""))
+        {
+            var label = Unescape(m.Groups["l"].Value).Trim();
+            if (label.Length > 0) labels.Add(label);
+        }
+        return labels;
+    }
+
+    // межі блоку «Переклад»: від <div class="video-block video-audio"> до першого </div>
+    [GeneratedRegex("<div class=\"video-block video-audio\"[^>]*>(?<body>.*?)</div>", RegexOptions.Singleline)]
+    private static partial Regex VideoAudioBlock();
+
+    // межі блоку «Субтитри»: <div class="video-block video-cc">
+    [GeneratedRegex("<div class=\"video-block video-cc\"[^>]*>(?<body>.*?)</div>", RegexOptions.Singleline)]
+    private static partial Regex VideoCcBlock();
+
+    [GeneratedRegex("<span>(?<l>[^<]+)</span>")]
+    private static partial Regex BlockSpan();
+
     /// <summary>VideoObject JSON-LD зі сторінки тайтла: name (uk), alternativeHeadline (оригінал), genre.</summary>
     public static MegogoVideoLd? ParseVideoObject(string html)
     {
@@ -235,6 +280,7 @@ public sealed class MegogoSyncService(
             films.Count, series.Count, cards.Count, effectivePages);
 
         var rows = new List<Provider>();
+        var matchedCards = new List<(MegogoCatalogItem Card, int TitleId)>();
         var matched = 0;
         var unmatched = 0;
         var duplicates = 0;
@@ -263,13 +309,44 @@ public sealed class MegogoSyncService(
                 }
                 if (!seenTitles.Add(found.Id))
                 {
-                    // дві картки megogo вказали на один тайтл — UNIQUE(title, provider, kind, source, region)
+                    // дві картки megogo вказали на один тайтл — UNIQUE(title, provider, kind, source, region, audio-сигнатура)
                     duplicates++;
                     continue;
                 }
 
-                rows.Add(BuildProviderRow(found.Id, card));
+                matchedCards.Add((card, found.Id));
+                rows.Add(BuildProviderRow(found.Id, card, null, null));
                 matched++;
+            }
+        }
+
+        // UX-04: мовне збагачення з view-сторінок «Переклад»/«Субтитри» — ОБМЕЖЕНЕ
+        // (перші MaxViewFetches матчів за прогін; ввічливість — тротлінг клієнта 700мс).
+        // Позалімітові рядки чесно лишаються NULL (мова невідома).
+        var enriched = 0;
+        var cap = Math.Max(0, _opt.MaxViewFetches);
+        foreach (var (card, titleId) in matchedCards.Take(cap))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var viewHtml = await client.GetHtmlAsync(MegogoParser.ViewPath(card.Id, card.Slug), ct);
+                if (viewHtml is null) continue;
+                var langs = MegogoParser.ParseViewLanguages(viewHtml);
+                if (langs.AudioLangs is null && langs.SubLangs is null) continue; // блоків нема — лишаємо NULL
+                var row = rows.FirstOrDefault(r => r.TitleId == titleId);
+                if (row is null) continue;
+                row.AudioLangs = langs.AudioLangs;
+                row.SubLangs = langs.SubLangs;
+                enriched++;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "megogo: view-сторінка {Id} не взялась — рядок лишається без мов", card.Id);
             }
         }
 
@@ -283,8 +360,8 @@ public sealed class MegogoSyncService(
         if (unmatchedSamples.Count > 0)
             log.LogDebug("megogo: приклади без матчу: {Samples}", string.Join("; ", unmatchedSamples));
         log.LogInformation(
-            "megogo sync: карток={Cards}, матчів={Matched}, без матчу={Unmatched}, дублів-карток={Duplicates}, рядків providers={Providers}",
-            cards.Count, matched, unmatched, duplicates, rows.Count);
+            "megogo sync: карток={Cards}, матчів={Matched}, без матчу={Unmatched}, дублів-карток={Duplicates}, рядків providers={Providers}, з мовами={Enriched}",
+            cards.Count, matched, unmatched, duplicates, rows.Count, enriched);
         return new MegogoSyncResult(cards.Count, matched, unmatched, rows.Count);
     }
 
@@ -292,8 +369,9 @@ public sealed class MegogoSyncService(
     internal static string CatalogPageUrl(string collectionSlug, int page) =>
         page <= 1 ? $"/ua/collection/{collectionSlug}" : $"/ua/collection/{collectionSlug}?page={page}";
 
-    /// <summary>Рядок providers для підтвердженого матчу (чиста функція — тести).</summary>
-    internal static Provider BuildProviderRow(int titleId, MegogoCatalogItem card) => new()
+    /// <summary>Рядок providers для підтвердженого матчу; мови (csv ISO-639-1) — з view-сторінки
+    /// або NULL (чиста функція — тести).</summary>
+    internal static Provider BuildProviderRow(int titleId, MegogoCatalogItem card, string? audioLangs, string? subLangs) => new()
     {
         TitleId = titleId,
         ProviderName = ProviderName,
@@ -301,6 +379,8 @@ public sealed class MegogoSyncService(
         Url = card.Url,
         Source = Source,
         Region = Region,
+        AudioLangs = string.IsNullOrWhiteSpace(audioLangs) ? null : audioLangs.Trim(),
+        SubLangs = string.IsNullOrWhiteSpace(subLangs) ? null : subLangs.Trim(),
         UpdatedAt = DateTime.UtcNow,
     };
 

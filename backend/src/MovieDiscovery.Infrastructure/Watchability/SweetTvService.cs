@@ -100,7 +100,11 @@ public sealed class SweetTvService(
         }
         await db.SaveChangesAsync(ct);
 
-        // watch_link: UNIQUE(title_id, provider, kind, region) — повторний sync не дублює
+        // watch_link: UNIQUE(title_id, provider, kind, region, COALESCE(audio_langs,'')) —
+        // повторний sync не дублює. UX-04: мови озвучки/субтитрів САМЕ ЦЬОГО тайтла
+        // з блоку «Аудіодоріжки»/«Субтитри» view-сторінки (per-movie, не sitewide);
+        // блок відсутній → NULL (невідома мова, не uk/ru за замовчуванням).
+        var langs = SweetTvParser.ParseLanguages(cardHtml ?? "");
         var link = new WatchLink
         {
             TitleId = title.Id,
@@ -109,6 +113,8 @@ public sealed class SweetTvService(
             Region = Region,
             Url = card.Url,
             IsAvailable = true,
+            AudioLangs = langs.AudioLangs,
+            SubLangs = langs.SubLangs,
             CheckedAt = DateTime.UtcNow,
         };
         var existingLinks = await db.WatchLinks

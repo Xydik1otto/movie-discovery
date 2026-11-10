@@ -90,6 +90,12 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         return t("auth.err.lockout");
       case "unavailable":
         return t("auth.err.unavailable");
+      case "rate_limited":
+        // Codex-додаток: чесне повідомлення про ліміт (register 3/год/IP),
+        // з ~N хв якщо бекенд дав retryAfterMinutes; без нього — «пізніше».
+        return serverErrors.retryAfterMinutes != null
+          ? t("auth.err.rateLimited", { n: serverErrors.retryAfterMinutes })
+          : t("auth.err.rateLimitedGeneric");
       default:
         // 400 без розпізнаних полів — загальна форма.
         return serverErrors.fieldErrors.email?.length ||

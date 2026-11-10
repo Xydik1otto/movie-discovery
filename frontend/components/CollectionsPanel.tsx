@@ -22,6 +22,7 @@ import TitleCard from "./TitleCard";
 import ApiBanner from "./ApiBanner";
 import EmptyState from "./EmptyState";
 import LoadingSkeleton from "./LoadingSkeleton";
+import PosterImage from "./PosterImage";
 
 const MAX_CHIPS = 3;
 
@@ -280,14 +281,13 @@ export default function CollectionsPanel({
                     {cards.slice(0, 12).map((c) => {
                       const thumb = posterUrlFull(c.posterUrl, "w92");
                       return thumb ? (
-                        <img
+                        // UX-02: thumbnail з чесними станами (loading/404-1 ретрай/«Постер недоступний»)
+                        <span
                           key={c.id}
-                          src={thumb}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className="aspect-[2/3] w-full rounded object-cover"
-                        />
+                          className="block aspect-[2/3] w-full overflow-hidden rounded bg-panel-2"
+                        >
+                          <PosterImage src={thumb} title={c.title} compact />
+                        </span>
                       ) : (
                         <span
                           key={c.id}

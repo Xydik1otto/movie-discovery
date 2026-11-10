@@ -35,6 +35,9 @@ public class TitleCard
 
     // ── «Де подивитись» (FR-14): компактні бейджі, лише is_available=true ──
     public List<CardWatchProvider> WatchProviders { get; set; } = [];
+
+    // ── Трейлери (UX-05): заповнюється ЛИШЕ в деталях тайтла; на каталожних картках null ──
+    public List<TrailerInfo>? Trailers { get; set; }
 }
 
 /// <summary>Елемент відповіді схожості: TitleCard + score + reasons (1–3 локалізовані рядки).</summary>
@@ -45,6 +48,20 @@ public sealed class SimilarItem : TitleCard
 }
 
 public sealed record ProviderInfo(string Provider, string Kind, string? Url, string Source);
+
+/// <summary>
+/// Кандидат трейлера (UX-05): ytId, lang (uk|ru|en|…|NULL=unknown), official, source,
+/// verifiedAt (ISO) і verifiedStatus (ok|gone|nonembeddable|private|NULL).
+/// Деградовані статуси віддаються лише для швидкого шляху titles.trailer_yt_id —
+/// фронт показує їх як повідомлення/безпечне зовнішнє посилання, НЕ як iframe.
+/// </summary>
+public sealed record TrailerInfo(
+    string YtId,
+    string? Lang,
+    bool Official,
+    string Source,
+    DateTime? VerifiedAt,
+    string? VerifiedStatus = null);
 
 /// <summary>Картка тайтла з повними деталями.</summary>
 public sealed class TitleDetailResponse : TitleCard

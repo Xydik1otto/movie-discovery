@@ -22,4 +22,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- UX-01: тестам видно internal SearchService.MaxPages (depth-cap пагінації). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="MovieDiscovery.Tests" />
+  </ItemGroup>
+
 </Project>

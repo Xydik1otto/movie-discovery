@@ -6,6 +6,7 @@ import { useI18n } from "../i18n/I18nContext";
 import { getTitle, searchTitles } from "../lib/api";
 import { posterUrlFull } from "../lib/constants";
 import type { TitleCard as TitleCardType } from "../lib/types";
+import PosterImage from "./PosterImage";
 
 const DEBOUNCE_MS = 400;
 const MIN_QUERY = 2;
@@ -188,15 +189,11 @@ export default function QuickSimilar({
                     className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-panel-2"
                   >
                     {thumb ? (
-                      // posterUrl може бути повним URL (ytimg) або TMDB-шляхом —
-                      // posterUrlFull нормалізує обидва.
-                      <img
-                        src={thumb}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className="h-12 w-9 shrink-0 rounded-md object-cover"
-                      />
+                      // UX-02: thumbnail з чесними станами; ytimg-прев'ю posterUrlFull відкидає
+                      // (cheap-guard) → metadata-missing, бо прев'ю відео — не постер тайтла.
+                      <span className="block h-12 w-9 shrink-0 overflow-hidden rounded-md bg-panel-2">
+                        <PosterImage src={thumb} title={o.title} compact />
+                      </span>
                     ) : (
                       <span
                         aria-hidden

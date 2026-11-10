@@ -6,6 +6,7 @@
 import { posterUrlFull } from "../lib/constants";
 import type { TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
+import PosterImage from "./PosterImage";
 
 export default function SwipeCard({
   item,
@@ -24,11 +25,10 @@ export default function SwipeCard({
   const { t } = useI18n();
   const url = posterUrlFull(item.posterUrl);
   // Discover: трейлер приходить окремим id від бекенду (може бути відсутній —
-  // тоді кнопки на картці не має і лейаут не змінюється). Відкриваємо
-  // watch-посилання YouTube у новій вкладці.
-  const trailerUrl = item.trailerYtId
-    ? `https://www.youtube.com/watch?v=${encodeURIComponent(item.trailerYtId)}`
-    : null;
+  // тоді кнопки на картці не має і лейаут не змінюється). UX-05: кнопка веде на
+  // сторінку тайтла до блоку трейлера — там вибір мови, верифікація живості
+  // (oEmbed) і чесні стани; сліпе зовнішнє посилання без обробки битої прибрано.
+  const hasTrailer = !!item.trailerYtId;
 
   return (
     <div
@@ -37,21 +37,8 @@ export default function SwipeCard({
     >
       <div className="relative h-full overflow-hidden rounded-3xl border border-line bg-panel shadow-2xl shadow-black/40 select-none">
         <div className="absolute inset-0 bg-panel-2">
-          {url ? (
-            <img
-              src={url}
-              alt={item.title}
-              draggable={false}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-gradient-to-br from-panel-2 via-[#232a3d] to-[#3a1a2b] p-6 text-center">
-              <span className="text-5xl opacity-60" aria-hidden>
-                🎬
-              </span>
-              <span className="text-lg font-bold text-ink/80">{item.title}</span>
-            </div>
-          )}
+          {/* UX-02: спільний постер-слот — заглушка з назвою, коли постера немає; 1 ретрай при 404 */}
+          <PosterImage src={url} title={item.title} eager />
         </div>
 
         {/* Градієнт + підпис знизу */}
@@ -85,22 +72,25 @@ export default function SwipeCard({
         )}
 
         {/* Дії у верхньому правому куті: «Трейлер» (коли є) + «Відкрити картку».
-            Свідомо поза зоною drag-обробника: stopPropagation на pointerdown,
-            щоб тап/клік по кнопці не зсував картку (не стартує свайп). */}
+            UX-05: кнопка трейлера веде на сторінку тайтла до блоку трейлера
+            (вибір мови + верифікація + чесні стани) замість сліпого зовнішнього
+            посилання без обробки битої. Свідомо поза зоною drag-обробника:
+            stopPropagation на pointerdown, щоб тап/клік по кнопці не зсував картку. */}
         <div className="absolute right-3 top-3 flex items-center gap-2">
-          {trailerUrl && (
-            <a
-              href={trailerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+          {hasTrailer && (
+            <button
+              type="button"
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+              }}
               title={t("discover.trailer")}
               aria-label={t("discover.trailer")}
               className="flex items-center rounded-full border border-white/20 bg-black/50 px-2.5 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition-colors hover:bg-black/70"
             >
               ▶ {t("discover.trailer")}
-            </a>
+            </button>
           )}
           <button
             type="button"

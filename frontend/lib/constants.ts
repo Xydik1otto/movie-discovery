@@ -171,10 +171,19 @@ export function formatLabel(
 
 const TMDB_IMG = "https://image.tmdb.org";
 
+// UX-02 cheap-guard: YouTube-thumbnail (i.ytimg.com / img.youtube.com) — це прев'ю ВІДЕО,
+// а не постер тайтла; shikimori missing_original.jpg — службова заглушка джерела. Такі
+// URL могли залишились у БД/кешах — показувати їх як постер заборонено, тому posterUrlFull
+// повертає null (метадані відсутні) → PosterImage показує чесну заглушку з назвою.
+const FAKE_POSTER_MARKERS = ["i.ytimg.com", "img.youtube.com", "missing_original.jpg"];
+
 // posterUrl з API може прийти повним URL або TMDB-шляхом /xxx.jpg.
 export function posterUrlFull(posterUrl?: string | null, size = "w500"): string | null {
   if (!posterUrl) return null;
-  if (posterUrl.startsWith("http")) return posterUrl;
+  if (posterUrl.startsWith("http")) {
+    if (FAKE_POSTER_MARKERS.some((m) => posterUrl.includes(m))) return null; // фейковий «постер»
+    return posterUrl;
+  }
   if (posterUrl.startsWith("/")) return `${TMDB_IMG}/t/p/${size}${posterUrl}`;
   return null;
 }

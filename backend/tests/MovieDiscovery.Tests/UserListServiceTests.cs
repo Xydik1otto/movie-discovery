@@ -83,6 +83,34 @@ public class UserListServiceTests
     }
 
     [Fact]
+    public async Task Stats_Splits_Watched_And_Read_Counters()
+    {
+        // Дефект хвилі-1 (2): statsAPI рахував watched+read разом у watchedCount —
+        // statCell «Переглянуто» не збігався з вкладкою «Переглянуте» (юзер, що лише
+        // прочитав манґу, бачив «Переглянуто=1» і порожню вкладку). Тепер чесно:
+        // watchedCount — лише kind=watched, readCount — окремий лічильник kind=read.
+        var (db, _, lists, _) = New("lists-stats-split");
+        db.Titles.Add(NewTitle(1, ["drama"]));
+        db.Titles.Add(new Title
+        {
+            Id = 2, Type = "manga", TitleEn = "Manga Two", Year = 2021,
+            Genres = ["drama"], Popularity = 99,
+        });
+        await db.SaveChangesAsync();
+
+        await lists.AddAsync("u1", ListKinds.Watched, 1, null, 8);
+        await lists.AddAsync("u1", ListKinds.Read, 2, null, 9);
+
+        var stats = await lists.StatsAsync("u1");
+
+        Assert.Equal(1, stats.WatchedCount); // лише kind=watched
+        Assert.Equal(1, stats.ReadCount);    // read — окремо
+        Assert.Equal(0, stats.LikedCount);
+        Assert.Equal(0, stats.DislikedCount);
+        Assert.Equal(8.5, (double)stats.AvgRating!, precision: 6); // rating рахується з watched+read
+    }
+
+    [Fact]
     public async Task Migrate_Guest_Is_Idempotent()
     {
         var (db, _, lists, _) = New("lists-migrate");

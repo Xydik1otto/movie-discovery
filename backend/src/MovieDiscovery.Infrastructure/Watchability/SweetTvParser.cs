@@ -157,6 +157,37 @@ public static partial class SweetTvParser
             $"https://sweet.tv/ua-uk/movie/{id}-{slug}");
     }
 
+    /// <summary>Мови озвучки/субтитрів сторінки тайтла sweet.tv (UX-04): csv ISO-639-1 або null.</summary>
+    public sealed record SweetMovieLanguages(string? AudioLangs, string? SubLangs);
+
+    /// <summary>
+    /// Блок «Аудіодоріжки:»/«Субтитри:» на view-сторінці (class movie-available-info):
+    /// &lt;a href="/ua-uk/movies/filters/audiotrack/{slug}"&gt;Назва&lt;/a&gt; — слаг = мова сторінки
+    /// тайтла (ukrajinska/english/russkiy/...). СЕМАНТИКА per-movie: це мови САМЕ ЦЬОГО
+    /// тайтла (контрольна перевірка хвилі-2: тайтл без рос. озвучки не має russkiy-анкора).
+    /// Нормалізація WatchLanguages; невідомі слаги відкидаємо (не вигадуємо), дублі злиті.
+    /// </summary>
+    public static SweetMovieLanguages ParseLanguages(string html)
+    {
+        var audio = new List<string>();
+        var subs = new List<string>();
+        foreach (Match m in LanguageFilterHref().Matches(html ?? ""))
+        {
+            var target = m.Groups["kind"].Value;
+            var norm = WatchLanguages.Normalize(m.Groups["slug"].Value);
+            if (norm is null) continue; // невідомий слаг — чесний пропуск
+            if (target == "audiotrack") audio.Add(norm);
+            else subs.Add(norm);
+        }
+        return new SweetMovieLanguages(
+            WatchLanguages.NormalizeSet(audio),
+            WatchLanguages.NormalizeSet(subs));
+    }
+
+    // /ua-uk/movies/filters/audiotrack/ukrajinska | /ua-uk/movies/filters/subtitle/english
+    [GeneratedRegex("filters/(?<kind>audiotrack|subtitle)/(?<slug>[a-z-]+)")]
+    private static partial Regex LanguageFilterHref();
+
     /// <summary>kind за маркерами опису сторінки (не всього HTML!).</summary>
     public static string DetectKind(string? description)
     {

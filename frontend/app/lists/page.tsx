@@ -135,6 +135,7 @@ export default function ListsPage() {
       : null;
     return {
       watchedCount: guestEntries.filter((e) => e.kind === "watched").length,
+      readCount: guestEntries.filter((e) => e.kind === "read").length,
       likedCount: guestEntries.filter((e) => e.kind === "liked").length,
       dislikedCount: guestEntries.filter((e) => e.kind === "disliked").length,
       avgRating: avg,
@@ -312,6 +313,7 @@ export default function ListsPage() {
     ? stats
     : {
         watchedCount: guestStats.watchedCount,
+        readCount: guestStats.readCount,
         likedCount: guestStats.likedCount,
         dislikedCount: guestStats.dislikedCount,
         avgRating: guestStats.avgRating,
@@ -388,8 +390,9 @@ export default function ListsPage() {
       {/* FR-17: статистика (гостю — локальні лічильники, топ жанрів недоступний) */}
       {shownStats && (
         <section className="mb-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {statCell(t("lists.stats.watched"), shownStats.watchedCount ?? 0)}
+            {statCell(t("lists.stats.read"), shownStats.readCount ?? 0)}
             {statCell(t("lists.stats.liked"), shownStats.likedCount ?? 0)}
             {statCell(t("lists.stats.disliked"), shownStats.dislikedCount ?? 0)}
             {statCell(

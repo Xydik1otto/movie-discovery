@@ -1,0 +1,225 @@
+{
+  "AniListCatalogTests": {
+    "Passed": 5
+  },
+  "AniListMappingTests": {
+    "Passed": 11
+  },
+  "AnimeGenreMapTests": {
+    "Passed": 38
+  },
+  "AnimeUpsertTests": {
+    "Passed": 11
+  },
+  "ArchiveWatchServiceTests": {
+    "Passed": 3
+  },
+  "AuthRememberTests": {
+    "Passed": 5
+  },
+  "BotDisabledKeyTests": {
+    "Passed": 1
+  },
+  "BotHeaderApiTests": {
+    "Passed": 7
+  },
+  "BotIdentityServiceTests": {
+    "Passed": 8
+  },
+  "CacheKeysAndI18nTests": {
+    "Passed": 12
+  },
+  "CollectionsTests": {
+    "Passed": 6
+  },
+  "DiscoverPlannerTests": {
+    "Passed": 4
+  },
+  "DiscoverScorerTests": {
+    "Passed": 6
+  },
+  "DiscoverServiceTests": {
+    "Passed": 8
+  },
+  "HealthEndpointTests": {
+    "Passed": 3
+  },
+  "IdentityTests": {
+    "Passed": 9
+  },
+  "ImdbAkasParserTests": {
+    "Passed": 10
+  },
+  "ImdbAkasServiceTests": {
+    "Passed": 4
+  },
+  "ImdbAkasStagingTests": {
+    "Passed": 2
+  },
+  "ImdbCrewMergeCoreTests": {
+    "Passed": 9
+  },
+  "ImdbCrewParserTests": {
+    "Passed": 5
+  },
+  "ImdbCrewServiceTests": {
+    "Passed": 4
+  },
+  "ImdbMapperTests": {
+    "Passed": 16
+  },
+  "ImdbMergeServiceTests": {
+    "Passed": 7
+  },
+  "ImdbMergeTests": {
+    "Passed": 6
+  },
+  "ImdbTsvTests": {
+    "Passed": 4
+  },
+  "ImportControllerProfileTests": {
+    "Passed": 3
+  },
+  "ImportFlowTests": {
+    "Passed": 32
+  },
+  "ImportProfileTests": {
+    "Passed": 3
+  },
+  "JikanMappingTests": {
+    "Passed": 4
+  },
+  "JustWatchBuildProvidersTests": {
+    "Passed": 2
+  },
+  "JustWatchKindMapperTests": {
+    "Passed": 9
+  },
+  "JustWatchMatchTests": {
+    "Passed": 2
+  },
+  "JustWatchParseTests": {
+    "Passed": 3
+  },
+  "JustWatchProviderNameTests": {
+    "Passed": 6
+  },
+  "JustWatchReplaceProvidersTests": {
+    "Passed": 2
+  },
+  "JustWatchSyncServiceTests": {
+    "Passed": 4
+  },
+  "KeywordExtractorTests": {
+    "Passed": 5
+  },
+  "ListsOwnershipTests": {
+    "Passed": 18
+  },
+  "MalOfficialTests": {
+    "Passed": 48
+  },
+  "MegogoParserTests": {
+    "Passed": 12
+  },
+  "MegogoSyncServiceTests": {
+    "Passed": 6
+  },
+  "MegogoTitleMatchTests": {
+    "Passed": 4
+  },
+  "NpgsqlTranslationTests": {
+    "Passed": 10
+  },
+  "OnboardingContractTests": {
+    "Passed": 16
+  },
+  "PlexMatchTests": {
+    "Passed": 7
+  },
+  "PlexParserTests": {
+    "Passed": 15
+  },
+  "PlexSyncServiceTests": {
+    "Passed": 4
+  },
+  "SearchPagingTests": {
+    "Passed": 8
+  },
+  "ShikimoriMappingTests": {
+    "Passed": 5
+  },
+  "SimilarNamespaceTests": {
+    "Passed": 8
+  },
+  "SimilarityEngineTests": {
+    "Passed": 18
+  },
+  "SimilarityServiceTests": {
+    "Passed": 6
+  },
+  "SweetTvParserTests": {
+    "Passed": 8
+  },
+  "SweetTvServiceTests": {
+    "Passed": 4
+  },
+  "TasteProfileTests": {
+    "Passed": 11
+  },
+  "TitleMatcherTests": {
+    "Passed": 10
+  },
+  "TitleSeriesTests": {
+    "Passed": 19
+  },
+  "TmdbMappingTests": {
+    "Passed": 6
+  },
+  "TmdbProviderKindMapperTests": {
+    "Passed": 8
+  },
+  "TmdbProvidersServiceTests": {
+    "Passed": 3
+  },
+  "TrailerSyncTests": {
+    "Passed": 37,
+    "Failed": 2
+  },
+  "UserListServiceTests": {
+    "Passed": 7
+  },
+  "VirtualCategorySearchTests": {
+    "Passed": 16
+  },
+  "WatchLinkUpsertTests": {
+    "Passed": 6
+  },
+  "WatchOptionsMergerTests": {
+    "Passed": 19
+  },
+  "WatchableSearchTests": {
+    "Passed": 2
+  },
+  "WikidataNamesTests": {
+    "Passed": 19
+  },
+  "WikipediaPosterTests": {
+    "Passed": 17
+  },
+  "YouTubeEnrichServiceTests": {
+    "Passed": 10
+  },
+  "YoutubeClientTests": {
+    "Passed": 4
+  },
+  "YoutubeEnrichLogicTests": {
+    "Passed": 5
+  },
+  "YoutubeFiltersAndMatcherTests": {
+    "Passed": 14
+  },
+  "YoutubeParserTests": {
+    "Passed": 16
+  }
+}

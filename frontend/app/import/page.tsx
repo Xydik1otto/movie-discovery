@@ -61,6 +61,9 @@ export default function ImportPage() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [pollError, setPollError] = useState(false);
+  // Codex IV (5): jobId живе в стані — після 4 мережевих промахів опитування юзер може
+  // ПРОДОВЖИТИ (Resume) без повторного старту джоби.
+  const [jobId, setJobId] = useState<number | null>(null);
   const pollRef = useRef<{ alive: boolean } | null>(null);
 
   useEffect(() => {
@@ -126,6 +129,14 @@ export default function ImportPage() {
     };
   }, []);
 
+  // Codex IV (5): Resume — опитування тієї самої джоби після збою мережі.
+  // Джоба продовжує працювати на бекенді; повторний старт не потрібен і створив би дубль.
+  function resume() {
+    if (jobId == null) return;
+    setPollError(false);
+    poll(jobId);
+  }
+
   async function start() {
     const name = username.trim();
     if (!name || starting) return;
@@ -134,8 +145,9 @@ export default function ImportPage() {
     setPollError(false);
     setJob(null);
     try {
-      const { jobId } = await startImportJob(selected, name);
-      poll(jobId);
+      const { jobId: created } = await startImportJob(selected, name);
+      setJobId(created);
+      poll(created);
     } catch (e) {
       // Без API джобу не створити — ніяких демо-підмінок.
       const down = isUnavailable(e) || e instanceof ApiUnavailableError;
@@ -272,7 +284,16 @@ export default function ImportPage() {
               )}
 
               {pollError && !done && !failed && (
-                <p className="mt-3 text-sm text-amber-300">{t("api.unavailable")}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-amber-300">{t("api.unavailable")}</p>
+                  <button
+                    type="button"
+                    onClick={resume}
+                    className="rounded-xl border border-accent/50 bg-accent/10 px-3 py-1.5 text-sm font-bold text-accent-2 transition-colors hover:bg-accent/20"
+                  >
+                    {t("import.resume")}
+                  </button>
+                </div>
               )}
 
               {stats && (done || job.status === "running" || job.status === "queued") && (

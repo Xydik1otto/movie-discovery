@@ -16,11 +16,13 @@ import {
 import { ApiError, getMe, loginUser, logoutUser, registerUser } from "./api";
 import type { AuthFieldErrors, AuthUser } from "./types";
 
-export type AuthErrorKind = "credentials" | "lockout" | "unavailable" | "generic";
+export type AuthErrorKind = "credentials" | "lockout" | "unavailable" | "rate_limited" | "generic";
 
 export interface AuthFailure {
   kind: AuthErrorKind;
   fieldErrors: AuthFieldErrors;
+  // Codex-додаток: 429 register-лімітера — чесне «через ~N хв» (backend дає retryAfterMinutes).
+  retryAfterMinutes?: number | null;
 }
 
 interface AuthContextValue {
@@ -75,6 +77,17 @@ function failureFrom(e: unknown): AuthFailure {
   if (e instanceof ApiError) {
     if (e.status === 401) return { kind: "credentials", fieldErrors: {} };
     if (e.status === 423) return { kind: "lockout", fieldErrors: {} };
+    // 429 — ліміт бекенд-лімітера (register 3/год, login 5/хв). Бекенд повертає
+    // розпізнаване {error:"rate_limited", retryAfterMinutes}; чесне повідомлення
+    // замість загального «Не вдалося» (юзер інакше стукає марно).
+    if (e.status === 429) {
+      const body = e.body as { retryAfterMinutes?: unknown } | null;
+      const minutes =
+        typeof body?.retryAfterMinutes === "number" && body.retryAfterMinutes > 0
+          ? body.retryAfterMinutes
+          : null;
+      return { kind: "rate_limited", fieldErrors: {}, retryAfterMinutes: minutes };
+    }
     if (e.status === 400) return { kind: "generic", fieldErrors: fieldErrorsFromBody(e.body) };
   }
   return { kind: "generic", fieldErrors: {} };

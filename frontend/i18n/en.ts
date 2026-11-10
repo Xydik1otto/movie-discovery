@@ -4,6 +4,10 @@ import type { Dict } from "./uk";
 export const en: Dict = {
   "brand.name": "Movie Navigator",
   "brand.tagline": "Find what to watch — by parameters or “similar to…”",
+
+  // UX-02: poster honest states (PosterImage)
+  "poster.unavailable": "Poster unavailable",
+  "poster.retry": "Try again",
   "home.tabFilters": "By parameters",
   "home.tabSimilar": "Similar to...",
 
@@ -58,6 +62,8 @@ export const en: Dict = {
   "title.watchlist": "Watchlist",
   "title.watched": "Watched",
   "title.watchedAdd": "Watched it",
+  // Disabled mutually-exclusive action: honest reason, no fake "✓ done" mark.
+  "title.removeFirst": "Remove the title from “Want to watch” first",
   "title.providers": "Where to watch",
   "title.watch.where": "Where to watch",
   "title.trailer": "Trailer",
@@ -113,6 +119,7 @@ export const en: Dict = {
   "common.prev": "Back",
   "common.next": "Next",
   "common.pageOf": "Page {p} of {t}",
+  "common.pageOfCapped": "Page {p} of ~{t}",
   "common.retry": "Try again",
 
   "api.unavailable": "API is unavailable — showing demo data",
@@ -171,6 +178,8 @@ export const en: Dict = {
   "provider.sweettv": "sweet.tv",
   "provider.archive": "Internet Archive (free)",
   "provider.tmdb-streaming": "Streaming",
+  // FR-20: honest source name — not a raw i18n key.
+  "provider.youtube": "YouTube",
 
   "settings.language": "Interface language",
   "settings.region": "Provider region",
@@ -206,6 +215,8 @@ export const en: Dict = {
   "import.statusQueued": "Queued",
   "import.statusRunning": "Running",
   "import.statusDone": "Done",
+  // Codex IV (5): Resume polling the same job after a network failure.
+  "import.resume": "Resume",
   "import.statusFailed": "Failed",
   "import.summary": "Import finished",
   "import.notFound": "Profile not found — check the username or ID.",
@@ -259,6 +270,9 @@ export const en: Dict = {
   "auth.err.passwordUpper": "Password must contain an uppercase letter",
   "auth.err.credentials": "Incorrect email or password",
   "auth.err.lockout": "Too many failed attempts — try again in 15 minutes",
+  // Backend rate limiter (register 3/hour/IP): honest "~n min" message, not a generic failure.
+  "auth.err.rateLimited": "Registration limit reached — try again in ~{n} min",
+  "auth.err.rateLimitedGeneric": "Attempt limit reached — try again later",
   "auth.err.generic": "Something went wrong. Try again",
   "auth.err.unavailable": "API is unavailable — try again later",
   // MD-07: the server did not confirm logout — honest message instead of a fake sign-out.
@@ -310,6 +324,7 @@ export const en: Dict = {
   "lists.liked": "Liked",
   "lists.stats.title": "Stats",
   "lists.stats.watched": "Watched",
+  "lists.stats.read": "Read",
   "lists.stats.liked": "Liked",
   "lists.stats.disliked": "Not for me",
   "lists.stats.avgRating": "Average rating",
@@ -381,8 +396,47 @@ export const en: Dict = {
   "watch.showPaid": "Show paid",
   "watch.hidePaid": "Free only",
 
+  // --- UX-05: trailers (button, language chips, honest states) ---
+  "trailer.watch": "Watch trailer",
+  "trailer.loading": "Looking for trailers…",
+  "trailer.empty": "No trailers found",
+  "trailer.notFoundUi": "No trailer in your language found",
+  "trailer.chooseLang": "Choose a trailer language",
+  "trailer.unknownLang": "Unknown language",
+  "trailer.lang.uk": "Ukrainian",
+  "trailer.lang.ru": "Russian",
+  "trailer.lang.en": "English",
+  "trailer.lang.multi": "Multilingual",
+  "trailer.gone": "This trailer is no longer available on YouTube",
+  "trailer.nonembeddable": "The owner disabled embedding — watch on YouTube",
+  "trailer.openExternal": "Open on YouTube",
+
   // --- auth remember + password visibility ---
   "auth.showPassword": "Show password",
   "auth.hidePassword": "Hide password",
   "auth.rememberMe": "Remember me",
+
+  // --- UX-04 (wave 2): watch panel — viewing languages, tri-state, find-links ---
+  "watch.lang.switcher": "Viewing language",
+  "watch.lang.uk": "Ukrainian",
+  "watch.lang.ru": "Russian",
+  "watch.lang.original": "Original",
+  "watch.lang.unknown": "Language unknown",
+  "watch.tag.dub": "dubbed",
+  "watch.tag.audio": "voice-over",
+  "watch.tag.sub": "subtitles",
+  "watch.tag.audioShort": "audio",
+  "watch.lang.code.uk": "ukr",
+  "watch.lang.code.ru": "rus",
+  "watch.lang.code.en": "eng",
+  "watch.lang.code.original": "orig",
+  "watch.lang.code.multi": "multi",
+  "watch.empty.region": "No viewing data available in your region ({region}).",
+  "watch.empty.lang": "No viewing options in this language.",
+  "watch.empty.langHint": "Other available languages are on the switcher above.",
+  "watch.status.unknown": "availability unverified",
+  "watch.unknown.plexCatalog": "in the Plex catalog, availability unverified",
+  "watch.status.unavailable": "currently unavailable",
+  "watch.findOn": "Find on {provider}",
+  "watch.unknownNote": "{count} options with unverified availability (catalog).",
 };

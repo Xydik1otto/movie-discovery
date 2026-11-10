@@ -4,6 +4,7 @@ import Link from "next/link";
 import { posterUrlFull } from "@/lib/constants";
 import type { SeriesResponse } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
+import PosterImage from "./PosterImage";
 
 // FR: «Фільми з тієї ж лінійки» — франшиза/сага тайтла як порядок перегляду
 // (бекенд сортує: рік ASC, потім назва) з per-account позначками watched/watchlist.
@@ -35,16 +36,10 @@ export default function SeriesBlock({ series }: { series: SeriesResponse | null 
                   {i + 1}
                 </span>
 
-                {/* Постер-мініатюра */}
+                {/* Постер-мініатюра (UX-02: чесні стани — loading/1 ретрай/«Постер недоступний») */}
                 <div className="h-14 w-10 shrink-0 overflow-hidden rounded-md bg-panel-2">
                   {poster ? (
-                    <img
-                      src={poster}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      className="h-full w-full object-cover"
-                    />
+                    <PosterImage src={poster} title={item.title} compact />
                   ) : (
                     <div
                       className="flex h-full w-full items-center justify-center text-base opacity-60"

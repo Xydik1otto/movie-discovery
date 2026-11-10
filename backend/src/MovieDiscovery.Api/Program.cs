@@ -24,6 +24,7 @@ using MovieDiscovery.Infrastructure.Sync;
 using MovieDiscovery.Infrastructure.Tmdb;
 using MovieDiscovery.Infrastructure.Watch;
 using MovieDiscovery.Infrastructure.Watchability;
+using MovieDiscovery.Infrastructure.Wikipedia;
 using MovieDiscovery.Infrastructure.Wikidata;
 using MovieDiscovery.Infrastructure.Series;
 using MovieDiscovery.Infrastructure.YouTube;
@@ -66,6 +67,8 @@ public class Program
         builder.Services.Configure<JustWatchSyncOptions>(builder.Configuration.GetSection("JustWatch"));
         builder.Services.Configure<MegogoOptions>(builder.Configuration.GetSection("Megogo"));
         builder.Services.Configure<PlexOptions>(builder.Configuration.GetSection("Plex"));
+        // UX-02: Wikipedia-постери (QID-first) + чистки фейкових/wrong-Commons постерів.
+        builder.Services.Configure<WikipediaPosterOptions>(builder.Configuration.GetSection("Wikipedia"));
         builder.Services.Configure<SweetTvOptions>(builder.Configuration.GetSection("SweetTv"));
         builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
         // FR-16/17/18: ваги профілю смаку + опції discover
@@ -147,6 +150,8 @@ public class Program
         });
 
         // FR-16: RateLimiter — login 5/хв/IP, register 3/год/IP (429 при перевищенні).
+        // Codex-додаток: 429 має РОЗПІЗНАВАНЕ тіло {error:"rate_limited", retryAfterMinutes} —
+        // інакше фронт показує загальне «Не вдалося» і юзер стукатилася марно.
         builder.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -162,6 +167,25 @@ public class Program
                 {
                     PermitLimit = 3, Window = TimeSpan.FromHours(1), QueueLimit = 0,
                 }));
+            o.OnRejected = async (context, ct) =>
+            {
+                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+                // FixedWindow віддає RetryAfter у lease-метаданих; коли його нема — null
+                // (фронт показує чесне «пізніше» без вигаданих хвилин).
+                int? retryAfterMinutes = null;
+                // (fix tr-2 для спільного build-гейту: класу RetryAfterMetadata нема —
+                //  ключ метадати Retry-After рядковий; значення — TimeSpan)
+                if (context.Lease?.TryGetMetadata("Retry-After", out var retryAfter) == true
+                    && retryAfter is TimeSpan ra)
+                    retryAfterMinutes = Math.Max(1, (int)Math.Ceiling(ra.TotalMinutes));
+                var payload = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "rate_limited",
+                    retryAfterMinutes,
+                });
+                await context.HttpContext.Response.WriteAsync(payload, ct);
+            };
         });
 
         builder.Services.AddHttpClient<TmdbClient>(c =>
@@ -262,6 +286,26 @@ public class Program
             c.BaseAddress = new Uri(opt.BaseUrl.TrimEnd('/') + "/");
             c.Timeout = TimeSpan.FromSeconds(120);
         });
+        // UX-02: Wikipedia-постери (QID-first: imdb→P345→QID→sitelink→pageimages) + чистки
+        builder.Services.AddHttpClient<WikipediaPosterService>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<WikipediaPosterOptions>>().Value;
+            c.Timeout = TimeSpan.FromSeconds(60);
+            if (!string.IsNullOrWhiteSpace(opt.UserAgent))
+                c.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", opt.UserAgent);
+        });
+        builder.Services.AddScoped<PosterFakeCleanupService>();
+        builder.Services.AddScoped<CommonsWrongPosterCleanupService>();
+        // UX-04: перевірка «Where to Watch» сторінки тайтла (tri-state, обмежений кеш) —
+        // окремий короткий таймаут (PlexOptions.AvailabilityTimeoutMs, 10s), не sync-таймаут.
+        builder.Services.AddHttpClient<PlexAvailabilityService>((sp, c) =>
+        {
+            var opt = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PlexOptions>>().Value;
+            // (fix tr-2 для спільного build-гейту: c.UserAgent не існує — DefaultRequestHeaders.UserAgent)
+            if (!string.IsNullOrWhiteSpace(opt.UserAgent))
+                c.DefaultRequestHeaders.UserAgent.ParseAdd(opt.UserAgent);
+            c.Timeout = TimeSpan.FromSeconds(Math.Max(5, opt.AvailabilityTimeoutMs / 1000 + 5));
+        });
         // FR-20: YouTube Data API v3 (base з опцій; ключ YOUTUBE_API_KEY через MapEnvDefaults)
         builder.Services.AddHttpClient<YoutubeClient>((sp, c) =>
         {
@@ -298,10 +342,13 @@ public class Program
         builder.Services.AddSingleton<WikidataNamesSyncQueue>();
         builder.Services.AddSingleton<TitleSeriesSyncQueue>();
         builder.Services.AddSingleton<YoutubeSyncQueue>();
+        builder.Services.AddSingleton<TitleTrailerSyncQueue>();
         builder.Services.AddSingleton<JustWatchSyncQueue>();
         builder.Services.AddSingleton<MegogoSyncQueue>();
         builder.Services.AddSingleton<PlexSyncQueue>();
         builder.Services.AddSingleton<MegogoThrottle>();
+        builder.Services.AddSingleton<WikipediaPosterSyncQueue>();
+        builder.Services.AddSingleton<PosterCleanupQueue>();
         // Тротлінг джерел — спільні singletons (один на джерело для всіх споживачів).
         builder.Services.AddSingleton<JikanThrottle>();
         builder.Services.AddSingleton<ShikimoriThrottle>();
@@ -323,6 +370,14 @@ public class Program
         builder.Services.AddScoped<ImportService>();
         builder.Services.AddScoped<TmdbProvidersService>();
         builder.Services.AddScoped<YouTubeEnrichService>();
+        // UX-05: незалежний трейлер-шлях — search+матч+верифікація → title_trailers
+        builder.Services.AddHttpClient<TrailerVerifier>((sp, c) =>
+        {
+            // oEmbed не залежить від API-ключа і квоти (200=живий, 401=embed заборонено, 404=видалено)
+            c.BaseAddress = new Uri("https://www.youtube.com/");
+            c.Timeout = TimeSpan.FromSeconds(15);
+        });
+        builder.Services.AddScoped<TitleTrailerSyncService>();
         // FR-16/17/18: акаунти, профіль смаку, discover, онбординг
         builder.Services.AddScoped<TasteProfileService>();
         builder.Services.AddScoped<UserListService>();
@@ -347,9 +402,12 @@ public class Program
             builder.Services.AddHostedService<WikidataNamesSyncBackgroundService>();
             builder.Services.AddHostedService<TitleSeriesSyncBackgroundService>();
             builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
+            builder.Services.AddHostedService<TitleTrailerSyncBackgroundService>();
             builder.Services.AddHostedService<JustWatchSyncBackgroundService>();
             builder.Services.AddHostedService<MegogoSyncBackgroundService>();
             builder.Services.AddHostedService<PlexSyncBackgroundService>();
+            builder.Services.AddHostedService<WikipediaPosterSyncBackgroundService>();
+            builder.Services.AddHostedService<PosterCleanupBackgroundService>();
         }
 
         var app = builder.Build();

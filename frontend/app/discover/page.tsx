@@ -23,6 +23,10 @@ import LoadingSkeleton from "@/components/LoadingSkeleton";
 const BATCH = 10;
 const REFILL_AT = 3;
 const SWIPE_THRESHOLD = 110;
+// UX-01 (віконний трім): пройдений префікс колоди випадає, щойно накопичиться
+// TRIM_AFTER пройдених — масив cards (і пам'ять) не росте з довжиною сесії;
+// у рендері й так живуть лише активна картка + 2 тильки.
+const TRIM_AFTER = 6;
 
 export default function DiscoverPage() {
   const { t, lang } = useI18n();
@@ -50,6 +54,8 @@ export default function DiscoverPage() {
   );
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const fetchingMore = useRef(false);
+  // Дзеркало index для колбеку setCards (клозура fetchBatch відстає від стану).
+  const indexRef = useRef(0);
 
   const seenIds = useRef<Set<number>>(new Set());
 
@@ -65,7 +71,10 @@ export default function DiscoverPage() {
         setMode(r.data.mode ?? null);
         setUnavailable(r.unavailable);
         setError(false);
-        if (first) setIndex(0);
+        if (first) {
+          setIndex(0);
+          indexRef.current = 0;
+        }
       } catch (e) {
         // Cookie протух → на вхід, далі повернемось на /discover.
         if (e instanceof ApiError && e.status === 401) {
@@ -108,11 +117,24 @@ export default function DiscoverPage() {
     }
   }, [cards.length, index, loading, loadingMore, error, fetchBatch]);
 
+  // Віконний трім (UX-01): після кількох злетів зрізаємо пройдений префікс колоди.
+  // Зсув узгоджений і для cards (slice(index)), і для index (→0): cards[0] = та сама
+  // «поточна» картка, ключі (id) не змінюються — DOM не перемонтується.
+  useEffect(() => {
+    if (index < TRIM_AFTER) return;
+    setCards((prev) => prev.slice(index));
+    setIndex(0);
+    indexRef.current = 0;
+  }, [index]);
+
   const current = cards[index];
   const behind = cards.slice(index + 1, index + 3); // 2 картки під верхньою
 
   const advance = useCallback(() => {
-    setIndex((i) => i + 1);
+    setIndex((i) => {
+      indexRef.current = i + 1;
+      return i + 1;
+    });
     setExit(null);
     setDrag({ x: 0, y: 0, active: false });
   }, []);

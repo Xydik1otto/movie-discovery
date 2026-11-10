@@ -71,8 +71,107 @@ public class WatchLinkUpsertTests
     }
 
     [Fact]
-    public void Key_Is_Stable()
+    public void Key_Is_Stable_With_Lang_Signature()
     {
-        Assert.Equal("1|archive|free|*", WatchLinkUpsertCore.Key(Link()));
+        Assert.Equal("1|archive|free|*|", WatchLinkUpsertCore.Key(Link())); // NULL-мова → порожня сигнатура
+        var withLang = Link();
+        withLang.AudioLangs = "uk,ru";
+        Assert.Equal("1|archive|free|*|ru,uk", WatchLinkUpsertCore.Key(withLang)); // CanonicalKey: sorted csv
+    }
+
+    [Fact]
+    public void Same_Link_Different_AudioLangs_Is_Separate_Row()
+    {
+        var ru = Link();
+        ru.AudioLangs = "ru";
+        var uk = Link();
+        uk.AudioLangs = "uk";
+
+        var (_, created) = WatchLinkUpsertCore.Resolve([ru], uk);
+        Assert.True(created); // uk/ru-варіанти того самого провайдера НЕ колапсують (UX-04)
+
+        var (resolved2, created2) = WatchLinkUpsertCore.Resolve([ru, uk], new WatchLink
+        {
+            TitleId = 1, Provider = "archive", Kind = "free", Region = "*",
+            Url = "https://x", IsAvailable = true, AudioLangs = "uk",
+        });
+        Assert.False(created2); // та сама мовна сигнатура → той самий рядок
+        Assert.Same(uk, resolved2);
+    }
+
+    // ── Codex IV-04: uk+ru одночасно в ОДНОМУ провайдері + ідемпотентний повторний sync ──
+
+    [Fact]
+    public void Uk_And_Ru_Together_In_Same_Provider_Are_Two_Rows_And_Re_Sync_Is_Idempotent()
+    {
+        // Прогін 1: uk-варіант, потім ru-варіант того самого (provider, kind, region, url).
+        var stored = new List<WatchLink>();
+        foreach (var langs in new[] { "uk", "ru" })
+        {
+            var patch = Link();
+            patch.AudioLangs = langs;
+            var (resolved, created) = WatchLinkUpsertCore.Resolve(stored, patch);
+            if (created) stored.Add(resolved);
+        }
+        Assert.Equal(2, stored.Count); // uk і ru — ДВА окремі рядки (не колапс)
+        Assert.Contains(stored, l => l.AudioLangs == "uk");
+        Assert.Contains(stored, l => l.AudioLangs == "ru");
+
+        // Прогін 2 (ідемпотентність): ті самі мовні варіанти НЕ додають дублів.
+        var countBefore = stored.Count;
+        foreach (var langs in new[] { "uk", "ru" })
+        {
+            var patch = Link();
+            patch.AudioLangs = langs;
+            patch.Url = "https://refreshed";
+            var (resolved, created) = WatchLinkUpsertCore.Resolve(stored, patch);
+            Assert.False(created); // попаде в існуючий рядок
+            WatchLinkUpsertCore.Merge(resolved, patch);
+        }
+        Assert.Equal(countBefore, stored.Count); // дублів нема
+        Assert.Contains(stored, l => l.Url == "https://refreshed"); // url оновлено в обох
+        Assert.All(stored, l => Assert.NotEqual("uk,ru", l.AudioLangs)); // мови НЕ злились
+    }
+
+    [Fact]
+    public void Re_Sync_Normalizes_Csv_Order_And_Case_To_Same_Row()
+    {
+        var stored = new WatchLink { TitleId = 1, Provider = "archive", Kind = "free", Region = "*", Url = "https://x", IsAvailable = true, AudioLangs = "uk,ru" };
+
+        // інший порядок/регістр того самого набору → ТА САМА сигнатура → той самий рядок
+        var patch = Link();
+        patch.AudioLangs = "RU,UK";
+        var (resolved, created) = WatchLinkUpsertCore.Resolve([stored], patch);
+        Assert.False(created);
+        Assert.Same(stored, resolved);
+    }
+
+    [Fact]
+    public void Legacy_Null_Lang_Rows_Not_Duplicated_By_Re_Sync()
+    {
+        // старі рядки (NULL мова) — повторний sync без мов НЕ створює дубля
+        var existing = Link();
+        existing.AudioLangs = null;
+
+        var patch = Link(); // AudioLangs = null
+        var (resolved, created) = WatchLinkUpsertCore.Resolve([existing], patch);
+        Assert.False(created);
+        Assert.Same(existing, resolved);
+
+        // і рядок БЕЗ мов не поглинає новий мовний варіант: «uk» поруч — окремий рядок
+        var ukPatch = Link();
+        ukPatch.AudioLangs = "uk";
+        var (_, createdUk) = WatchLinkUpsertCore.Resolve([existing], ukPatch);
+        Assert.True(createdUk);
+    }
+
+    [Fact]
+    public void CanonicalKey_Sorted_CaseInsensitive_UnknownFiltered()
+    {
+        Assert.Equal("", WatchLanguages.CanonicalKey(null));
+        Assert.Equal("", WatchLanguages.CanonicalKey("klingon"));          // все-невідоме → «» (NULL)
+        Assert.Equal("en,ru", WatchLanguages.CanonicalKey("RU, en"));      // сортування + regístr
+        Assert.Equal("en,ru,uk", WatchLanguages.CanonicalKey("ukrajinska, russkiy, eng"));
+        Assert.Equal("en", WatchLanguages.CanonicalKey("en, klingon"));    // невідомі відкидаються
     }
 }

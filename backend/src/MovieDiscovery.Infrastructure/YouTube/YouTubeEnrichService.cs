@@ -108,6 +108,7 @@ public static partial class YoutubeMatcher
 /// <summary>
 /// Розпізнавання мови аудіо/озвучки з назви/опису/каналу відео (audio_lang watch_links, FR-19).
 /// uk-пріоритет; нічого не розпізнано → NULL (порожнє значення — легальне).
+/// UX-05: додано de/fr/es-групи (теж використовуються трейлер-шляхом через TrailerLang.FromDetector).
 /// </summary>
 public static class YoutubeLangDetector
 {
@@ -120,6 +121,9 @@ public static class YoutubeLangDetector
         ("kor", ["korean", "корей"]),
         ("zho", ["chinese", "mandarin", "китайс"]),
         ("eng", ["english", "англ", "eng"]),
+        ("deu", ["german", "deutsch", "німець", "немец"]),
+        ("fra", ["french", "français", "francais", "француз"]),
+        ("spa", ["spanish", "español", "espanol", "іспан", "испан"]),
     ];
 
     public static string? Detect(string? title, string? description, string? channelTitle)
@@ -136,7 +140,8 @@ public static class YoutubeLangDetector
 /// <summary>
 /// FR-20: YouTube як джерело перегляду. Search+матч → watch_links (provider=youtube,
 /// kind=free, region=*, dub=original, audio_lang за мовою якщо розпізнано, quality за definition).
-/// Постер-фолбек: порожній poster_path → прев'ю відео (повний URL i.ytimg.com).
+/// UX-02: YouTube-thumbnail НЕ пишеться у titles.poster_path (це прев'ю відео, а не постер
+/// тайтла — дефект видалено; постери дає синк wikipedia-posters, фронт показує чесну заглушку).
 /// Квота-дисципліна: search-відповіді кешуються в source_cache 24 год; on-demand — 1 search/запит.
 /// </summary>
 public sealed class YouTubeEnrichService(
@@ -248,13 +253,8 @@ public sealed class YouTubeEnrichService(
             // titles.trailer_yt_id більше не залежить лише від TmdbMapper (TMDB не використовується).
             if (YoutubeFilters.IsTrailer(video.Title, video.Description))
             {
-                if (YoutubeEnrichLogic.TreatAsTrailer(title, video.Title, video.Description, title.TrailerYtId))
-                {
-                    title.TrailerYtId = video.VideoId;
+                if (TryRecordOfficialTrailer(title, video))
                     trailerVideoId = video.VideoId;
-                    log.LogInformation(
-                        "YouTube офіційний трейлер записано: title={TitleId}, video={VideoId}", title.Id, video.VideoId);
-                }
                 continue; // трейлер НЕ лінк для перегляду — пошук watch-лінка триває
             }
             if (!YoutubeFilters.DurationOk(
@@ -276,6 +276,22 @@ public sealed class YouTubeEnrichService(
                 title.Id, trailerVideoId);
         }
         return null;
+    }
+
+    /// <summary>
+    /// Вичленений трейлер-шлях (UX-05): чи записати відео в titles.trailer_yt_id (FR-20+).
+    /// Рішення — YoutubeEnrichLogic.TreatAsTrailer. ВАЖЛИВО: short-circuit EnsureYoutubeLinkAsync
+    /// («watch-лінк уже є → return false») НЕ блокує цей метод — новий незалежний трейлер-синк
+    /// (TitleTrailerSyncService) через EnsureYoutubeLinkAsync/SyncAsync не проходить узагалі.
+    /// </summary>
+    internal bool TryRecordOfficialTrailer(Title title, YoutubeVideo video)
+    {
+        if (!YoutubeEnrichLogic.TreatAsTrailer(title, video.Title, video.Description, title.TrailerYtId))
+            return false;
+        title.TrailerYtId = video.VideoId;
+        log.LogInformation(
+            "YouTube офіційний трейлер записано: title={TitleId}, video={VideoId}", title.Id, video.VideoId);
+        return true;
     }
 
     /// <summary>search.list з 24-год кешем у source_cache (акуратно з квотою 100 units/запит).</summary>
@@ -300,7 +316,7 @@ public sealed class YouTubeEnrichService(
         return items;
     }
 
-    /// <summary>Ідемпотентний upsert watch_links (provider=youtube, kind=free, region=*) + постер-фолбек.</summary>
+    /// <summary>Ідемпотентний upsert watch_links (provider=youtube, kind=free, region=*) — без постер-фолбеку (UX-02).</summary>
     internal async Task<WatchLink> UpsertLinkAsync(Title title, YoutubeVideo video, CancellationToken ct)
     {
         var patch = new WatchLink
@@ -324,10 +340,10 @@ public sealed class YouTubeEnrichService(
         WatchLinkUpsertCore.Merge(link, patch);
         if (created) db.WatchLinks.Add(link);
 
-        // Постер-фолбек: titles.poster_path IS NULL/'' → прев'ю YouTube (ПОВНИЙ URL — TitleCard вже
-        // пропускає абсолютні URL, фронт показує будь-який)
-        if (string.IsNullOrWhiteSpace(title.PosterPath))
-            title.PosterPath = $"https://i.ytimg.com/vi/{video.VideoId}/hqdefault.jpg";
+        // UX-02: постер-фолбек ВИДАЛЕНО — YouTube-thumbnail (i.ytimg.com) не є постером тайтла.
+        // Thumbnail лишається лише у watch_links-представленні як прев'ю перегляду;
+        // titles.poster_path заповнює fill-only синк wikipedia-posters, фронт показує
+        // чесну заглушку PosterImage, доки справжнього постера немає.
 
         await db.SaveChangesAsync(ct);
         log.LogInformation("YouTube лінк {State}: title={TitleId}, video={VideoId}, quality={Quality}, audio={Audio}",

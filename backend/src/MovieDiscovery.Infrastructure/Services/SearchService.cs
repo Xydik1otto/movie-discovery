@@ -38,7 +38,11 @@ public sealed record SearchQuery(
     // ── Віртуальні категорії та озвучки (FR-19) ──
     string? Category = null,
     string? AudioLang = null,
-    int? MinQuality = null);
+    int? MinQuality = null,
+    // UX-01: швидкі перегортання (page>1) — клієнт тримає total у кеші з першої
+    // сторінки і просить пропустити дорогий COUNT; сервер повертає total = -1
+    // («невідомо»), totalCapped = false. Опційний: дефолтна поведінка без змін.
+    bool OmitTotal = false);
 
 public sealed record SearchResult(IReadOnlyList<Title> Items, int Total, int Page, int PageSize, bool TotalCapped = false);
 
@@ -67,9 +71,30 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         // plan_cache_mode = force_custom_plan (custom-план бачить реальні значення;
         // планування ~6 мс проти секунд виконання). EF.Constant тут НЕ варіант —
         // як аргумент Take(int) він викликається eagerly поза expression tree.
-        var total = capped
-            ? await query.Take(CountCap + 1).CountAsync(ct)
-            : await query.CountAsync(ct);
+        // UX-01: omitTotal — клієнт гортає сторінки, маючи total у кеші з page=1;
+        // повторний COUNT на кожному перегортанні пропускаємо (total = -1).
+        int total;
+        if (q.OmitTotal)
+        {
+            total = -1;
+        }
+        else
+        {
+            total = capped
+                ? await query.Take(CountCap + 1).CountAsync(ct)
+                : await query.CountAsync(ct);
+        }
+
+        // UX-01: клип глибини OFFSET. Сторінка не може перевищити maxPage за
+        // total — застарілий bookmark/брутфорс ?page=999999 більше не змушує PG
+        // проганяти сотні тисяч рядків індексу заради порожньої відповіді.
+        // Коли total невідомий (omitTotal) — жорсткий ліміт сторінок (синхронний
+        // із клієнтським usePagedSearch.MAX_PAGES).
+        var maxPage = total >= 0
+            ? Math.Max(1, (int)Math.Ceiling(total / (double)pageSize))
+            : MaxPages;
+        if (page > maxPage)
+            page = maxPage;
 
         query = Sort(query, q.Sort);
 
@@ -80,6 +105,10 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
 
         return new SearchResult(items, total, page, pageSize, capped && total > CountCap);
     }
+
+    // Жорстка стеля глибини пагінації: 5000 стор. × 50 = OFFSET ≤ 250k —
+    // indexing-walk у межах мілісекунд навіть без лічильника.
+    internal const int MaxPages = 5000;
 
     /// <summary>Побудова запиту з усіма фільтрами (public — тест трансляції без БД, як NpgsqlTranslationTests).</summary>
     public IQueryable<Title> BuildQuery(SearchQuery q)
@@ -158,7 +187,13 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             query = query.Where(t => t.Seasons <= sTo);
 
         if (q.HasTrailer == true)
-            query = query.Where(t => t.TrailerYtId != null && t.TrailerYtId != "");
+            query = query.Where(t =>
+                // IV-06 (координація tr-2 ↔ watch-2): верифікований трейлер у НОВІЙ таблиці
+                // title_trailers (UX-05, verified_status='ok') ТАКОЖ проходить hasTrailer=true,
+                // не лише швидкий шлях titles.trailer_yt_id. Повний предикат:
+                // EXISTS(title_trailers ok) OR trailer_yt_id IS NOT NULL.
+                db.TitleTrailers.Any(tr => tr.TitleId == t.Id && tr.VerifiedStatus == "ok")
+                || (t.TrailerYtId != null && t.TrailerYtId != ""));
 
         if (q.HasProviders == true)
         {
@@ -212,12 +247,17 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             }
         }
 
-        // audioLang: EXISTS watch_links (is_available, audio_lang == X)
+        // audioLang: EXISTS watch_links (is_available) + IV-07: ЛЮБЕ з двох мовних полів —
+        // легасі одиночне audio_lang (ukr|russ|eng|original|…) АБО нові набори audio_langs
+        // (csv ISO-639-1 «en,ru», JustWatch/sweet.tv/Megogo). Точний ТОКЕН-матчинг по csv
+        // (Split на ',' — substring false-positives неможливі: 'rus' не матчить 'russian',
+        // 'ru' не матчить 'belarusian'); синоніми через мапу (ukr≡uk, russ≡ru, eng≡en).
+        // СУБТИТРИ НЕ рахуються як аудіо (sub_langs у предикаті відсутній — свідомо).
         if (!string.IsNullOrWhiteSpace(q.AudioLang))
         {
-            var audioLang = q.AudioLang.Trim().ToLowerInvariant();
-            query = query.Where(t => db.WatchLinks
-                .Any(w => w.TitleId == t.Id && w.IsAvailable && w.AudioLang == audioLang));
+            // синоніми до SQL-рівня: "ukr" → {"ukr","uk"}, "uk" → {"uk","ukr"} тощо
+            var wanted = AudioLangVariants(q.AudioLang).ToList();
+            query = query.Where(AudioLinkExists(db.WatchLinks, wanted));
         }
 
         // minQuality: EXISTS watch_links (is_available, quality >= X)
@@ -226,6 +266,96 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
                 .Any(w => w.TitleId == t.Id && w.IsAvailable && w.Quality >= minQuality));
 
         return query;
+    }
+
+    /// <summary>
+    /// IV-07: синоніми фільтра audioLang → набір ТОЧНИХ токенів для предиката:
+    /// «ukr» матчить і легасі audio_lang='ukr', і нові audio_langs='uk' (csv ISO);
+    /// «uk» матчить обидві форми; невідомий токен проходить як є (чесний no-match,
+    /// не фолбек uk/ru). Синонімічні пари з WatchLanguages (єдине джерело мапи).
+    /// </summary>
+    internal static IReadOnlySet<string> AudioLangVariants(string? raw)
+    {
+        var canonical = MovieDiscovery.Infrastructure.Watchability.WatchLanguages.Normalize(raw);
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (raw is not null)
+        {
+            var t = raw.Trim().ToLowerInvariant();
+            if (t.Length > 0) set.Add(t);
+        }
+        if (canonical is not null) set.Add(canonical);
+        // зворотний бік: canonical ISO → легасі-форма (щоб audioLang=uk знайшов audio_lang='ukr')
+        var legacy = canonical switch
+        {
+            "uk" => "ukr",
+            "ru" => "russ",
+            "en" => "eng",
+            "ja" => "jpn",
+            "ko" => "kor",
+            "zh" => "zho",
+            "de" => "ger",
+            "fr" => "fre",
+            "es" => "spa",
+            "it" => "ita",
+            "pl" => "pol",
+            _ => null,
+        };
+        if (legacy is not null) set.Add(legacy);
+        return set;
+    }
+
+    /// <summary>
+    /// IV-07: EXISTS-предикат «у тайтла є доступний watch_link з аудіо однією з бажаних мов».
+    /// Легасі: точний токен у audio_lang (IN — транслюється). Нові набори: ТОЧНИЙ токен серед
+    /// csv-токенів audio_langs через ('=' + csv + '=') LIKE '=uk,=' на кожен токен — OR-ланцюг
+    /// будується ДЕРЕВОМ ВИРАЗІВ, бо Split/Any у виразному дереві не транслиється ані InMemory,
+    /// ані Npgsql (substring false-positives неможливі: паддинг замикає токени комами,
+    /// 'ru' не матчить 'belarusian'). Субтитри НЕ рахуються як аудіо (sub_langs відсутній).
+    /// </summary>
+    internal static Expression<Func<Title, bool>> AudioLinkExists(DbSet<WatchLink> links, IReadOnlyList<string> wanted)
+    {
+        var t = Expression.Parameter(typeof(Title), "t");
+        var w = Expression.Parameter(typeof(WatchLink), "w");
+
+        // DbSet у дереві — тільки через closure-член (Expression.Constant(DbSet) ламає
+        // і InMemory-транслятор, і ExpressionPrinter Npgsql): захоплена змінна → MemberExpression.
+        DbSet<WatchLink> linksCaptured = links;
+        var linksExpr = (MemberExpression)((Expression<Func<DbSet<WatchLink>>>)(() => linksCaptured)).Body;
+
+        var titleMatch = Expression.Equal(
+            Expression.Property(w, nameof(WatchLink.TitleId)), Expression.Property(t, nameof(Title.Id)));
+        var available = Expression.Equal(
+            Expression.Property(w, nameof(WatchLink.IsAvailable)), Expression.Constant(true, typeof(bool)));
+
+        // легасі-поле: w.AudioLang != null && wanted.Contains(w.AudioLang) → SQL IN
+        var audioLang = Expression.Property(w, nameof(WatchLink.AudioLang));
+        var wantedConst = Expression.Constant(wanted, typeof(IReadOnlyList<string>));
+        var legacyIn = Expression.Call(
+            typeof(Enumerable), nameof(Enumerable.Contains), new[] { typeof(string) }, wantedConst, audioLang);
+        var legacy = Expression.AndAlso(
+            Expression.NotEqual(audioLang, Expression.Constant(null, typeof(string))), legacyIn);
+
+        // csv-набори: падднений csv (',' + audio_langs + ',') має містити ',tok,' хоча б для одного токена
+        var langs = Expression.Property(w, nameof(WatchLink.AudioLangs));
+        var concat3 = typeof(string).GetMethod(nameof(string.Concat),
+            new[] { typeof(string), typeof(string), typeof(string) })!;
+        var padded = Expression.Call(concat3, Expression.Constant(","), langs, Expression.Constant(","));
+        Expression? csvOr = null;
+        foreach (var raw in wanted)
+        {
+            var tok = "," + raw.Trim().ToLowerInvariant() + ",";
+            var contains = Expression.Call(padded, nameof(string.Contains), Type.EmptyTypes, Expression.Constant(tok));
+            var guarded = Expression.AndAlso(
+                Expression.NotEqual(langs, Expression.Constant(null, typeof(string))), contains);
+            csvOr = csvOr is null ? guarded : Expression.OrElse(csvOr, guarded);
+        }
+
+        var linkOk = Expression.AndAlso(titleMatch, Expression.AndAlso(available, Expression.OrElse(legacy, csvOr!)));
+        var anyLambda = Expression.Lambda<Func<WatchLink, bool>>(linkOk, w);
+        var anyCall = Expression.Call(
+            typeof(Queryable), nameof(Queryable.Any), new[] { typeof(WatchLink) },
+            linksExpr, Expression.Quote(anyLambda));
+        return Expression.Lambda<Func<Title, bool>>(anyCall, t);
     }
 
     /// <summary>Рейтинг: ratingSource обирає, до якого джерела застосувати мінімум/максимум.</summary>
@@ -315,16 +445,28 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         return Expression.Lambda<Func<Title, bool>>(body!, t);
     }
 
+    // UX-01: детермінований порядок — tie-breaker ThenBy(Id) в УСІ гілках.
+    // Без нього рівні ключі (popularity=0 у маси тайтлів, рейтинг null→0) розкладаються
+    // по-різному між сусідніми OFFSET-сторінками → дублі/пропуски при перегортанні.
     private static IQueryable<Title> Sort(IQueryable<Title> query, string sort) => sort switch
     {
         "rating" => query.OrderByDescending(t => t.RatingTmdb ?? t.RatingImdb ?? 0)
-            .ThenByDescending(t => t.Popularity),
-        "imdb" => query.OrderByDescending(t => t.RatingImdb ?? 0).ThenByDescending(t => t.VotesImdb ?? 0),
-        "votes" => query.OrderByDescending(t => t.VotesImdb ?? 0).ThenByDescending(t => t.RatingImdb ?? 0),
-        "year" => query.OrderByDescending(t => t.Year ?? 0).ThenByDescending(t => t.Popularity),
-        "popularity" => query.OrderByDescending(t => t.Popularity),
+            .ThenByDescending(t => t.Popularity)
+            .ThenBy(t => t.Id),
+        "imdb" => query.OrderByDescending(t => t.RatingImdb ?? 0)
+            .ThenByDescending(t => t.VotesImdb ?? 0)
+            .ThenBy(t => t.Id),
+        "votes" => query.OrderByDescending(t => t.VotesImdb ?? 0)
+            .ThenByDescending(t => t.RatingImdb ?? 0)
+            .ThenBy(t => t.Id),
+        "year" => query.OrderByDescending(t => t.Year ?? 0)
+            .ThenByDescending(t => t.Popularity)
+            .ThenBy(t => t.Id),
+        "popularity" => query.OrderByDescending(t => t.Popularity).ThenBy(t => t.Id),
         // relevance: локальна релевантність — популярність як проксі (повнотекстовий рейтинг — Е2)
-        _ => query.OrderByDescending(t => t.Popularity).ThenByDescending(t => t.Year ?? 0),
+        _ => query.OrderByDescending(t => t.Popularity)
+            .ThenByDescending(t => t.Year ?? 0)
+            .ThenBy(t => t.Id),
     };
 
     public static string EscapeLike(string s) => s

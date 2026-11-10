@@ -425,6 +425,7 @@ export function demoLists(kind: ListKind, lang: Lang): ListItem[] {
 
 export function demoListStats(lang: Lang): ListStats {
   const watched = demoLists("watched", lang);
+  const read = demoLists("read", lang);
   const liked = demoLists("liked", lang);
   const ratings = watched.map((w) => w.rating).filter((r): r is number => r != null);
   const genreCount = new Map<string, number>();
@@ -439,6 +440,7 @@ export function demoListStats(lang: Lang): ListStats {
     .map(([genre]) => genre);
   return {
     watchedCount: watched.length,
+    readCount: read.length,
     likedCount: liked.length,
     dislikedCount: 0,
     avgRating: ratings.length

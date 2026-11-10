@@ -45,6 +45,8 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         [FromQuery] string? category = null,
         [FromQuery] string? audioLang = null,
         [FromQuery] int? minQuality = null,
+        // UX-01: швидкі перегортання — клієнт із кешованим total просить пропустити COUNT.
+        [FromQuery] bool omitTotal = false,
         CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(type) && type is not ("movie" or "series" or "show" or "anime" or "manga"))
@@ -87,7 +89,8 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             HasTrailer: hasTrailer, HasProviders: hasProviders,
             RatingSource: ratingSource, ProviderRegion: providerRegion ?? "UA",
             Watchable: watchable,
-            Category: category, AudioLang: audioLangSafe, MinQuality: minQuality), ct);
+            Category: category, AudioLang: audioLangSafe, MinQuality: minQuality,
+            OmitTotal: omitTotal), ct);
 
         // FR-14: компактні бейджі «де подивитись» на картках (лише is_available=true)
         var watchLinks = await Infrastructure.Watchability.WatchLinkLoader.LoadAvailableAsync(

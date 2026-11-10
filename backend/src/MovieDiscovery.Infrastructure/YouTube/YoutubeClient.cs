@@ -14,6 +14,9 @@ public sealed class YoutubeOptions
     /// <summary>Скільки кандидатів повертати search.list (кожен search = 100 units квоти).</summary>
     public int MaxResults { get; set; } = 5;
 
+    /// <summary>Скільки кандидатів повертати трейлер-search (UX-05; більше — щоб зловити uk/ru/en в один запит).</summary>
+    public int TrailerMaxResults { get; set; } = 25;
+
     /// <summary>Кеш search-відповідей у source_cache (24 год — акуратно з квотою).</summary>
     public int CacheTtlSeconds { get; set; } = 86_400;
 }
@@ -25,7 +28,9 @@ public sealed record YoutubeSearchItem(
 /// <summary>Деталі з videos.list (part=snippet,contentDetails): duration ISO8601, definition, прев'ю.</summary>
 public sealed record YoutubeVideo(
     string VideoId, string Title, string Description, string ChannelTitle,
-    string Duration, string Definition, string? ThumbnailUrl);
+    string Duration, string Definition, string? ThumbnailUrl,
+    bool? Embeddable = null, string? PrivacyStatus = null, string? UploadStatus = null,
+    string? DefaultLanguage = null, string? DefaultAudioLanguage = null);
 
 /// <summary>Помилка YouTube Data API (квота/ключ/недоступність) — деградація без аварії.</summary>
 public sealed class YoutubeApiException(string message, int statusCode) : Exception(message)
@@ -107,15 +112,27 @@ public static partial class YoutubeParser
             if (string.IsNullOrWhiteSpace(videoId)) continue;
             it.TryGetProperty("snippet", out var sn);
             it.TryGetProperty("contentDetails", out var cd);
+            it.TryGetProperty("status", out var st);
 
             var thumb = (string?)null;
             if (sn.ValueKind == JsonValueKind.Object && sn.TryGetProperty("thumbnails", out var th))
                 thumb = ThumbUrl(th, "high") ?? ThumbUrl(th, "medium") ?? ThumbUrl(th, "default");
 
+            // status-частина (UX-05 верифікація): embeddable/privacy/upload — за відсутності part'а NULL
+            bool? embeddable = null;
+            if (st.ValueKind == JsonValueKind.Object && st.TryGetProperty("embeddable", out var emb))
+            {
+                if (emb.ValueKind == JsonValueKind.True) embeddable = true;
+                else if (emb.ValueKind == JsonValueKind.False) embeddable = false;
+            }
+
             items.Add(new YoutubeVideo(
                 videoId,
                 Str(sn, "title"), Str(sn, "description"), Str(sn, "channelTitle"),
-                Str(cd, "duration"), Str(cd, "definition"), thumb));
+                Str(cd, "duration"), Str(cd, "definition"), thumb,
+                embeddable,
+                StrOrNull(st, "privacyStatus"), StrOrNull(st, "uploadStatus"),
+                StrOrNull(sn, "defaultLanguage"), StrOrNull(sn, "defaultAudioLanguage")));
         }
         return items;
     }
@@ -157,6 +174,24 @@ public sealed class YoutubeClient(HttpClient http, IOptions<YoutubeOptions> opti
         return YoutubeParser.ParseSearch(json);
     }
 
+    /// <summary>
+    /// search.list для трейлерів (UX-05): type=video БЕЗ videoDuration=long (трейлери короткі,
+    /// фільтр ≤5 хв робиться локально) + relevanceLanguage як м'яка підказка (НЕ фільтр). ~100 units.
+    /// </summary>
+    public async Task<IReadOnlyList<YoutubeSearchItem>> SearchTrailersAsync(
+        string query, int maxResults = 25, string? relevanceLanguage = null, CancellationToken ct = default)
+    {
+        var url = $"search?part=snippet&type=video" +
+                  $"&maxResults={Math.Clamp(maxResults, 1, 50)}" +
+                  (string.IsNullOrWhiteSpace(relevanceLanguage)
+                      ? ""
+                      : $"&relevanceLanguage={Uri.EscapeDataString(relevanceLanguage)}") +
+                  $"&q={Uri.EscapeDataString(query)}&key={Uri.EscapeDataString(_opt.ApiKey)}";
+        var json = await SendAsync(url, ct);
+        log.LogDebug("YouTube trailer search «{Query}»: {Count} кандидатів", query, YoutubeParser.ParseSearch(json).Count);
+        return YoutubeParser.ParseSearch(json);
+    }
+
     /// <summary>videos.list: duration/thumbnails/definition кандидатів (1 unit на виклик, ≤50 id).</summary>
     public async Task<IReadOnlyList<YoutubeVideo>> DetailsAsync(
         IReadOnlyList<string> videoIds, CancellationToken ct = default)
@@ -164,6 +199,20 @@ public sealed class YoutubeClient(HttpClient http, IOptions<YoutubeOptions> opti
         var ids = videoIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().Take(50).ToList();
         if (ids.Count == 0) return [];
         var url = $"videos?part=snippet,contentDetails&id={Uri.EscapeDataString(string.Join(",", ids))}" +
+                  $"&key={Uri.EscapeDataString(_opt.ApiKey)}";
+        return YoutubeParser.ParseVideos(await SendAsync(url, ct));
+    }
+
+    /// <summary>
+    /// videos.list зі status-частиною (UX-05): embeddable/privacyStatus/uploadStatus
+    /// + snippet.defaultLanguage/defaultAudioLanguage (1 unit на виклик, ≤50 id).
+    /// </summary>
+    public async Task<IReadOnlyList<YoutubeVideo>> DetailsFullAsync(
+        IReadOnlyList<string> videoIds, CancellationToken ct = default)
+    {
+        var ids = videoIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().Take(50).ToList();
+        if (ids.Count == 0) return [];
+        var url = $"videos?part=snippet,contentDetails,status&id={Uri.EscapeDataString(string.Join(",", ids))}" +
                   $"&key={Uri.EscapeDataString(_opt.ApiKey)}";
         return YoutubeParser.ParseVideos(await SendAsync(url, ct));
     }

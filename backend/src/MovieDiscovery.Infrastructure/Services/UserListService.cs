@@ -8,6 +8,7 @@ public sealed record GenreCount(string Genre, int Count);
 
 public sealed record ListStats(
     int WatchedCount,
+    int ReadCount,
     int LikedCount,
     int DislikedCount,
     double? AvgRating,
@@ -122,7 +123,8 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .Where(l => l.ProfileId == up.ProfileId)
             .ToListAsync(ct);
 
-        var watched = entries.Count(l => l.Kind is ListKinds.Watched or ListKinds.Read);
+        var watched = entries.Count(l => l.Kind == ListKinds.Watched);
+        var read = entries.Count(l => l.Kind == ListKinds.Read);
         var liked = entries.Count(l => l.Kind == ListKinds.Liked);
         var disliked = entries.Count(l => l.Kind == ListKinds.Disliked);
         var ratings = entries
@@ -138,7 +140,7 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .ToList();
 
         return new ListStats(
-            watched, liked, disliked,
+            watched, read, liked, disliked,
             ratings.Count == 0 ? null : Math.Round(ratings.Average(), 2),
             topGenres);
     }

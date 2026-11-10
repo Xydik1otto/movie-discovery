@@ -8,6 +8,7 @@ import type { SimilarItem, TitleCard as TitleCardType } from "../lib/types";
 import { useI18n } from "../i18n/I18nContext";
 import RatingBadge from "./RatingBadge";
 import ReasonBadges from "./ReasonBadges";
+import PosterImage from "./PosterImage";
 
 // Картка тайтла (форма TitleCard за PLAN). Форма використовується всюди.
 // eager=true — постери першого екрана БЕЗ loading=lazy (пітфолл lazy після ре-рендера);
@@ -70,24 +71,13 @@ export default function TitleCard({
         className="block overflow-hidden rounded-xl border border-line bg-panel transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-lg hover:shadow-accent/10"
       >
         <div className="relative aspect-[2/3] overflow-hidden bg-panel-2">
-          {url ? (
-            <img
-              src={url}
-              alt={item.title}
-              loading={eager ? "eager" : "lazy"}
-              decoding="async"
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-panel-2 via-[#232a3d] to-[#3a1a2b] p-3 text-center">
-              <span className="text-3xl opacity-60" aria-hidden>
-                🎬
-              </span>
-              <span className="line-clamp-3 text-xs font-semibold text-ink/80">
-                {item.title}
-              </span>
-            </div>
-          )}
+          {/* UX-02: спільний постер-слот — metadata-missing → заглушка з назвою, 404 → 1 ретрай → «Постер недоступний» */}
+          <PosterImage
+            src={url}
+            title={item.title}
+            eager={eager}
+            imgClassName="transition-transform duration-300 group-hover:scale-105"
+          />
 
           <div className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
             <RatingBadge source="TMDB" value={item.ratingTmdb} />

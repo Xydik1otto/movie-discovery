@@ -272,7 +272,7 @@ public class YoutubeClientTests
 
 /// <summary>
 /// Enrich-семантика (FR-20): on-demand для одного тайтла, батч-синк, ідемпотентний upsert,
-/// постер-фолбек, кеш search-запитів. Стаб-хендлер, реальних HTTP-викликів нема.
+/// кеш search-запитів; постер-фолбеку НЕМА (UX-02). Стаб-хендлер, реальних HTTP-викликів нема.
 /// </summary>
 public class YouTubeEnrichServiceTests
 {
@@ -323,10 +323,10 @@ public class YouTubeEnrichServiceTests
     }
 
     [Fact]
-    public async Task EnsureYoutubeLink_Adds_Link_Audio_Quality_Dub_And_Poster_Fallback()
+    public async Task EnsureYoutubeLink_Adds_Link_Audio_Quality_Dub_Without_Poster_Fallback()
     {
         var env = MakeEnv();
-        var title = await SeedAsync(env.Db); // PosterPath = null → фолбек
+        var title = await SeedAsync(env.Db); // PosterPath = null → фолбеку НЕМА (UX-02)
 
         var added = await env.Service.EnsureYoutubeLinkAsync(title.Id);
 
@@ -341,8 +341,11 @@ public class YouTubeEnrichServiceTests
         Assert.Equal(1080, link.Quality);     // definition=hd
         Assert.Equal("original", link.Dub);
 
-        // постер-фолбек — ПОВНИЙ URL
-        Assert.Equal("https://i.ytimg.com/vi/movie1/hqdefault.jpg", (await env.Db.Titles.SingleAsync(t => t.Id == title.Id)).PosterPath);
+        // UX-02: YouTube-thumbnail НЕ стає постером — poster_path лишається порожнім
+        // (запису з i.ytimg.com у постері немає; справжній постер дає синк wikipedia-posters)
+        var stored = await env.Db.Titles.SingleAsync(t => t.Id == title.Id);
+        Assert.Null(stored.PosterPath);
+        Assert.DoesNotContain("ytimg.com", stored.PosterPath); // подвійна перевірка дефекту
 
         // 1 search + 1 videos.list на запит
         Assert.Single(env.Handler.Requests, r => r.Contains("search?"));

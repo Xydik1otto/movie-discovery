@@ -19,6 +19,7 @@ import {
 } from "@/lib/fallback";
 import type { OnboardingQuestion, TitleCard } from "@/lib/types";
 import { posterUrlFull } from "@/lib/constants";
+import PosterImage from "@/components/PosterImage";
 
 const MAX_FAVORITES = 3;
 
@@ -240,12 +241,10 @@ export default function OnboardingPage() {
                   }`}
                 >
                   {thumb ? (
-                    <img
-                      src={thumb}
-                      alt=""
-                      className="h-14 w-10 flex-none rounded object-cover"
-                      loading="lazy"
-                    />
+                    // UX-02: thumbnail з чесними станами (loading/1 ретрай/«Постер недоступний»)
+                    <span className="block h-14 w-10 flex-none overflow-hidden rounded bg-panel-2">
+                      <PosterImage src={thumb} title={o.title} compact />
+                    </span>
                   ) : (
                     <span
                       aria-hidden
@@ -367,12 +366,9 @@ export default function OnboardingPage() {
                 >
                   <div className="relative aspect-[4/3] bg-panel-2">
                     {poster ? (
-                      <img
-                        src={poster}
-                        alt=""
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
+                      // UX-02: постер-варіант з чесними станами (тільки в img-гілці; mood/era
+                      // опції без posterUrl лишають свої емодзі-заглушки)
+                      <PosterImage src={poster} title={o.label ?? o.value ?? o.id} compact />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-panel-2 via-[#232a3d] to-[#3a1a2b] text-2xl">
                         {currentQ.type === "mood" ? "🎭" : currentQ.type === "era" ? "🕰️" : "🎞️"}

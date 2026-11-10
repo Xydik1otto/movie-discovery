@@ -29,6 +29,16 @@ public sealed class PlexOptions
 
     /// <summary>Ретраї транзитних 429/502/503/504 на сторінку (Plex edge буває 503 на окремих роках).</summary>
     public int MaxRetries { get; set; } = 3;
+
+    // ── UX-04 (хвиля 2): перевірка «Where to Watch» сторінки тайтла (tri-state) ──
+    /// <summary>Таймаут одного перевірочного title-запиту, мс (on-demand у /watch — не довгий sync-таймаут).</summary>
+    public int AvailabilityTimeoutMs { get; set; } = 10_000;
+
+    /// <summary>TTL кешу вердикту доступності (хвилини): без кешу кожен /watch бив би по Plex; 12 год — свіжість/навантаження.</summary>
+    public int AvailabilityCacheMinutes { get; set; } = 720;
+
+    /// <summary>Максимальний розмір кешу вердиктів (title-URL → вердикт); перевищення — prune найстаріших.</summary>
+    public int AvailabilityCacheMax { get; set; } = 2000;
 }
 
 /// <summary>Елемент каталогу Plex: href /movie/{slug} + назва + рік (null якщо сторінка року не відома).</summary>

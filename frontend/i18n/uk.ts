@@ -2,6 +2,10 @@
 export const uk = {
   "brand.name": "КіноНавігатор",
   "brand.tagline": "Знайди, що дивитись — за параметрами чи «схоже на…»",
+
+  // UX-02: постери — чесні стани (PosterImage)
+  "poster.unavailable": "Постер недоступний",
+  "poster.retry": "Спробувати ще",
   "home.tabFilters": "За параметрами",
   "home.tabSimilar": "Схоже на...",
 
@@ -56,6 +60,8 @@ export const uk = {
   "title.watchlist": "Хочу подивитись",
   "title.watched": "Переглянуте",
   "title.watchedAdd": "Переглянув",
+  // Disabled-кнопка взаємно виключної дії: чесна причина, без «✓ виконано».
+  "title.removeFirst": "Спочатку прибери тайтл зі списку «Хочу подивитись»",
   "title.providers": "Де подивитись",
   "title.watch.where": "Де подивитись",
   "title.trailer": "Трейлер",
@@ -111,6 +117,7 @@ export const uk = {
   "common.prev": "Назад",
   "common.next": "Далі",
   "common.pageOf": "Сторінка {p} з {t}",
+  "common.pageOfCapped": "Сторінка {p} з ~{t}",
   "common.retry": "Спробувати ще раз",
 
   "api.unavailable": "API недоступний — показуємо демо-дані",
@@ -169,6 +176,8 @@ export const uk = {
   "provider.sweettv": "sweet.tv",
   "provider.archive": "Internet Archive (безкоштовно)",
   "provider.tmdb-streaming": "Стримінг",
+  // FR-20: чесна назва джерела — не сирий ключ i18n.
+  "provider.youtube": "YouTube",
 
   "settings.language": "Мова інтерфейсу",
   "settings.region": "Регіон провайдерів",
@@ -204,6 +213,8 @@ export const uk = {
   "import.statusQueued": "У черзі",
   "import.statusRunning": "Виконується",
   "import.statusDone": "Готово",
+  // Codex IV (5): після мережевого збою опитування — Resume тієї самої джоби.
+  "import.resume": "Продовжити",
   "import.statusFailed": "Помилка",
   "import.summary": "Імпорт завершено",
   "import.notFound": "Профіль не знайдено — перевір нікнейм або ID.",
@@ -257,6 +268,9 @@ export const uk = {
   "auth.err.passwordUpper": "Пароль має містити хоча б одну велику літеру",
   "auth.err.credentials": "Невірний email або пароль",
   "auth.err.lockout": "Забагато невдалих спроб — спробуй за 15 хвилин",
+  // Ліміт бекенд-лімітера (register 3/год/IP): чесне «через ~N хв», не загальне «Не вдалося».
+  "auth.err.rateLimited": "Ліміт реєстрацій вичерпано — спробуйте через ~{n} хв",
+  "auth.err.rateLimitedGeneric": "Ліміт спроб вичерпано — спробуйте пізніше",
   "auth.err.generic": "Не вдалося. Спробуй ще раз",
   "auth.err.unavailable": "API недоступний — спробуй пізніше",
   // MD-07: сервер не підтвердив вихід — чесне повідомлення замість фальшивого розлогіну.
@@ -308,6 +322,7 @@ export const uk = {
   "lists.liked": "Подобається",
   "lists.stats.title": "Статистика",
   "lists.stats.watched": "Переглянуто",
+  "lists.stats.read": "Прочитане",
   "lists.stats.liked": "Подобається",
   "lists.stats.disliked": "Не моє",
   "lists.stats.avgRating": "Середня оцінка",
@@ -379,10 +394,49 @@ export const uk = {
   "watch.showPaid": "Показати платні",
   "watch.hidePaid": "Лише безкоштовні",
 
+  // --- UX-05: трейлери (кнопка, мовні чипи, чесні стани) ---
+  "trailer.watch": "Переглянути трейлер",
+  "trailer.loading": "Шукаємо трейлери…",
+  "trailer.empty": "Трейлерів не знайдено",
+  "trailer.notFoundUi": "Трейлер українською не знайдено",
+  "trailer.chooseLang": "Оберіть мову трейлера",
+  "trailer.unknownLang": "Невідома мова",
+  "trailer.lang.uk": "Українською",
+  "trailer.lang.ru": "Російською",
+  "trailer.lang.en": "Англійською",
+  "trailer.lang.multi": "Багатомовний",
+  "trailer.gone": "Цей трейлер більше недоступний на YouTube",
+  "trailer.nonembeddable": "Власник заборонив вбудовування — дивіться на YouTube",
+  "trailer.openExternal": "Відкрити на YouTube",
+
   // --- auth remember + password visibility ---
   "auth.showPassword": "Показати пароль",
   "auth.hidePassword": "Приховати пароль",
   "auth.rememberMe": "Запам'ятати мене",
+
+  // --- UX-04 (хвиля 2): панель «Де подивитись» — мови перегляду, tri-state, find-лінки ---
+  "watch.lang.switcher": "Мова перегляду",
+  "watch.lang.uk": "Українською",
+  "watch.lang.ru": "Російською",
+  "watch.lang.original": "Оригінал",
+  "watch.lang.unknown": "Мова невідома",
+  "watch.tag.dub": "дубляж",
+  "watch.tag.audio": "багатоголосий",
+  "watch.tag.sub": "субтитри",
+  "watch.tag.audioShort": "аудіо",
+  "watch.lang.code.uk": "укр",
+  "watch.lang.code.ru": "рос",
+  "watch.lang.code.en": "англ",
+  "watch.lang.code.original": "ориг",
+  "watch.lang.code.multi": "багато",
+  "watch.empty.region": "Немає даних про перегляд у вашому регіоні ({region}).",
+  "watch.empty.lang": "Цією мовою варіантів перегляду немає.",
+  "watch.empty.langHint": "Інші доступні мови — на перемикачі вище.",
+  "watch.status.unknown": "доступність неперевірена",
+  "watch.unknown.plexCatalog": "у каталозі Plex, доступність неперевірена",
+  "watch.status.unavailable": "зараз недоступно",
+  "watch.findOn": "Знайти на {provider}",
+  "watch.unknownNote": "{count} варіантів з доступністю, яку ще не перевірено (каталог).",
 } as const;
 
 export type Dict = Record<keyof typeof uk, string>;

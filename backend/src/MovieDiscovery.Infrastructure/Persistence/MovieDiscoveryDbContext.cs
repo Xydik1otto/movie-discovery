@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MovieDiscovery.Core.Domain;
+using MovieDiscovery.Infrastructure.YouTube;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -27,6 +28,7 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
     public DbSet<UserCollection> UserCollections => Set<UserCollection>();
     public DbSet<UserCollectionItem> UserCollectionItems => Set<UserCollectionItem>();
     public DbSet<TitleSeries> TitleSeries => Set<TitleSeries>();
+    public DbSet<TitleTrailer> TitleTrailers => Set<TitleTrailer>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -81,15 +83,26 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
 
         mb.Entity<Provider>(e =>
         {
+            e.ToTable("providers");
             e.Property(x => x.ProviderName).HasColumnName("provider").IsRequired();
             e.Property(x => x.Kind).IsRequired().HasMaxLength(16);
             e.Property(x => x.Source).IsRequired();
             e.Property(x => x.Region).IsRequired().HasMaxLength(8);
+            // UX-04 (хвиля 2): мови озвучки/субтитрів оффера (csv ISO-639-1, NULL = невідома)
+            // + чесна ціна платного оффера («3,99₴» + UAH). Міграція — оркестратор.
+            e.Property(x => x.AudioLangs).HasColumnName("audio_langs");
+            e.Property(x => x.SubLangs).HasColumnName("sub_langs");
+            e.Property(x => x.Price).HasColumnName("retail_price");
+            e.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(8);
             e.HasOne(x => x.Title)
                 .WithMany()
                 .HasForeignKey(x => x.TitleId)
                 .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => new { x.TitleId, x.ProviderName, x.Kind, x.Source, x.Region }).IsUnique();
+            // UX-04: унікальність з мовною сигнатурою (різні аудіо-набори одного провайдера
+            // не колапсують). У Postgres індекс мусить бути виразним:
+            // UNIQUE (title_id, provider, kind, source, region, COALESCE(audio_langs,'')) —
+            // DDL у звіті хвилі-2 (NULLS DISTINCT на голій колонці пропускає дублі NULL).
+            e.HasIndex(x => new { x.TitleId, x.ProviderName, x.Kind, x.Source, x.Region, x.AudioLangs }).IsUnique();
         });
 
         mb.Entity<Profile>(e =>
@@ -178,8 +191,12 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
                 .WithMany()
                 .HasForeignKey(x => x.TitleId)
                 .OnDelete(DeleteBehavior.Cascade);
-            // Ідемпотентність sync: повторний імпорт того самого (title, provider, kind, region) НЕ дублює
-            e.HasIndex(x => new { x.TitleId, x.Provider, x.Kind, x.Region }).IsUnique();
+            // Ідемпотентність sync: повторний імпорт того самого (title, provider, kind, region)
+            // НЕ дублює; UX-04: сигнатура мов у ключі — різні аудіо-набори НЕ колапсують.
+            // Postgres: виразний індекс UNIQUE (title_id, provider, kind, region,
+            // COALESCE(audio_langs,'')) — DDL у звіті хвилі-2 (NULLS DISTINCT голої колонки
+            // пропускає дублі NULL-рядків, тому вираз обов'язковий).
+            e.HasIndex(x => new { x.TitleId, x.Provider, x.Kind, x.Region, x.AudioLangs }).IsUnique();
             e.HasIndex(x => x.TitleId);
             e.HasIndex(x => new { x.Provider, x.IsAvailable });
         });
@@ -273,6 +290,23 @@ public class MovieDiscoveryDbContext(DbContextOptions<MovieDiscoveryDbContext> o
             e.Property(x => x.PrevImdb).HasMaxLength(16);
             e.Property(x => x.NextImdb).HasMaxLength(16);
             e.HasIndex(x => x.SeriesQid);
+        });
+
+        // UX-05: трейлери-кандидати тайтла — title_trailers (UNIQUE(title_id, yt_id)).
+        // DDL міграції пише оркестратор; EF-конфіг має збігатися з нею 1:1.
+        mb.Entity<TitleTrailer>(e =>
+        {
+            e.ToTable("title_trailers");
+            e.Property(x => x.YtId).IsRequired().HasMaxLength(16);
+            e.Property(x => x.Lang).HasMaxLength(8);
+            e.Property(x => x.Source).IsRequired().HasMaxLength(24);
+            e.Property(x => x.VerifiedStatus).HasMaxLength(16);
+            e.HasOne(x => x.Title)
+                .WithMany()
+                .HasForeignKey(x => x.TitleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.TitleId);
+            e.HasIndex(x => new { x.TitleId, x.YtId }).IsUnique();
         });
 
         // Тестовий InMemory-провайдер не вміє jsonb/vector — наприкінці (після всіх конфігурацій),

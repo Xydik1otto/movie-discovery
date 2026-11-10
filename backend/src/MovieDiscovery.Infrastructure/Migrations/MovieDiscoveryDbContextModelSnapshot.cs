@@ -401,11 +401,24 @@ namespace MovieDiscovery.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AudioLangs")
+                        .HasColumnType("text")
+                        .HasColumnName("audio_langs");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("currency");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("kind");
+
+                    b.Property<string>("Price")
+                        .HasColumnType("text")
+                        .HasColumnName("retail_price");
 
                     b.Property<string>("ProviderName")
                         .IsRequired()
@@ -423,6 +436,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source");
 
+                    b.Property<string>("SubLangs")
+                        .HasColumnType("text")
+                        .HasColumnName("sub_langs");
+
                     b.Property<int>("TitleId")
                         .HasColumnType("integer")
                         .HasColumnName("title_id");
@@ -438,9 +455,9 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_providers");
 
-                    b.HasIndex("TitleId", "ProviderName", "Kind", "Source", "Region")
+                    b.HasIndex("TitleId", "ProviderName", "Kind", "Source", "Region", "AudioLangs")
                         .IsUnique()
-                        .HasDatabaseName("ix_providers_title_id_provider_kind_source_region");
+                        .HasDatabaseName("ix_providers_title_id_provider_kind_source_region_audio_langs");
 
                     b.ToTable("providers", (string)null);
                 });
@@ -1003,6 +1020,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("audio_lang");
 
+                    b.Property<string>("AudioLangs")
+                        .HasColumnType("text")
+                        .HasColumnName("audio_langs");
+
                     b.Property<DateTime>("CheckedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("checked_at");
@@ -1036,6 +1057,10 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasColumnType("character varying(8)")
                         .HasColumnName("region");
 
+                    b.Property<string>("SubLangs")
+                        .HasColumnType("text")
+                        .HasColumnName("sub_langs");
+
                     b.Property<int>("TitleId")
                         .HasColumnType("integer")
                         .HasColumnName("title_id");
@@ -1053,9 +1078,9 @@ namespace MovieDiscovery.Infrastructure.Migrations
                     b.HasIndex("Provider", "IsAvailable")
                         .HasDatabaseName("ix_watch_links_provider_is_available");
 
-                    b.HasIndex("TitleId", "Provider", "Kind", "Region")
+                    b.HasIndex("TitleId", "Provider", "Kind", "Region", "AudioLangs")
                         .IsUnique()
-                        .HasDatabaseName("ix_watch_links_title_id_provider_kind_region");
+                        .HasDatabaseName("ix_watch_links_title_id_provider_kind_region_audio_langs");
 
                     b.ToTable("watch_links", (string)null);
                 });
@@ -1090,6 +1115,66 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .HasName("pk_embeddings");
 
                     b.ToTable("embeddings", (string)null);
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Infrastructure.YouTube.TitleTrailer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Lang")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("lang");
+
+                    b.Property<bool>("Official")
+                        .HasColumnType("boolean")
+                        .HasColumnName("official");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("source");
+
+                    b.Property<int>("TitleId")
+                        .HasColumnType("integer")
+                        .HasColumnName("title_id");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
+
+                    b.Property<string>("VerifiedStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("verified_status");
+
+                    b.Property<string>("YtId")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("yt_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_title_trailers");
+
+                    b.HasIndex("TitleId")
+                        .HasDatabaseName("ix_title_trailers_title_id");
+
+                    b.HasIndex("TitleId", "YtId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_title_trailers_title_id_yt_id");
+
+                    b.ToTable("title_trailers", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<string>", b =>
@@ -1262,6 +1347,18 @@ namespace MovieDiscovery.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_embeddings_titles_title_id");
+
+                    b.Navigation("Title");
+                });
+
+            modelBuilder.Entity("MovieDiscovery.Infrastructure.YouTube.TitleTrailer", b =>
+                {
+                    b.HasOne("MovieDiscovery.Core.Domain.Title", "Title")
+                        .WithMany()
+                        .HasForeignKey("TitleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_title_trailers_titles_title_id");
 
                     b.Navigation("Title");
                 });

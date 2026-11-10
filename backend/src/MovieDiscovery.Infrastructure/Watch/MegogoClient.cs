@@ -25,6 +25,13 @@ public sealed class MegogoOptions
 
     /// <summary>Слаг колекції безкоштовних серіалів.</summary>
     public string SeriesCollectionPath { get; set; } = "free_series_megogo";
+
+    /// <summary>
+    /// UX-04: максимум view-сторінок («Переклад»/«Субтитри») за ОДИН прогін — мовне
+    /// збагачення ОБМЕЖЕНЕ (ввічливість до megogo). Рядки поза лімітом чесно лишаються
+    /// NULL (мова невідома, не uk/ru за замовчуванням); 0 = вимкнути збагачення.
+    /// </summary>
+    public int MaxViewFetches { get; set; } = 40;
 }
 
 /// <summary>Megogo: 1 req / 700 мс (ввічливий тротлінг); тестам дозволено override.</summary>

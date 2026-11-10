@@ -62,6 +62,98 @@ export function dedupeWatchKinds(list: WatchProvider[]): WatchProvider[] {
   return out;
 }
 
+// --- UX-04 (хвиля 2): мови перегляду і групи панелі «Де подивитись» ---
+
+// csv «en,ru» → список кодів; порожнє → [].
+export function parseLangCsv(csv: string | null | undefined): string[] {
+  if (!csv) return [];
+  return csv
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+// Мовна ГРУПА рядка (дзеркало WatchLanguages.GroupOf на бекенді):
+// пріоритет uk → ru → original (конкретна не-uk/ru мова теж «оригінал/іноземна»)
+// → unknown. Субтитри рахуються: en-аудіо + uk-суб → uk-група (субтитри).
+export type ViewLangGroupKey = "uk" | "ru" | "original" | "unknown";
+
+export function watchLangGroupOf(p: WatchProvider): ViewLangGroupKey {
+  const audio = parseLangCsv(p.audioLangs);
+  const subs = parseLangCsv(p.subLangs);
+  const legacy = (p.audioLang ?? "").toLowerCase();
+  if (audio.includes("uk") || subs.includes("uk") || legacy === "ukr") return "uk";
+  if (audio.includes("ru") || subs.includes("ru") || legacy === "russ") return "ru";
+  if (p.dub === "original" || legacy === "original") return "original";
+  if (audio.includes("original") || audio.includes("multi") || legacy === "multi") return "original";
+  if (audio.length > 0) return "original"; // en/pl/ja… — оригінал/іноземною (чесніше, ніж «невідома»)
+  return "unknown";
+}
+
+// Вид перегляду в групі (чесні теги з даних): дубляж (dub), аудіо, субтитри.
+export type WatchTag = "dub" | "audio" | "sub";
+
+export function watchGroupTags(items: WatchProvider[]): WatchTag[] {
+  const tags = new Set<WatchTag>();
+  for (const p of items) {
+    if (p.dub) tags.add("dub");
+    if (parseLangCsv(p.audioLangs).length > 0 || (p.audioLang && !p.dub)) tags.add("audio");
+    if (parseLangCsv(p.subLangs).length > 0) tags.add("sub");
+  }
+  const order: WatchTag[] = ["dub", "audio", "sub"];
+  return order.filter((t) => tags.has(t));
+}
+
+// Групи в ПОРЯДКУ пріоритету (uk першими — основна мова аудиторії, далі ru,
+// оригінал, невідома); порожні групи НЕ повертаються.
+export interface WatchLangGroup {
+  key: ViewLangGroupKey;
+  items: WatchProvider[];
+  tags: WatchTag[];
+}
+
+export const WATCH_LANG_GROUP_ORDER: ViewLangGroupKey[] = ["uk", "ru", "original", "unknown"];
+
+export function groupWatchByLang(list: WatchProvider[]): WatchLangGroup[] {
+  const byKey = new Map<ViewLangGroupKey, WatchProvider[]>();
+  for (const p of list) {
+    const key = watchLangGroupOf(p);
+    const bucket = byKey.get(key);
+    if (bucket) bucket.push(p);
+    else byKey.set(key, [p]);
+  }
+  return WATCH_LANG_GROUP_ORDER.filter((k) => byKey.has(k)).map((key) => ({
+    key,
+    items: byKey.get(key)!,
+    tags: watchGroupTags(byKey.get(key)!),
+  }));
+}
+
+// Чи взагалі є мовні дані хоч у одного рядка (інакше перемикач мови не показуємо —
+// всі рядки «невідома» і панель виглядає як простий список).
+export function hasLangMetadata(list: WatchProvider[]): boolean {
+  return list.some((p) => watchLangGroupOf(p) !== "unknown");
+}
+
+// urlKind: direct (deep-link) | find («Знайти на сервісу»). Легасі-рядки без
+// urlKind: url є → direct (так працювало і до хвилі-2), url:null → find.
+export function watchUrlKind(p: WatchProvider): "direct" | "find" {
+  if (p.urlKind === "find") return "find";
+  if (p.urlKind === "direct") return "direct";
+  return p.url ? "direct" : "find";
+}
+
+// Чесний статус доступності: unknown ≠ «Безкоштовно»-бейдж.
+export function watchAvailabilityStatus(p: WatchProvider): "available" | "unavailable" | "unknown" {
+  if (p.availabilityStatus === "available" || p.availabilityStatus === "unavailable" || p.availabilityStatus === "unknown") {
+    return p.availabilityStatus;
+  }
+  // легасі-рядки (компактна форма detail.providers): isAvailable з бекенда
+  if (p.isAvailable === true) return "available";
+  if (p.isAvailable === false) return "unavailable";
+  return "unknown";
+}
+
 // --- FR-19: групування watch-посилань за озвучкою (dub + audioLang) ---
 
 // dub → ключ підпису групи («Українська озвучка» тощо).

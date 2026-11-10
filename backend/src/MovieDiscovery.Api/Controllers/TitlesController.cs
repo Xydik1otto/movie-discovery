@@ -5,6 +5,7 @@ using MovieDiscovery.Core.Similarity;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Services;
 using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.YouTube;
 
 namespace MovieDiscovery.Api.Controllers;
 
@@ -55,6 +56,10 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
                 : [],
             Status = t.Status,
             OriginalLanguage = t.OriginalLanguage,
+            // UX-05: кандидати трейлерів (ok + не-верифіковані; не-ok синк-рядки не віддаються).
+            // On-demand search тут НЕ запускається (квота) — лише GET /api/titles/{id}/trailers.
+            Trailers = TrailersController.ToInfos(
+                await TrailersController.LoadRowsAsync(db, id, ct)),
             // аніме/манга (FR-12)
             Format = card.Format,
             Episodes = card.Episodes,
@@ -100,7 +105,10 @@ public sealed class TitlesController(TitleService titles, SimilarityService simi
             RuntimeMin = card.RuntimeMin,
             Seasons = card.Seasons,
             Overview = card.Overview,
-            Score = Math.Round(s.Score.Value, 4),
+            // Codex IV (6): Score.Value — ранжувальний сигнал у SimilarityEngine (same-type
+            // бонус ×1.1 свідомо виходить за 1.0); у DTO чесна ДИСПЛЕЙ-семантика: % збігу ≤100,
+            // score>1 → 1.0 (максимальний збіг). Ранжування у сервісі лишається на сирових значеннях.
+            Score = Math.Round(Math.Min(s.Score.Value, 1.0), 4),
             // FR-21: причини — машинні коди (shared_genres:<genre> / shared_actor:<ім'я> / decade:<YYYY0>s),
             // фронт локалізує; ліміти — жанри ≤3, актори ≤2.
             Reasons = SimilarityReasons.Build(s.Score, s.Title.Year, s.SeedYear),

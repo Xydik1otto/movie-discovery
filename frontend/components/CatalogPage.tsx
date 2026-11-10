@@ -2,21 +2,26 @@
 
 // Спільний каталог для /anime та /manga: сітка тайтлів type=anime|manga
 // через звичайний /api/search + швидкі фільтри (формат, рік, статус) і сортування.
+// UX-01 (10.11): серверна пагінація по 20 (usePagedSearch замість прогресивного
+// акумулятора) + синхронізація format/status/років/sort/page з URL (useSearchParams
+// у <Suspense> — пастка Next 15 на пререндері). Зміна фільтра/сортування скидає
+// page=1; мова і фільтри переживають навігацію через URL.
 // Демо-підмінки немає: у демо-пулі немає аніме/манги, тож при недоступному API —
 // ApiBanner + підказка про синхронізацію.
 
-import { useCallback, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "../i18n/I18nContext";
 import { searchTitles } from "../lib/api";
-import { useProgressiveSearch } from "../lib/useProgressiveSearch";
+import { MAX_PAGES, PAGE_SIZE, usePagedSearch } from "../lib/usePagedSearch";
+import type { FetchPageArgs } from "../lib/usePagedSearch";
 import { ANIME_MEDIA_FORMATS, MANGA_FORMATS } from "../lib/constants";
 import TitleCard from "./TitleCard";
 import ApiBanner from "./ApiBanner";
 import EmptyState from "./EmptyState";
 import LoadingSkeleton from "./LoadingSkeleton";
+import Pagination from "./Pagination";
 import { Chip, ChipGroup } from "./FilterChips";
-
-const PAGE_SIZE = 24;
 
 export type CatalogKind = "anime" | "manga";
 type CatalogSort = "popularity" | "rating" | "year";
@@ -39,24 +44,53 @@ function numOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Стан каталогу, відновлюваний з URL (?format=&status=&yearFrom=&yearTo=&sort=&page=). */
+function parseCatalogParams(sp: URLSearchParams) {
+  const sortRaw = sp.get("sort");
+  return {
+    format: sp.get("format") || null,
+    status: sp.get("status") || null,
+    yearFrom: sp.get("yearFrom") ?? "",
+    yearTo: sp.get("yearTo") ?? "",
+    sort:
+      sortRaw === "rating" || sortRaw === "year" || sortRaw === "popularity"
+        ? (sortRaw as CatalogSort)
+        : ("popularity" as CatalogSort),
+    page: Math.min(MAX_PAGES, Math.max(1, Number(sp.get("page")) || 1)),
+  };
+}
+
 export default function CatalogPage({ kind }: { kind: CatalogKind }) {
+  // useSearchParams на пререндері без Suspense ламає next build (Next 15).
+  return (
+    <Suspense fallback={<LoadingSkeleton count={4} />}>
+      <CatalogInner kind={kind} />
+    </Suspense>
+  );
+}
+
+function CatalogInner({ kind }: { kind: CatalogKind }) {
   const { t, lang } = useI18n();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const formatChips = kind === "anime" ? ANIME_MEDIA_FORMATS : MANGA_FORMATS;
 
-  const [format, setFormat] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [yearFrom, setYearFrom] = useState("");
-  const [yearTo, setYearTo] = useState("");
+  // Початковий стан — з URL (переживає reload/back-forward); далі URL — дзеркало стану.
+  const [init] = useState(() => parseCatalogParams(new URLSearchParams(searchParams.toString())));
+  const [format, setFormat] = useState<string | null>(init.format);
+  const [status, setStatus] = useState<string | null>(init.status);
+  const [yearFrom, setYearFrom] = useState(init.yearFrom);
+  const [yearTo, setYearTo] = useState(init.yearTo);
   const [years, setYears] = useState<{ from: number | null; to: number | null }>({
-    from: null,
-    to: null,
+    from: numOrNull(init.yearFrom),
+    to: numOrNull(init.yearTo),
   });
-  const [sort, setSort] = useState<CatalogSort>("popularity");
+  const [sort, setSort] = useState<CatalogSort>(init.sort);
 
-  // Прогресивне завантаження: перша сторінка одразу, решта — інфініт-скролом;
-  // під час нового запиту сітка лишається видимою (opacity), без спустошення.
+  // Серверна пагінація: page належить хуку, старт — з URL.
   const fetchPage = useCallback(
-    (pg: number) =>
+    ({ page: pg, omitTotal }: FetchPageArgs) =>
       searchTitles(
         {
           type: kind,
@@ -67,15 +101,59 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
           sort,
           page: pg,
           pageSize: PAGE_SIZE,
+          omitTotal,
         },
         lang,
       ),
     [kind, format, status, years, sort, lang],
   );
-  const list = useProgressiveSearch(
+  const list = usePagedSearch(
     fetchPage,
     JSON.stringify([kind, format, status, years, sort]) + "|" + lang,
+    true,
+    init.page,
   );
+
+  // ── URL-дзеркало: стан → ?params ──
+  // replace — для зміни фільтрів (reset не засмічує історію);
+  // push — для перегортань сторінок (Back повертає до попередньої сторінки результатів).
+  const buildQs = useCallback(
+    (page: number) => {
+      const sp = new URLSearchParams();
+      if (format) sp.set("format", format);
+      if (status) sp.set("status", status);
+      if (years.from != null) sp.set("yearFrom", String(years.from));
+      if (years.to != null) sp.set("yearTo", String(years.to));
+      if (sort !== "popularity") sp.set("sort", sort);
+      if (page > 1) sp.set("page", String(page));
+      return sp.toString();
+    },
+    [format, status, years, sort],
+  );
+  const urlQs = buildQs(list.page);
+  const lastWrittenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastWrittenRef.current === urlQs) return;
+    lastWrittenRef.current = urlQs;
+    router.replace(urlQs ? `${pathname}?${urlQs}` : pathname, { scroll: false });
+  }, [urlQs, router, pathname]);
+
+  // ── Back/forward: URL змінили зовнішньо → гідратуємо стан з нього ──
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (current === lastWrittenRef.current) return; // наш власний запис — ехо
+    lastWrittenRef.current = current;
+    const p = parseCatalogParams(new URLSearchParams(current));
+    setFormat(p.format);
+    setStatus(p.status);
+    setYearFrom(p.yearFrom);
+    setYearTo(p.yearTo);
+    setYears({ from: numOrNull(p.yearFrom), to: numOrNull(p.yearTo) });
+    setSort(p.sort);
+    list.goTo(p.page);
+    // list.goTo стабільний; читаємо лише searchParams, інакше цикл на кожен рендер
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function applyYears() {
     setYears({ from: numOrNull(yearFrom), to: numOrNull(yearTo) });
@@ -89,6 +167,20 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
     setYears({ from: null, to: null });
     setSort("popularity");
   }
+
+  // Перегортання: нова сторінка замінює поточну. PUSH-навігація (not replace):
+  // кожна сторінка — запис історії, Back повертає до попередньої сторінки результатів.
+  const { goTo: listGoTo } = list;
+  const changePage = useCallback(
+    (p: number) => {
+      const qs = buildQs(p);
+      lastWrittenRef.current = qs; // push сам оновлює URL — дзеркало не дублює
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+      listGoTo(p);
+      window.scrollTo({ top: 0 });
+    },
+    [buildQs, router, pathname, listGoTo],
+  );
 
   const emptyKey = kind === "anime" ? "anime.empty" : "manga.empty";
   const titleKey = kind === "anime" ? "anime.title" : "manga.title";
@@ -205,12 +297,23 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
         </div>
       </div>
 
-      {/* Результати — прогресивно: перша сторінка одразу, решта догружається скролом */}
+      {/* Результати — серверні сторінки по 20: наступна замінює поточну */}
       {list.unavailable && <ApiBanner />}
       {list.firstLoad ? (
         <LoadingSkeleton />
       ) : list.error ? (
-        <EmptyState icon="⚠️" title={t("common.error")} />
+        <div>
+          <EmptyState icon="⚠️" title={t("common.error")} />
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={list.retry}
+              className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
+            >
+              {t("common.retry")}
+            </button>
+          </div>
+        </div>
       ) : list.items.length === 0 && !list.busy ? (
         <EmptyState icon={emptyIcon} title={t(emptyKey)} />
       ) : (
@@ -235,18 +338,16 @@ export default function CatalogPage({ kind }: { kind: CatalogKind }) {
               {t("common.loading")}
             </div>
           )}
-          {list.canMore && !list.busy && (
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={list.showMore}
-                className="rounded-xl border border-line bg-panel px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-accent/50"
-              >
-                {t("common.showMore")}
-              </button>
-            </div>
+          {!list.busy && list.total != null && (
+            <Pagination
+              page={list.page}
+              total={list.total}
+              pageSize={list.pageSize}
+              capped={list.totalCapped}
+              maxPage={MAX_PAGES}
+              onChange={changePage}
+            />
           )}
-          <div ref={list.sentinelRef} aria-hidden className="h-px w-full" />
         </>
       )}
     </div>
