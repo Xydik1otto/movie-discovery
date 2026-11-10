@@ -1,10 +1,10 @@
 // Українська — мова за замовчуванням. Мови UI: uk/en/ru (рішення власника 10.11).
 export const uk = {
   "brand.name": "КіноНавігатор",
-  "brand.tagline": "Знайди, що дивитись — за параметрами чи «схоже на…»",
+  "brand.tagline": "Знайди, що подивитись — за параметрами або «схоже на…»",
 
   // Header: грип докінгу панелі (top|left|right)
-  "header.dockHint": "Перетягніть панель: ліворуч/праворуч/зверху",
+  "header.dockHint": "Перетягни панель: вліво, вправо або назад нагору",
 
   // UX-02: постери — чесні стани (PosterImage)
   "poster.unavailable": "Постер недоступний",
@@ -22,7 +22,7 @@ export const uk = {
   "search.button": "Знайти",
   "search.results": "Знайдено: {n}",
   "search.resultsCapped": "Знайдено: 2000+",
-  "search.noResults": "Нічого не знайдено за цими параметрами",
+  "search.noResults": "За таким запитом нічого немає — спробуй інші фільтри",
   "search.watchable": "Можна подивитись",
 
   "filters.type": "Тип",
@@ -98,12 +98,12 @@ export const uk = {
   "title.added": "Додано",
 
   "similar.seedsTitle": "Схоже на...",
-  "similar.seedsHint": "Додай улюблені фільми й серіали як еталони — або просто вибери жанри й настрій: шукатимемо спільний ДНК-код: жанри, настрій, епоху, акторів.",
+  "similar.seedsHint": "Додай улюблені фільми й серіали — або просто жанри й настрій. Шукатимемо те, що їх поєднує: жанр, настрій, епоху, акторів.",
   "similar.searchSeed": "Пошук еталонів…",
   "similar.find": "Знайти схоже",
   "similar.seeds": "Еталони",
   "similar.seedsCount": "Еталонів: {n}/10",
-  "similar.seedsRequired": "Додай щонайменше один еталон",
+  "similar.seedsRequired": "Додай хоча б один еталон",
   "similar.seedsOrFiltersRequired": "Додай еталон або вибери жанри чи настрій",
   "similar.clear": "Очистити",
   "similar.byText": "Опиши словами",
@@ -140,11 +140,11 @@ export const uk = {
   "common.pageOfCapped": "Сторінка {p} з ~{t}",
   "common.retry": "Спробувати ще раз",
 
-  "api.unavailable": "API недоступний — показуємо демо-дані",
+  "api.unavailable": "Сервер не відповідає — поки показуємо демо-дані",
 
   "lang.switch": "Мова",
 
-  "providers.none": "Немає даних про доступність для цього регіону",
+  "providers.none": "Для цього регіону поки немає даних, де дивитись",
   "providers.stream": "Дивитись",
   "providers.rent": "Оренда",
   "providers.buy": "Купити",
@@ -208,8 +208,8 @@ export const uk = {
   "nav.import": "Імпорт",
 
   "anime.title": "Аніме",
-  "anime.subtitle": "Аніме-каталог: ТВ, фільми, OVA/ONA — фільтри за форматом, роком і статусом.",
-  "anime.empty": "Каталог аніме ще не синхронізовано — запусти імпорт/синхронізацію.",
+  "anime.subtitle": "ТВ-серії, повнометражні, OVA й ONA — фільтруй за форматом, роком і статусом.",
+  "anime.empty": "Тут ще порожньо — каталог аніме поки не заповнений. Завітай пізніше.",
   "anime.format": "Формат",
   "anime.studios": "Студії",
   "anime.episodes": "Епізоди",
@@ -217,8 +217,8 @@ export const uk = {
   "anime.finished": "Завершено",
 
   "manga.title": "Манга",
-  "manga.subtitle": "Каталог манги: томи, розділи, автори — фільтри за форматом, роком і статусом.",
-  "manga.empty": "Каталог манги ще не синхронізовано — запусти імпорт/синхронізацію.",
+  "manga.subtitle": "Томи, розділи, автори — фільтруй за форматом, роком і статусом.",
+  "manga.empty": "Тут ще порожньо — каталог манги поки не заповнений. Завітай пізніше.",
   "manga.authors": "Автори",
   "manga.chapters": "Розділи",
   "manga.volumes": "Томи",
@@ -240,7 +240,7 @@ export const uk = {
   "import.notFound": "Профіль не знайдено — перевір нікнейм або ID.",
   "import.private": "Список приватний — відкрий його в налаштуваннях трекера і спробуй ще раз.",
   "import.goToLists": "Мої списки",
-  "import.explain": "Що імпортується: переглянуте аніме → «Переглянуте», прочитана манга → «Прочитане», те, що дивишся/читаєш зараз → «Хочу подивитись». Оцінки 1–10 переносяться як є.",
+  "import.explain": "Що куди піде: переглянуте → «Переглянуте», прочитане → «Прочитане», «Дивлюсь» і «Читаю» лишаться собі, заплановане → «Хочу подивитись», «Відкладено» і «Кинуто» теж перенесемо. Оцінки 1–10 — як є.",
   "import.hint.mal": "нікнейм MAL",
   "import.hint.anilist": "нікнейм AniList",
   "import.hint.shikimori": "нікнейм або ID Shikimori",
@@ -270,7 +270,7 @@ export const uk = {
   "auth.loginTitle": "Вхід",
   "auth.loginSubtitle": "Увійди — списки, оцінки й «Кінотека» зберігатимуться в твоєму профілі.",
   "auth.registerTitle": "Реєстрація",
-  "auth.registerSubtitle": "Створи акаунт: дані персистентні, з'явиться режим «Кінотека».",
+  "auth.registerSubtitle": "Створи акаунт — списки й оцінки збережуться в профілі, і відкриється «Кінотека».",
   "auth.email": "Email",
   "auth.username": "Ім'я користувача",
   "auth.password": "Пароль",
@@ -289,23 +289,23 @@ export const uk = {
   "auth.err.credentials": "Невірний email або пароль",
   "auth.err.lockout": "Забагато невдалих спроб — спробуй за 15 хвилин",
   // Ліміт бекенд-лімітера (register 3/год/IP): чесне «через ~N хв», не загальне «Не вдалося».
-  "auth.err.rateLimited": "Ліміт реєстрацій вичерпано — спробуйте через ~{n} хв",
-  "auth.err.rateLimitedGeneric": "Ліміт спроб вичерпано — спробуйте пізніше",
-  "auth.err.generic": "Не вдалося. Спробуй ще раз",
-  "auth.err.unavailable": "API недоступний — спробуй пізніше",
+  "auth.err.rateLimited": "Занадто багато реєстрацій поспіль — спробуй за ~{n} хв",
+  "auth.err.rateLimitedGeneric": "Занадто багато спроб — зачекай трохи і спробуй знову",
+  "auth.err.generic": "Не вийшло — спробуй ще раз",
+  "auth.err.unavailable": "Сервер не відповідає — спробуй пізніше",
   // MD-07: сервер не підтвердив вихід — чесне повідомлення замість фальшивого розлогіну.
   "auth.logoutUnavailable": "Не вдалося вийти — сервер недоступний. Ти все ще залогінений.",
 
   // --- 10.11: підтвердження пошти, resend, forgot/reset password ---
   "auth.password2": "Повторіть пароль",
   "auth.passwordsMismatch": "Паролі не співпадають",
-  "auth.checkEmail": "Перевірте пошту",
-  "auth.checkEmailText": "Надіслали лист підтвердження на {email}. Перейди за посиланням із листа, щоб активувати акаунт.",
+  "auth.checkEmail": "Перевір пошту",
+  "auth.checkEmailText": "Ми надіслали лист на {email}. Перейди за посиланням — і акаунт активується.",
   "auth.resendAgain": "Надіслати лист ще раз",
   "auth.resendSent": "Лист надіслано ще раз — перевір пошту (і спам).",
-  "auth.resendTooFrequent": "Занадто часто — спробуйте пізніше",
+  "auth.resendTooFrequent": "Занадто часто — зачекай трохи",
   "auth.resendError": "Не вдалося надіслати лист — спробуй ще раз",
-  "auth.emailNotConfirmed": "Підтвердіть пошту",
+  "auth.emailNotConfirmed": "Підтверди пошту",
   "auth.emailNotConfirmedText": "Ми надіслали лист підтвердження на {email}. Підтверди адресу і спробуй увійти знову.",
   "auth.forgotPassword": "Забули пароль?",
   "auth.forgotTitle": "Відновлення пароля",
@@ -315,7 +315,7 @@ export const uk = {
   "auth.resetTitle": "Новий пароль",
   "auth.resetSubtitle": "Придумай новий пароль для свого акаунта.",
   "auth.resetSubmit": "Змінити пароль",
-  "auth.resetSuccess": "Пароль змінено — увійдіть новим",
+  "auth.resetSuccess": "Пароль змінено — тепер увійди з новим",
   "auth.confirmTitle": "Підтвердження пошти",
   "auth.confirmVerifying": "Підтверджуємо пошту…",
   "auth.confirmSuccess": "Пошту підтверджено",
@@ -328,11 +328,11 @@ export const uk = {
   "discover.title": "Кінотека",
   "discover.subtitle": "Свайпай: вправо — подобається, вліво — ні. Або тисни кнопки.",
   "discover.loading": "Збираємо добірку…",
-  "discover.empty": "Нараз усе показано. Заходь пізніше — добірка оновиться.",
+  "discover.empty": "Ти вже все переглянув. Завітай пізніше — зробимо нову добірку.",
   "discover.again": "Ще добірку",
   "discover.like": "Подобається",
   "discover.dislike": "Не моє",
-  "discover.skip": "Not now",
+  "discover.skip": "Не зараз",
   "discover.watchlist": "Хочу подивитись",
   "discover.openTitle": "Відкрити картку",
   "discover.trailer": "Трейлер",
@@ -354,7 +354,7 @@ export const uk = {
   "onboarding.q.mood": "Який настрій шукаєш?",
   "onboarding.q.era": "Яка ера тобі до душі?",
   "onboarding.q.titles": "Три улюблених тайтли",
-  "onboarding.titlesHint": "Знайди через пошук — до 3 тайтлів.",
+  "onboarding.titlesHint": "Знайди їх через пошук — можна до трьох.",
   "onboarding.searchPlaceholder": "Пошук фільмів і серіалів…",
   "onboarding.selected": "Вибрано: {n}",
   "onboarding.done.title": "Готово!",
@@ -362,7 +362,7 @@ export const uk = {
   "onboarding.done.discover": "До Кінотеки",
   "onboarding.done.home": "На головну",
   // MD-02: чесна помилка збереження — вибір лишається, без фальшивого «Готово».
-  "onboarding.error": "Не вдалося зберегти відповіді — сервер недоступний або відмовив. Вибір залишився, спробуй ще раз.",
+  "onboarding.error": "Не вдалося зберегти відповіді — схоже, сервер не відповідає. Твої відповіді на місці, спробуй ще раз.",
   "onboarding.retry": "Спробувати ще раз",
 
   // --- FR-17: вкладка «Подобається», статистика, міграція гостя ---
@@ -420,17 +420,17 @@ export const uk = {
   "mood.epic": "епічний",
   "mood.romantic": "романтичний",
   "mood.family": "сімейний",
-  "mood.mindbender": "для розуму",
+  "mood.mindbender": "головоломний",
 
   "studio.title": "Студія підборів",
-  "studio.hint": "Додай 1–10 еталонів і звуж рамки: роки, тип, жанровий акцент — результати оновлюються наживо.",
+  "studio.hint": "Додай 1–10 еталонів і звуж рамки: роки, тип, жанри. Результати оновлюються на льоту.",
   "studio.yearFrom": "Рік від",
   "studio.yearTo": "Рік до",
   "studio.genres": "Жанровий акцент",
   "studio.genresHint": "до 3 жанрів",
 
   "collections.title": "Збірники",
-  "collections.subtitle": "Готові пресети й власні добірки — збереження в акаунті.",
+  "collections.subtitle": "Готові добірки і свої власні — зберігай в акаунті.",
   "collections.presets": "Пресети",
   "collections.preset.mood": "Настрій",
   "collections.preset.evening": "Вечір",
@@ -446,7 +446,7 @@ export const uk = {
   "collections.mine": "Мої добірки",
   "collections.mineEmpty": "Ти ще не зберігав добірок",
   "collections.loginHint": "Увійди, щоб зберігати добірки",
-  "collections.itemsCount": "{n} тайтлів",
+  "collections.itemsCount": "{n} у добірці",
 
   // --- title series (FR franchise block) ---
   "series.title": "Фільми з тієї ж лінійки",
@@ -500,14 +500,14 @@ export const uk = {
   "watch.lang.code.en": "англ",
   "watch.lang.code.original": "ориг",
   "watch.lang.code.multi": "багато",
-  "watch.empty.region": "Немає даних про перегляд у вашому регіоні ({region}).",
+  "watch.empty.region": "Для твого регіону ({region}) даних про перегляд поки немає.",
   "watch.empty.lang": "Цією мовою варіантів перегляду немає.",
   "watch.empty.langHint": "Інші доступні мови — на перемикачі вище.",
   "watch.status.unknown": "доступність неперевірена",
   "watch.unknown.plexCatalog": "у каталозі Plex, доступність неперевірена",
   "watch.status.unavailable": "зараз недоступно",
   "watch.findOn": "Знайти на {provider}",
-  "watch.unknownNote": "{count} варіантів з доступністю, яку ще не перевірено (каталог).",
+  "watch.unknownNote": "Ще {count} варіантів — їхню доступність не перевіряли (з каталогу).",
 } as const;
 
 export type Dict = Record<keyof typeof uk, string>;

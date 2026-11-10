@@ -3,10 +3,10 @@ import type { Dict } from "./uk";
 // Англійська. Ключі мусять збігатися з uk.ts — перевіряється типом Record<keyof typeof uk, string>.
 export const en: Dict = {
   "brand.name": "Movie Navigator",
-  "brand.tagline": "Find what to watch — by parameters or “similar to…”",
+  "brand.tagline": "Find something to watch — by filters or “more like this”",
 
   // Header: panel dock grip (top|left|right)
-  "header.dockHint": "Drag the panel: left / right / top",
+  "header.dockHint": "Drag the panel: left, right, or back to top",
 
   // UX-02: poster honest states (PosterImage)
   "poster.unavailable": "Poster unavailable",
@@ -24,7 +24,7 @@ export const en: Dict = {
   "search.button": "Search",
   "search.results": "Found: {n}",
   "search.resultsCapped": "Found: 2000+",
-  "search.noResults": "Nothing found for these parameters",
+  "search.noResults": "Nothing matches that — try different filters",
   "search.watchable": "Available to watch",
 
   "filters.type": "Type",
@@ -100,7 +100,7 @@ export const en: Dict = {
   "title.added": "Added",
 
   "similar.seedsTitle": "Similar to...",
-  "similar.seedsHint": "Add your favourite movies and series as seeds — or just pick genres and mood: we look for the shared DNA: genres, mood, era, cast.",
+  "similar.seedsHint": "Add favourite movies and series — or just pick genres and mood. We’ll look for what ties them together: genre, mood, era, cast.",
   "similar.searchSeed": "Search reference titles…",
   "similar.find": "Find similar",
   "similar.seeds": "Seeds",
@@ -142,11 +142,11 @@ export const en: Dict = {
   "common.pageOfCapped": "Page {p} of ~{t}",
   "common.retry": "Try again",
 
-  "api.unavailable": "API is unavailable — showing demo data",
+  "api.unavailable": "Server’s not responding — showing demo data for now",
 
   "lang.switch": "Language",
 
-  "providers.none": "No availability data for this region",
+  "providers.none": "No viewing data for this region yet",
   "providers.stream": "Stream",
   "providers.rent": "Rent",
   "providers.buy": "Buy",
@@ -210,8 +210,8 @@ export const en: Dict = {
   "nav.import": "Import",
 
   "anime.title": "Anime",
-  "anime.subtitle": "Anime catalog: TV series, movies, OVA/ONA — filter by format, year and status.",
-  "anime.empty": "The anime catalog is not synced yet — start an import/sync.",
+  "anime.subtitle": "TV series, films, OVA and ONA — filter by format, year and status.",
+  "anime.empty": "Nothing here yet — the anime catalog is still filling up. Check back soon.",
   "anime.format": "Format",
   "anime.studios": "Studios",
   "anime.episodes": "Episodes",
@@ -219,8 +219,8 @@ export const en: Dict = {
   "anime.finished": "Finished",
 
   "manga.title": "Manga",
-  "manga.subtitle": "Manga catalog: volumes, chapters, authors — filter by format, year and status.",
-  "manga.empty": "The manga catalog is not synced yet — start an import/sync.",
+  "manga.subtitle": "Volumes, chapters, authors — filter by format, year and status.",
+  "manga.empty": "Nothing here yet — the manga catalog is still filling up. Check back soon.",
   "manga.authors": "Authors",
   "manga.chapters": "Chapters",
   "manga.volumes": "Volumes",
@@ -242,7 +242,7 @@ export const en: Dict = {
   "import.notFound": "Profile not found — check the username or ID.",
   "import.private": "The list is private — make it public in the tracker settings and try again.",
   "import.goToLists": "My lists",
-  "import.explain": "What gets imported: completed anime → “Watched”, completed manga → “Read”, what you are currently watching/reading → “Watchlist”. Scores 1–10 are carried over as is.",
+  "import.explain": "Where things land: watched → “Watched”, read → “Read”, watching/reading stay as they are, planned → “Watchlist”, on hold and dropped come over too. Scores 1–10 are kept as is.",
   "import.hint.mal": "MAL username",
   "import.hint.anilist": "AniList username",
   "import.hint.shikimori": "Shikimori nickname or ID",
@@ -272,7 +272,7 @@ export const en: Dict = {
   "auth.loginTitle": "Log in",
   "auth.loginSubtitle": "Log in — lists, ratings and the Cinema Shelf will be kept in your profile.",
   "auth.registerTitle": "Sign up",
-  "auth.registerSubtitle": "Create an account: your data becomes persistent and the “Cinema Shelf” unlocks.",
+  "auth.registerSubtitle": "Create an account — your lists and ratings stay in your profile, and “Cinema Shelf” unlocks.",
   "auth.email": "Email",
   "auth.username": "Username",
   "auth.password": "Password",
@@ -291,21 +291,21 @@ export const en: Dict = {
   "auth.err.credentials": "Incorrect email or password",
   "auth.err.lockout": "Too many failed attempts — try again in 15 minutes",
   // Backend rate limiter (register 3/hour/IP): honest "~n min" message, not a generic failure.
-  "auth.err.rateLimited": "Registration limit reached — try again in ~{n} min",
-  "auth.err.rateLimitedGeneric": "Attempt limit reached — try again later",
-  "auth.err.generic": "Something went wrong. Try again",
-  "auth.err.unavailable": "API is unavailable — try again later",
+  "auth.err.rateLimited": "Too many sign-ups in a row — try again in ~{n} min",
+  "auth.err.rateLimitedGeneric": "Too many attempts — wait a moment and try again",
+  "auth.err.generic": "That didn’t work — try again",
+  "auth.err.unavailable": "Server’s not responding — try again later",
   // MD-07: the server did not confirm logout — honest message instead of a fake sign-out.
   "auth.logoutUnavailable": "Could not log out — the server is unavailable. You are still logged in.",
 
   // --- 10.11: email confirmation, resend, forgot/reset password ---
   "auth.password2": "Repeat password",
   "auth.passwordsMismatch": "Passwords don't match",
-  "auth.checkEmail": "Check your email",
-  "auth.checkEmailText": "We sent a confirmation email to {email}. Follow the link in it to activate your account.",
+  "auth.checkEmail": "Check your inbox",
+  "auth.checkEmailText": "We’ve sent an email to {email}. Follow the link and your account is activated.",
   "auth.resendAgain": "Send the email again",
   "auth.resendSent": "Email sent again — check your inbox (and spam).",
-  "auth.resendTooFrequent": "Too frequent — try again later",
+  "auth.resendTooFrequent": "Too soon — wait a moment",
   "auth.resendError": "Could not send the email — try again",
   "auth.emailNotConfirmed": "Confirm your email",
   "auth.emailNotConfirmedText": "We sent a confirmation email to {email}. Confirm the address and try logging in again.",
@@ -330,7 +330,7 @@ export const en: Dict = {
   "discover.title": "Cinema Shelf",
   "discover.subtitle": "Swipe: right — like it, left — not for me. Or use the buttons.",
   "discover.loading": "Putting a selection together…",
-  "discover.empty": "That is everything for now. Come back later — the selection refreshes.",
+  "discover.empty": "You’ve seen it all. Come back later — we’ll put together a new selection.",
   "discover.again": "Another round",
   "discover.like": "Like",
   "discover.dislike": "Not for me",
@@ -356,7 +356,7 @@ export const en: Dict = {
   "onboarding.q.mood": "What mood are you looking for?",
   "onboarding.q.era": "Which era is closest to your heart?",
   "onboarding.q.titles": "Three favorite titles",
-  "onboarding.titlesHint": "Find them via search — up to 3 titles.",
+  "onboarding.titlesHint": "Find them via search — up to three.",
   "onboarding.searchPlaceholder": "Search movies and series…",
   "onboarding.selected": "Selected: {n}",
   "onboarding.done.title": "Done!",
@@ -364,7 +364,7 @@ export const en: Dict = {
   "onboarding.done.discover": "To the Cinema Shelf",
   "onboarding.done.home": "Back home",
   // MD-02: honest save failure — selections are kept, no fake “Done”.
-  "onboarding.error": "Could not save your answers — the server is unavailable or refused. Your selections are kept, try again.",
+  "onboarding.error": "Couldn’t save your answers — the server seems to be down. Your picks are still here, try again.",
   "onboarding.retry": "Try again",
 
   // --- FR-17: “Liked” tab, stats, guest migration ---
@@ -425,14 +425,14 @@ export const en: Dict = {
   "mood.mindbender": "mind-bender",
 
   "studio.title": "Selection studio",
-  "studio.hint": "Add 1–10 reference titles and set the frame: years, type, genre accent — results refresh live.",
+  "studio.hint": "Add 1–10 seeds and narrow the frame: years, type, genres. Results update on the fly.",
   "studio.yearFrom": "Year from",
   "studio.yearTo": "Year to",
   "studio.genres": "Genre accent",
   "studio.genresHint": "up to 3 genres",
 
   "collections.title": "Collections",
-  "collections.subtitle": "Ready-made presets and your own collections — saved to your account.",
+  "collections.subtitle": "Ready-made collections and your own — saved to your account.",
   "collections.presets": "Presets",
   "collections.preset.mood": "Mood",
   "collections.preset.evening": "Evening",
@@ -448,7 +448,7 @@ export const en: Dict = {
   "collections.mine": "My collections",
   "collections.mineEmpty": "No saved collections yet",
   "collections.loginHint": "Log in to save collections",
-  "collections.itemsCount": "{n} titles",
+  "collections.itemsCount": "{n} in the collection",
 
   // --- title series (FR franchise block) ---
   "series.title": "Movies from the same saga",
@@ -502,12 +502,12 @@ export const en: Dict = {
   "watch.lang.code.en": "eng",
   "watch.lang.code.original": "orig",
   "watch.lang.code.multi": "multi",
-  "watch.empty.region": "No viewing data available in your region ({region}).",
+  "watch.empty.region": "No viewing data for your region ({region}) yet.",
   "watch.empty.lang": "No viewing options in this language.",
   "watch.empty.langHint": "Other available languages are on the switcher above.",
   "watch.status.unknown": "availability unverified",
   "watch.unknown.plexCatalog": "in the Plex catalog, availability unverified",
   "watch.status.unavailable": "currently unavailable",
   "watch.findOn": "Find on {provider}",
-  "watch.unknownNote": "{count} options with unverified availability (catalog).",
+  "watch.unknownNote": "{count} more options — their availability hasn’t been checked yet (catalog).",
 };

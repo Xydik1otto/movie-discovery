@@ -5,10 +5,10 @@ import type { Dict } from "./uk";
 // і скриптом парності scripts/check-i18n-parity.mjs.
 export const ru: Dict = {
   "brand.name": "КиноНавигатор",
-  "brand.tagline": "Найди, что посмотреть — по параметрам или «похоже на…»",
+  "brand.tagline": "Найди, что посмотреть — по параметрам или через «похоже на…»",
 
   // Header: грип докинга панели (top|left|right)
-  "header.dockHint": "Перетащите панель: слева/справа/сверху",
+  "header.dockHint": "Перетащи панель: влево, вправо или наверх",
 
   // UX-02: постеры — честные состояния (PosterImage)
   "poster.unavailable": "Постер недоступен",
@@ -26,7 +26,7 @@ export const ru: Dict = {
   "search.button": "Найти",
   "search.results": "Найдено: {n}",
   "search.resultsCapped": "Найдено: 2000+",
-  "search.noResults": "По этим параметрам ничего не найдено",
+  "search.noResults": "По такому запросу ничего нет — попробуй другие фильтры",
   "search.watchable": "Можно посмотреть",
 
   "filters.type": "Тип",
@@ -102,7 +102,7 @@ export const ru: Dict = {
   "title.added": "Добавлено",
 
   "similar.seedsTitle": "Похоже на...",
-  "similar.seedsHint": "Добавь любимые фильмы и сериалы как эталоны — или просто выбери жанры и настроение: будем искать общий ДНК-код: жанры, настроение, эпоху, актёров.",
+  "similar.seedsHint": "Добавь любимые фильмы и сериалы — или просто жанры и настроение. Будем искать то, что их связывает: жанр, настроение, эпоху, актёров.",
   "similar.searchSeed": "Поиск эталонов…",
   "similar.find": "Найти похожее",
   "similar.seeds": "Эталоны",
@@ -144,11 +144,11 @@ export const ru: Dict = {
   "common.pageOfCapped": "Страница {p} из ~{t}",
   "common.retry": "Попробовать ещё раз",
 
-  "api.unavailable": "API недоступен — показываем демо-данные",
+  "api.unavailable": "Сервер не отвечает — пока показываем демо-данные",
 
   "lang.switch": "Язык",
 
-  "providers.none": "Нет данных о доступности для этого региона",
+  "providers.none": "Для этого региона пока нет данных, где смотреть",
   "providers.stream": "Смотреть",
   "providers.rent": "Аренда",
   "providers.buy": "Купить",
@@ -212,8 +212,8 @@ export const ru: Dict = {
   "nav.import": "Импорт",
 
   "anime.title": "Аниме",
-  "anime.subtitle": "Каталог аниме: ТВ, фильмы, OVA/ONA — фильтры по формату, году и статусу.",
-  "anime.empty": "Каталог аниме ещё не синхронизирован — запусти импорт/синхронизацию.",
+  "anime.subtitle": "ТВ-сериалы, полнометражные, OVA и ONA — фильтруй по формату, году и статусу.",
+  "anime.empty": "Здесь пока пусто — каталог аниме ещё заполняется. Загляни позже.",
   "anime.format": "Формат",
   "anime.studios": "Студии",
   "anime.episodes": "Эпизоды",
@@ -221,8 +221,8 @@ export const ru: Dict = {
   "anime.finished": "Завершено",
 
   "manga.title": "Манга",
-  "manga.subtitle": "Каталог манги: томы, главы, авторы — фильтры по формату, году и статусу.",
-  "manga.empty": "Каталог манги ещё не синхронизирован — запусти импорт/синхронизацию.",
+  "manga.subtitle": "Томы, главы, авторы — фильтруй по формату, году и статусу.",
+  "manga.empty": "Здесь пока пусто — каталог манги ещё заполняется. Загляни позже.",
   "manga.authors": "Авторы",
   "manga.chapters": "Главы",
   "manga.volumes": "Томы",
@@ -244,7 +244,7 @@ export const ru: Dict = {
   "import.notFound": "Профиль не найден — проверь никнейм или ID.",
   "import.private": "Список приватный — открой его в настройках трекера и попробуй ещё раз.",
   "import.goToLists": "Мои списки",
-  "import.explain": "Что импортируется: просмотренное аниме → «Просмотренное», прочитанная манга → «Прочитанное», то, что смотришь/читаешь сейчас → «Хочу посмотреть». Оценки 1–10 переносятся как есть.",
+  "import.explain": "Что куда попадёт: просмотренное → «Просмотренное», прочитанное → «Прочитанное», «Смотрю» и «Читаю» останутся собой, запланированное → «Хочу посмотреть», «Отложено» и «Брошено» тоже перенесём. Оценки 1–10 — как есть.",
   "import.hint.mal": "никнейм MAL",
   "import.hint.anilist": "никнейм AniList",
   "import.hint.shikimori": "никнейм или ID Shikimori",
@@ -274,7 +274,7 @@ export const ru: Dict = {
   "auth.loginTitle": "Вход",
   "auth.loginSubtitle": "Войди — списки, оценки и «Кинотека» сохранятся в твоём профиле.",
   "auth.registerTitle": "Регистрация",
-  "auth.registerSubtitle": "Создай аккаунт: данные станут постоянными, появится режим «Кинотека».",
+  "auth.registerSubtitle": "Создай аккаунт — списки и оценки сохранятся в профиле, откроется «Кинотека».",
   "auth.email": "Email",
   "auth.username": "Имя пользователя",
   "auth.password": "Пароль",
@@ -293,10 +293,10 @@ export const ru: Dict = {
   "auth.err.credentials": "Неверный email или пароль",
   "auth.err.lockout": "Слишком много неудачных попыток — попробуй через 15 минут",
   // Лимит бэкенд-лимитера (register 3/час/IP): честное «через ~N мин», не общее «Не удалось».
-  "auth.err.rateLimited": "Лимит регистраций исчерпан — попробуйте через ~{n} мин",
-  "auth.err.rateLimitedGeneric": "Лимит попыток исчерпан — попробуйте позже",
-  "auth.err.generic": "Не удалось. Попробуй ещё раз",
-  "auth.err.unavailable": "API недоступен — попробуй позже",
+  "auth.err.rateLimited": "Слишком много регистраций подряд — попробуй через ~{n} мин",
+  "auth.err.rateLimitedGeneric": "Слишком много попыток — подожди немного и попробуй снова",
+  "auth.err.generic": "Не вышло — попробуй ещё раз",
+  "auth.err.unavailable": "Сервер не отвечает — попробуй позже",
   // MD-07: сервер не подтвердил выход — честное сообщение вместо фальшивого разлогина.
   "auth.logoutUnavailable": "Не удалось выйти — сервер недоступен. Ты всё ещё залогинен.",
 
@@ -305,11 +305,11 @@ export const ru: Dict = {
   "discover.title": "Кинотека",
   "discover.subtitle": "Свайпай: вправо — нравится, влево — нет. Или жми кнопки.",
   "discover.loading": "Собираем подборку…",
-  "discover.empty": "Всё уже показано. Заходи позже — подборка обновится.",
+  "discover.empty": "Ты уже всё посмотрел. Загляни позже — соберём новую подборку.",
   "discover.again": "Ещё подборку",
   "discover.like": "Нравится",
   "discover.dislike": "Не моё",
-  "discover.skip": "Not now",
+  "discover.skip": "Не сейчас",
   "discover.watchlist": "Хочу посмотреть",
   "discover.openTitle": "Открыть карточку",
   "discover.trailer": "Трейлер",
@@ -331,7 +331,7 @@ export const ru: Dict = {
   "onboarding.q.mood": "Какое настроение ищешь?",
   "onboarding.q.era": "Какая эпоха тебе по душе?",
   "onboarding.q.titles": "Три любимых тайтла",
-  "onboarding.titlesHint": "Найди через поиск — до 3 тайтлов.",
+  "onboarding.titlesHint": "Найди их через поиск — можно до трёх.",
   "onboarding.searchPlaceholder": "Поиск фильмов и сериалов…",
   "onboarding.selected": "Выбрано: {n}",
   "onboarding.done.title": "Готово!",
@@ -339,7 +339,7 @@ export const ru: Dict = {
   "onboarding.done.discover": "В Кинотеку",
   "onboarding.done.home": "На главную",
   // MD-02: честная ошибка сохранения — выбор остаётся, без фальшивого «Готово».
-  "onboarding.error": "Не удалось сохранить ответы — сервер недоступен или отказал. Выбор остался, попробуй ещё раз.",
+  "onboarding.error": "Не удалось сохранить ответы — похоже, сервер не отвечает. Твои ответы на месте, попробуй ещё раз.",
   "onboarding.retry": "Попробовать ещё раз",
 
   // --- FR-17: вкладка «Нравится», статистика, миграция гостя ---
@@ -397,17 +397,17 @@ export const ru: Dict = {
   "mood.epic": "эпичный",
   "mood.romantic": "романтичный",
   "mood.family": "семейный",
-  "mood.mindbender": "для ума",
+  "mood.mindbender": "головоломный",
 
   "studio.title": "Студия подборов",
-  "studio.hint": "Добавь 1–10 эталонов и сузь рамки: годы, тип, жанровый акцент — результаты обновляются вживую.",
+  "studio.hint": "Добавь 1–10 эталонов и сузь рамки: годы, тип, жанры. Результаты обновляются на лету.",
   "studio.yearFrom": "Год от",
   "studio.yearTo": "Год до",
   "studio.genres": "Жанровый акцент",
   "studio.genresHint": "до 3 жанров",
 
   "collections.title": "Сборники",
-  "collections.subtitle": "Готовые пресеты и свои подборки — сохранение в аккаунте.",
+  "collections.subtitle": "Готовые подборки и свои собственные — сохраняй в аккаунте.",
   "collections.presets": "Пресеты",
   "collections.preset.mood": "Настроение",
   "collections.preset.evening": "Вечер",
@@ -423,7 +423,7 @@ export const ru: Dict = {
   "collections.mine": "Мои подборки",
   "collections.mineEmpty": "Ты ещё не сохранял подборок",
   "collections.loginHint": "Войди, чтобы сохранять подборки",
-  "collections.itemsCount": "{n} тайтлов",
+  "collections.itemsCount": "{n} в подборке",
 
   // --- title series (FR franchise block) ---
   "series.title": "Фильмы из той же линейки",
@@ -477,25 +477,25 @@ export const ru: Dict = {
   "watch.lang.code.en": "англ",
   "watch.lang.code.original": "ориг",
   "watch.lang.code.multi": "много",
-  "watch.empty.region": "Нет данных о просмотре в вашем регионе ({region}).",
+  "watch.empty.region": "Для твоего региона ({region}) данных о просмотре пока нет.",
   "watch.empty.lang": "На этом языке вариантов просмотра нет.",
   "watch.empty.langHint": "Другие доступные языки — на переключателе выше.",
   "watch.status.unknown": "доступность не проверена",
   "watch.unknown.plexCatalog": "в каталоге Plex, доступность не проверена",
   "watch.status.unavailable": "сейчас недоступно",
   "watch.findOn": "Найти на {provider}",
-  "watch.unknownNote": "{count} вариантов с ещё не проверенной доступностью (каталог).",
+  "watch.unknownNote": "Ещё {count} вариантов — их доступность не проверяли (из каталога).",
 
   // Auth: підтвердження пошти / скидання пароля (10.11)
   "auth.password2": "Повторите пароль",
   "auth.passwordsMismatch": "Пароли не совпадают",
-  "auth.checkEmail": "Проверьте почту",
-  "auth.checkEmailText": "Мы отправили письмо подтверждения на {email}. Перейдите по ссылке из письма, чтобы активировать аккаунт.",
+  "auth.checkEmail": "Проверь почту",
+  "auth.checkEmailText": "Мы отправили письмо на {email}. Перейди по ссылке — и аккаунт активируется.",
   "auth.resendAgain": "Отправить письмо ещё раз",
   "auth.resendSent": "Письмо отправлено повторно — проверьте почту (и спам).",
-  "auth.resendTooFrequent": "Слишком часто — попробуйте позже",
+  "auth.resendTooFrequent": "Слишком часто — подожди немного",
   "auth.resendError": "Не удалось отправить письмо — попробуйте ещё раз",
-  "auth.emailNotConfirmed": "Подтвердите почту",
+  "auth.emailNotConfirmed": "Подтверди почту",
   "auth.emailNotConfirmedText": "Мы отправили письмо подтверждения на {email}. Подтвердите адрес и попробуйте войти снова.",
   "auth.forgotPassword": "Забыли пароль?",
   "auth.forgotTitle": "Восстановление пароля",
@@ -505,7 +505,7 @@ export const ru: Dict = {
   "auth.resetTitle": "Новый пароль",
   "auth.resetSubtitle": "Придумайте новый пароль для своего аккаунта.",
   "auth.resetSubmit": "Изменить пароль",
-  "auth.resetSuccess": "Пароль изменён — войдите новым",
+  "auth.resetSuccess": "Пароль изменён — теперь войди с новым",
   "auth.confirmTitle": "Подтверждение почты",
   "auth.confirmVerifying": "Подтверждаем почту…",
   "auth.confirmSuccess": "Почта подтверждена",
