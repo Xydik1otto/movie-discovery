@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MovieDiscovery.Api.Contracts;
@@ -25,6 +25,7 @@ public sealed class TrailersController(
     TitleTrailerSyncQueue trailerSyncQueue,
     TrailerVerifier verifier,
     ICacheStore cache,
+    IMemoryCache memoryCache,
     IConfiguration configuration,
     ILogger<TrailersController> log) : ControllerBase
 {
@@ -41,7 +42,6 @@ public sealed class TrailersController(
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
     [HttpGet("api/titles/{id:int}/trailers")]
-    [EnableRateLimiting(YouTubeRatePolicy.PolicyName)] // 10/хв/IP (RateLimitPolicies.cs): 1 on-demand search ≈ 100 units квоти
     public async Task<IActionResult> Get(int id, CancellationToken ct)
     {
         // Single-flight: gate на titleId — повторний вхід після звільнення перевіряє кеш заново
@@ -111,8 +111,17 @@ public sealed class TrailersController(
 
         // On-demand: 1 search — ЛИШЕ коли кандидатів нема взагалі (нема рядків і нема fast-path).
         // Під single-flight gate — максимум один search на cache-miss (квота 100 units не подвоюється).
+        // Дорогий шлях під точковим per-IP лімітом 10/хв (ExpensivePathGate): кешовані
+        // відповіді і дешеві читання НЕ лімітуються (middleware-атрибут лімітував би і їх —
+        // 10 кліків по трейлерам за хвилину = 429 на живому замірі 11.11).
         if (rows.Count == 0)
         {
+            if (!ExpensivePathGate.TryAcquire(memoryCache, HttpContext, "yt-trailers", 10, TimeSpan.FromMinutes(1)))
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    error = "rate_limited",
+                    message = "Занадто багато запитів трейлерів за хвилину — спробуйте за мить",
+                });
             try
             {
                 await sync.SyncTitleAsync(id, ct);

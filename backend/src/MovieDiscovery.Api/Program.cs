@@ -473,6 +473,9 @@ public class Program
             builder.Services.AddHostedService<ImdbAkasSyncBackgroundService>();
             builder.Services.AddHostedService<ImdbCrewSyncBackgroundService>();
             builder.Services.AddHostedService<WikidataNamesSyncBackgroundService>();
+            // Прогрів кешу /api/filters: холодний агрегат десятки секунд — кеш мусить
+            // бути теплим ДО першого відвідувача і лишатись теплим між TTL-експайрами.
+            builder.Services.AddHostedService<FiltersWarmupService>();
             builder.Services.AddHostedService<TitleSeriesSyncBackgroundService>();
             builder.Services.AddHostedService<YoutubeSyncBackgroundService>();
             builder.Services.AddHostedService<TitleTrailerSyncBackgroundService>();

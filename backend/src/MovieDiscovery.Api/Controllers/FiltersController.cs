@@ -32,9 +32,10 @@ namespace MovieDiscovery.Api.Controllers;
 [Route("api/filters")]
 public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache cache) : ControllerBase
 {
-    /// <summary>TTL кешу метадати фільтрів: каталог синхронізується фоновими джобами,
-    /// 10 хв достатньо, щоб панель не «блимала» числами між навігаціями.</summary>
-    internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
+    /// <summary>TTL кешу метадати фільтрів: каталог синхронізується фоновими джобами.
+    /// 60 хв (понад рефреш-інтервал FiltersWarmupService 45 хв) — фасети повільні
+    /// (холодний агрегат десятки секунд), кеш тримається теплим рефрешером.</summary>
+    internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(60);
 
     internal const int MaxGenres = 40;
     internal const int MaxCountries = 20;
@@ -63,7 +64,10 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
 
         // TTL-кеш: відповідь = ~8 агрегатів; повторний GET тієї самої категорії в межах
         // TTL не перераховує. Ключ містить нормалізовану category — категорії не перетинаються.
-        var cacheKey = $"filters:v1:{cat}";
+        // TTL 60 хв: холодний агрегат коштує десятки секунд ('all' ~53с замір 11.11), тож
+        // TTL мусить перевищувати інтервал рефрешера FiltersWarmupService (45 хв) — кеш
+        // утримується вічно теплим і ніколи не експайрить «холодним» для відвідувача.
+        var cacheKey = CacheKey(cat);
         if (cache.TryGetValue(cacheKey, out FiltersResponse? cached) && cached is not null)
             // ct клієнта свідомо НЕ застосовується: кешований результат уже готовий
             // (його не можна зірвати скасуванням запиту) — як у SearchController.
@@ -76,7 +80,16 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
         return Ok(response);
     }
 
-    private async Task<FiltersResponse> BuildAsync(string category, CancellationToken ct)
+    /// <summary>Єдиний формат ключа кешу (спільний з FiltersWarmupService).</summary>
+    internal static string CacheKey(string category) => $"filters:v1:{category}";
+
+    private Task<FiltersResponse> BuildAsync(string category, CancellationToken ct) =>
+        BuildResponse(db, category, ct);
+
+    /// <summary>Побудова відповіді фільтрів — internal static: реюз у FiltersWarmupService
+    /// (прогрів/рефреш кешу поза HTTP-запитом).</summary>
+    internal static async Task<FiltersResponse> BuildResponse(
+        MovieDiscoveryDbContext db, string category, CancellationToken ct)
     {
         // База категорії: ВСІ агрегати будуються поверх цього Where — фільтр по категорії
         // застосовується ПЕРШИМ, масиви (genres/countries/studios) розгортаються вже
@@ -128,13 +141,13 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
         var years = yearsRows.Count > 0 ? new YearsFacet(yearsRows[0].Min, yearsRows[0].Max) : null;
 
         // ── фасети по масивах: unnest агрегат ПО КАТЕГОРІЇ (один запит на фасет) ──
-        var genres = await FacetAsync(baseQ, category, t => t.Genres, "genres", MaxGenres, ct);
+        var genres = await FacetAsync(db, baseQ, category, t => t.Genres, "genres", MaxGenres, ct);
 
         // Країни: ефективна країна тайтла — title.country (akas, FR-19) з фолбеком на
         // countries[] (TMDB) — ті самі два джерела, що читає country-фільтр /api/search,
         // без подвійного обліку тайтла, в якого заповнені обидва.
         var countries = await FacetAsync(
-            baseQ, category,
+            db, baseQ, category,
             t => t.Country != null ? new[] { t.Country! } : t.Countries,
             "countries", MaxCountries, ct);
 
@@ -142,7 +155,7 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
         // Для cartoon/manga studios у БД здебільшого порожні — фасет віддається порожнім [].
         // Нерелевантні категорії → null: ключ studios НЕ серіалізується (адаптивна панель).
         List<FacetCount>? studios = NeedsStudios(category)
-            ? await FacetAsync(baseQ, category, t => t.Studios, "studios", MaxStudios, ct)
+            ? await FacetAsync(db, baseQ, category, t => t.Studios, "studios", MaxStudios, ct)
             : null;
 
         // ── статуси: лише серіальний контент (type series|show|anime) ──
@@ -236,7 +249,8 @@ public sealed class FiltersController(MovieDiscoveryDbContext db, IMemoryCache c
     /// InMemory-провайдер не підтримує). Колонка/category — валідовані константи коду
     /// (allowlist), user-input у SQL не потрапляє.
     /// </summary>
-    private async Task<List<FacetCount>> FacetAsync(
+    private static async Task<List<FacetCount>> FacetAsync(
+        MovieDiscoveryDbContext db,
         IQueryable<Title> baseQ,
         string category,
         Expression<Func<Title, string[]?>> arraySelector,

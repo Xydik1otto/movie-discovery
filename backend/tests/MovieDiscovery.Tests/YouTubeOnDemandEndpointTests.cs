@@ -88,13 +88,18 @@ public class YouTubeOnDemandEndpointTests
     [Fact]
     public async Task TrailersGet_RateLimited_10PerMinutePerIp()
     {
+        // Ліміт стоїть на ДОРОЗІЙ ділянці (on-demand search перед SyncTitleAsync), а не
+        // на всьому ендпоінті: кешовані відповіді і повторні читання не лімітуються.
+        // Тож 11 РІЗНИХ cache-miss id → 10 search-ів проходять, 11-й гейт → 429.
         await using var factory = new Factory();
-        var title = await factory.SeedAsync();
         var client = factory.CreateClient();
+        var ids = new List<int>();
+        for (var i = 0; i < 11; i++)
+            ids.Add((await factory.SeedAsync()).Id);
 
         HttpResponseMessage last = null!;
-        for (var i = 0; i < 11; i++)
-            last = await client.GetAsync($"/api/titles/{title.Id}/trailers");
+        foreach (var id in ids)
+            last = await client.GetAsync($"/api/titles/{id}/trailers");
 
         Assert.Equal(HttpStatusCode.TooManyRequests, last.StatusCode);
         Assert.Equal("rate_limited", Body(last).GetProperty("error").GetString());

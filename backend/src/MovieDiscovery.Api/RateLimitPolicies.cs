@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using MovieDiscovery.Infrastructure.YouTube;
 
@@ -43,14 +44,54 @@ internal static class YouTubeRateLimitingExtensions
                     var enrichYouTube = string.Equals(
                         ctx.Request.Query["enrich"].ToString().Trim(),
                         "youtube", StringComparison.OrdinalIgnoreCase);
+                    // КЛЮЧІ ПАРТІЦІЙ РІЗНІ для лімітованого і необмеженого шляхів: ключ —
+                    // ідентичність лімітера, а не лише IP. Колізія («yt-ondemand:{ip}» == «{ip}»)
+                    // змушувала NoLimiter-запит підхоплювати ВЖЕ СТВОРЕНИЙ FixedWindow-лімітер
+                    // під тим самим ключем → звичайні watch-читання 429-ились після 10 трейлерів
+                    // (живий замір 11.11).
                     return isTrailersEndpoint || enrichYouTube
-                        ? RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+                        ? RateLimitPartition.GetFixedWindowLimiter($"yt-ondemand:{ip}", _ => new FixedWindowRateLimiterOptions
                         {
                             PermitLimit = 10,
                             Window = TimeSpan.FromMinutes(1),
                             QueueLimit = 0,
                         })
-                        : RateLimitPartition.GetNoLimiter(ip);
+                        : RateLimitPartition.GetNoLimiter($"open:{ip}");
                 });
             });
+}
+
+/// <summary>
+/// Точковий per-IP ліміт ДОРОГОГО шляху на IMemoryCache (атомарний під lock).
+/// На відміну від middleware-політики (лімітує ВЕСЬ ендпоінт), цей гейт ставиться
+/// перед конкретною дорогою операцією — кешовані/дешеві читання проходять без ліміту.
+/// Вікно фіксоване (ключ містить номер вікна), запис автоекспайриться через 2 вікна.
+/// Мінімальний перебір під гонкою неможливий: інкремент під спільним lock.
+/// </summary>
+internal static class ExpensivePathGate
+{
+    private static readonly object Lock = new();
+
+    internal static bool TryAcquire(
+        Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
+        HttpContext http,
+        string scope,
+        int permitLimit,
+        TimeSpan window)
+    {
+        var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var windowIndex = DateTimeOffset.UtcNow.UtcTicks / window.Ticks;
+        var bucketKey = $"gate:{scope}:{ip}:{windowIndex}";
+        lock (Lock)
+        {
+            var current = cache.Get(bucketKey) is int c && c > 0 ? c : 0;
+            if (current >= permitLimit)
+                return false;
+            cache.Set(
+                bucketKey, current + 1,
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions
+                { AbsoluteExpirationRelativeToNow = window + window });
+            return true;
+        }
+    }
 }
