@@ -111,6 +111,56 @@ public class UserListServiceTests
     }
 
     [Fact]
+    public async Task Stats_Counts_Tracker_Parity_Kinds()
+    {
+        // Паритет статусів Shikimori: watching/reading/on_hold/dropped — окремі лічильники stats.
+        var (db, _, lists, _) = New("lists-stats-tracker-kinds");
+        db.Titles.Add(NewTitle(1, ["drama"]));
+        db.Titles.Add(new Title
+        {
+            Id = 2, Type = "manga", TitleEn = "Manga Two", Year = 2021,
+            Genres = ["drama"], Popularity = 99,
+        });
+        db.Titles.Add(NewTitle(3, ["comedy"]));
+        db.Titles.Add(NewTitle(4, ["horror"]));
+        await db.SaveChangesAsync();
+
+        await lists.AddAsync("u1", ListKinds.Watching, 1, null, null);
+        await lists.AddAsync("u1", ListKinds.Reading, 2, null, null);
+        await lists.AddAsync("u1", ListKinds.OnHold, 3, null, null);
+        await lists.AddAsync("u1", ListKinds.Dropped, 4, null, 5);
+
+        var stats = await lists.StatsAsync("u1");
+        Assert.Equal(1, stats.WatchingCount);
+        Assert.Equal(1, stats.ReadingCount);
+        Assert.Equal(1, stats.OnHoldCount);
+        Assert.Equal(1, stats.DroppedCount);
+        Assert.Equal(0, stats.WatchedCount);
+        Assert.Equal(0, stats.ReadCount);
+    }
+
+    [Fact]
+    public async Task Reading_On_Non_Manga_Is_Rejected_Invalid_Request()
+    {
+        // reading — як read: лише type=manga; для аніме → invalid_request (контролер дає 400).
+        var (db, _, lists, _) = New("lists-reading-anime");
+        db.Titles.Add(new Title
+        {
+            Id = 1, Type = "anime", TitleEn = "Anime One", Year = 2020,
+            Genres = ["action"], Popularity = 90,
+        });
+        await db.SaveChangesAsync();
+
+        var rejected = await lists.AddAsync("u1", ListKinds.Reading, 1, null, null);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_request", rejected.Error);
+
+        // watching для аніме — валідний
+        var ok = await lists.AddAsync("u1", ListKinds.Watching, 1, null, null);
+        Assert.True(ok.Ok);
+    }
+
+    [Fact]
     public async Task Migrate_Guest_Is_Idempotent()
     {
         var (db, _, lists, _) = New("lists-migrate");

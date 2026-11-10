@@ -146,6 +146,21 @@ public sealed class PosterSourceSyncService(
         return (1, updated > 0 ? 1 : 0);
     }
 
+    /// <summary>
+    /// Публічний on-demand резолв одного тайтла (викликач — POST /api/posters/batch-resolve):
+    /// та сама ланцюга, що й у свіпі — tmdb_id → TmdbImagesService.ResolveAsync; imdb-only →
+    /// TMDB-міст (IsConfigured), інакше Cinemata; аніме/манга без tmdb → PosterCoverageService.
+    /// БЕЗ збереження — fill-only запис у БД робить викликач. Тайтл уже з постером
+    /// → (null, null) без HTTP (ідемпотентно, як ProcessSingleAsync).
+    /// </summary>
+    public async Task<(string? Poster, string? Backdrop)> ResolveOneAsync(Title title, CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(title.PosterPath)) return (null, null); // уже заповнено — без HTTP
+        return title.TmdbId is not null || !string.IsNullOrWhiteSpace(title.ImdbId)
+            ? await ResolveTmdbOrImdbAsync(title, ct)
+            : await ResolveAnimeAsync(title, ct);
+    }
+
     /// <summary>TMDB-резолв: tmdb_id → сирий poster_path/backdrop_path (кеш деталей → один легкий GET).</summary>
     private async Task<(string? Poster, string? Backdrop)> ResolveTmdbAsync(Title t, CancellationToken ct)
     {

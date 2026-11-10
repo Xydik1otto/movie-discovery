@@ -7,11 +7,15 @@ export const ru: Dict = {
   "brand.name": "КиноНавигатор",
   "brand.tagline": "Найди, что посмотреть — по параметрам или «похоже на…»",
 
+  // Header: грип докинга панели (top|left|right)
+  "header.dockHint": "Перетащите панель: слева/справа/сверху",
+
   // UX-02: постеры — честные состояния (PosterImage)
   "poster.unavailable": "Постер недоступен",
   "poster.retry": "Попробовать ещё",
   "home.tabFilters": "По параметрам",
   "home.tabSimilar": "Похоже на...",
+  "home.forYou": "Рекомендовано для вас",
 
   "nav.home": "Главная",
   "nav.similar": "Похоже на...",
@@ -58,6 +62,17 @@ export const ru: Dict = {
   "filters.sort.votes": "Количество голосов",
   "filters.sort.year": "Год",
   "filters.sort.popularity": "Популярность",
+
+  // --- UX (фильтры): темы каталога + плавающая панель фильтров ---
+  "themes.all": "Все",
+  "themes.movies": "Фильмы",
+  "themes.series": "Сериалы",
+  "themes.cartoon": "Анимация (фильмы)",
+  "themes.anime": "Аниме (многосерийные)",
+  "filters.panel.title": "Фильтры",
+  "filters.panel.close": "Свернуть",
+  "filters.short": "Короткометражка",
+  "filters.studios": "Студии",
 
   "title.similar": "Похожие",
   "title.why": "Почему похоже?",
@@ -112,6 +127,10 @@ export const ru: Dict = {
 
   "lists.watchlist": "Хочу посмотреть",
   "lists.watched": "Просмотренное",
+  "lists.watching": "Смотрю",
+  "lists.reading": "Читаю",
+  "lists.on_hold": "Отложено",
+  "lists.dropped": "Брошено",
   "lists.empty": "Здесь пока пусто. Добавь тайтлы с карточки или из поиска.",
   "lists.rating": "Оценка (1–10)",
   "lists.remove": "Удалить",

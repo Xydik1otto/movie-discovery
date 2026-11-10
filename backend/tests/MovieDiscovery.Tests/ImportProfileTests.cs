@@ -37,7 +37,8 @@ public class ImportProfileTests
         ]
         """;
 
-    private static (MovieDiscoveryDbContext Db, ImportService Importer) New(string name)
+    private static (MovieDiscoveryDbContext Db, ImportService Importer) New(
+        string name, string? animeRatesJson = null, string? mangaRatesJson = null)
     {
         var db = TestDb.Create(name);
         // Дефолтний (гостьовий) профіль присутній — джоба юзера НЕ має туди потрапити.
@@ -52,8 +53,8 @@ public class ImportProfileTests
             {
                 var pq = r.RequestUri!.PathAndQuery;
                 if (pq.StartsWith("/users/someuser")) return StubHttp.Json(UserResolveJson);
-                if (pq.Contains("anime_rates")) return StubHttp.Json(AnimeRatesJson);
-                if (pq.Contains("manga_rates")) return StubHttp.Json("[]");
+                if (pq.Contains("anime_rates")) return StubHttp.Json(animeRatesJson ?? AnimeRatesJson);
+                if (pq.Contains("manga_rates")) return StubHttp.Json(mangaRatesJson ?? "[]");
                 return null;
             }),
             new TestDb.CacheStub(),
@@ -75,6 +76,166 @@ public class ImportProfileTests
         ProfileId = profileId,
         Status = "queued",
     };
+
+    // ─── Паритет статусів Shikimori (по одному rate на кожен статус) ───
+
+    private const string AllStatusesAnimeJson = """
+        [
+          { "id": 2001, "target_id": 5114, "score": 10, "status": "completed",
+            "anime": { "id": 5114, "name": "Hagane no Renkinjutsushi", "russian": "Стальной алхимик",
+                       "image": "/system/animes/original/5114.jpg", "kind": "tv", "score": 9.1,
+                       "status": "released", "episodes": 64, "aired_on": "2009-04-05",
+                       "genres": [ { "id": 1, "name": "Action", "russian": "Экшен" } ],
+                       "studios": [ { "name": "Bones" } ] } },
+          { "id": 2002, "target_id": 1535, "score": 0, "status": "watching",
+            "anime": { "id": 1535, "name": "Steins;Gate", "image": "/system/animes/original/1535.jpg",
+                       "kind": "tv", "score": 9.2, "status": "released", "episodes": 24,
+                       "aired_on": "2011-04-06",
+                       "genres": [ { "id": 8, "name": "Sci-Fi", "russian": "Фантастика" } ] } },
+          { "id": 2003, "target_id": 16498, "score": 8, "status": "on_hold",
+            "anime": { "id": 16498, "name": "Shingeki no Kyojin", "image": "/system/animes/original/16498.jpg",
+                       "kind": "tv", "score": 8.6, "status": "released", "episodes": 25,
+                       "aired_on": "2013-04-07",
+                       "genres": [ { "id": 1, "name": "Action", "russian": "Экшен" } ] } },
+          { "id": 2004, "target_id": 21, "score": 7, "status": "dropped",
+            "anime": { "id": 21, "name": "One Piece", "image": "/system/animes/original/21.jpg",
+                       "kind": "tv", "score": 8.7, "status": "ongoing", "episodes": 0,
+                       "aired_on": "1999-10-20",
+                       "genres": [ { "id": 1, "name": "Action", "russian": "Экшен" } ] } },
+          { "id": 2005, "target_id": 9253, "score": 0, "status": "planned",
+            "anime": { "id": 9253, "name": "Gintama", "image": "/system/animes/original/9253.jpg",
+                       "kind": "tv", "score": 9.0, "status": "released", "episodes": 201,
+                       "aired_on": "2006-04-04",
+                       "genres": [ { "id": 4, "name": "Comedy", "russian": "Комедия" } ] } }
+        ]
+        """;
+
+    private const string AllStatusesMangaJson = """
+        [
+          { "id": 3001, "target_id": 100, "score": 9, "status": "completed",
+            "manga": { "id": 100, "name": "Monster", "russian": "Монстр",
+                       "image": "/system/mangas/original/100.jpg", "kind": "manga", "score": 9.1,
+                       "status": "released", "chapters": 162, "volumes": 18,
+                       "genres": [ { "id": 2, "name": "Drama", "russian": "Драма" } ] } },
+          { "id": 3002, "target_id": 101, "score": 0, "status": "reading",
+            "manga": { "id": 101, "name": "Vinland Saga", "image": "/system/mangas/original/101.jpg",
+                       "kind": "manga", "score": 9.0, "status": "ongoing", "chapters": 200, "volumes": 26,
+                       "genres": [ { "id": 1, "name": "Action", "russian": "Экшен" } ] } },
+          { "id": 3003, "target_id": 102, "score": 0, "status": "planned",
+            "manga": { "id": 102, "name": "Berserk", "image": "/system/mangas/original/102.jpg",
+                       "kind": "manga", "score": 9.3, "status": "ongoing", "chapters": 370, "volumes": 42,
+                       "genres": [ { "id": 2, "name": "Drama", "russian": "Драма" } ] } },
+          { "id": 3004, "target_id": 103, "score": 6, "status": "on_hold",
+            "manga": { "id": 103, "name": "Vagabond", "image": "/system/mangas/original/103.jpg",
+                       "kind": "manga", "score": 9.1, "status": "ongoing", "chapters": 300, "volumes": 37,
+                       "genres": [ { "id": 1, "name": "Action", "russian": "Экшен" } ] } },
+          { "id": 3005, "target_id": 104, "score": 4, "status": "dropped",
+            "manga": { "id": 104, "name": "Nisekoi", "image": "/system/mangas/original/104.jpg",
+                       "kind": "manga", "score": 7.5, "status": "released", "chapters": 229, "volumes": 25,
+                       "genres": [ { "id": 4, "name": "Comedy", "russian": "Комедия" } ] } }
+        ]
+        """;
+
+    // Лише один watching-rate — для перевірки перенесення watchlist → watching.
+    private const string WatchingAnimeJson = """
+        [
+          { "id": 2002, "target_id": 1535, "score": 0, "status": "watching",
+            "anime": { "id": 1535, "name": "Steins;Gate", "image": "/system/animes/original/1535.jpg",
+                       "kind": "tv", "score": 9.2, "status": "released", "episodes": 24,
+                       "aired_on": "2011-04-06",
+                       "genres": [ { "id": 8, "name": "Sci-Fi", "russian": "Фантастика" } ] } }
+        ]
+        """;
+
+    [Fact]
+    public async Task Import_Writes_All_Shikimori_Statuses_As_List_Kinds()
+    {
+        var (db, importer) = New("import-all-statuses", AllStatusesAnimeJson, AllStatusesMangaJson);
+        var job = NewJob(profileId: 2);
+        db.ImportJobs.Add(job);
+        await db.SaveChangesAsync();
+
+        Assert.True(await importer.RunAsync(job.Id));
+
+        var rows = await db.ListEntries.Where(l => l.ProfileId == 2).ToListAsync();
+        Assert.Equal(10, rows.Count);
+        Assert.Equal(1, rows.Count(l => l.Kind == ListKinds.Watched));   // completed (аніме)
+        Assert.Equal(1, rows.Count(l => l.Kind == ListKinds.Watching));  // watching
+        Assert.Equal(1, rows.Count(l => l.Kind == ListKinds.Read));      // completed (манга)
+        Assert.Equal(1, rows.Count(l => l.Kind == ListKinds.Reading));   // reading (лише манга)
+        Assert.Equal(2, rows.Count(l => l.Kind == ListKinds.OnHold));    // on_hold аніме + манга
+        Assert.Equal(2, rows.Count(l => l.Kind == ListKinds.Dropped));   // dropped аніме + манга
+        Assert.Equal(2, rows.Count(l => l.Kind == ListKinds.Watchlist)); // planned аніме + манга
+
+        var stored = await db.ImportJobs.SingleAsync(j => j.Id == job.Id);
+        Assert.Equal("done", stored.Status);
+        var s = stored.Stats!.RootElement;
+        Assert.Equal(1, s.GetProperty("animeWatched").GetInt32());
+        Assert.Equal(1, s.GetProperty("mangaRead").GetInt32());
+        Assert.Equal(1, s.GetProperty("watchingAdded").GetInt32());
+        Assert.Equal(1, s.GetProperty("readingAdded").GetInt32());
+        Assert.Equal(2, s.GetProperty("onHoldAdded").GetInt32());
+        Assert.Equal(2, s.GetProperty("droppedAdded").GetInt32());
+        Assert.Equal(2, s.GetProperty("watchlistAdded").GetInt32());
+        Assert.Equal(0, s.GetProperty("skipped").GetInt32());
+    }
+
+    [Fact]
+    public async Task Reimport_With_New_Mapping_Is_Idempotent_No_Kind_Duplicates()
+    {
+        var (db, importer) = New("import-reimport-all-statuses", AllStatusesAnimeJson, AllStatusesMangaJson);
+        var first = NewJob(profileId: 2);
+        db.ImportJobs.Add(first);
+        await db.SaveChangesAsync();
+        Assert.True(await importer.RunAsync(first.Id));
+        var afterFirst = await db.ListEntries.ToListAsync();
+        Assert.Equal(10, afterFirst.Count);
+
+        // Повторний прогін (нова джоба, той самий профіль) — 0 задублів, kind не змінились.
+        var second = NewJob(profileId: 2);
+        db.ImportJobs.Add(second);
+        await db.SaveChangesAsync();
+        Assert.True(await importer.RunAsync(second.Id));
+
+        var afterSecond = await db.ListEntries.ToListAsync();
+        Assert.Equal(afterFirst.Count, afterSecond.Count);
+        Assert.Equal(1, afterSecond.Count(l => l.Kind == ListKinds.Watching));
+        Assert.Equal(1, afterSecond.Count(l => l.Kind == ListKinds.Reading));
+        Assert.Equal(2, afterSecond.Count(l => l.Kind == ListKinds.OnHold));
+        Assert.Equal(2, afterSecond.Count(l => l.Kind == ListKinds.Dropped));
+        Assert.Equal("done", (await db.ImportJobs.SingleAsync(j => j.Id == second.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Reimport_Moves_Watchlist_Entry_To_Watching_Not_Duplicates()
+    {
+        // Стара мапінг-хвиля поклала watching-статус у watchlist; повторний імпорт
+        // має ПЕРЕНЕСТИ запис у watching (UNIQUE profile+kind+title), а не задублювати.
+        var (db, importer) = New("import-move-watchlist-to-watching", WatchingAnimeJson);
+        var title = db.Titles.Add(new Title
+        {
+            ShikimoriId = 1535, Type = "anime", TitleEn = "Steins;Gate", Year = 2011,
+        }).Entity;
+        await db.SaveChangesAsync();
+        db.ListEntries.Add(new ListEntry
+        {
+            ProfileId = 2, Kind = ListKinds.Watchlist, TitleId = title.Id,
+            Rating = 7, CreatedAt = DateTime.UtcNow.AddDays(-30),
+        });
+        await db.SaveChangesAsync();
+
+        var job = NewJob(profileId: 2);
+        db.ImportJobs.Add(job);
+        await db.SaveChangesAsync();
+        Assert.True(await importer.RunAsync(job.Id));
+
+        Assert.Equal(1, await db.ListEntries.CountAsync()); // НЕ задублювало
+        var row = await db.ListEntries.SingleAsync();
+        Assert.Equal(ListKinds.Watching, row.Kind); // перенесено watchlist → watching
+        Assert.Equal(7, row.Rating);                // наявну оцінку не затерто (score=0 → rating null)
+        Assert.Null(row.WatchedAt);
+        Assert.Equal(1, await db.Titles.CountAsync()); // тайтл замерджений, дубля нема
+    }
 
     [Fact]
     public async Task Import_With_User_ProfileId_Writes_To_Own_Profile_Never_Guest()

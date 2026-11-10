@@ -18,12 +18,17 @@ import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import { usePosterBackfill } from "@/lib/usePosterBackfill";
 
 interface HistoryEntry {
   label: string;
   items: SimilarItem[];
   unavailable: boolean;
 }
+
+// Стабільне порожнє значення для usePosterBackfill: літерал [] у місці виклику
+// створював би новий масив на кожен рендер (ре-прогін ефекту хука).
+const NO_ITEMS: SimilarItem[] = [];
 
 // Знімок для ланцюга (FR-21.5): «назад» повертає попередні еталони й
 // результати без повторного запиту — simple stack у стані сторінки.
@@ -182,6 +187,21 @@ function SimilarInner() {
   // Відновлення еталонів з ?seedIds= триває → sync-ефект не пише URL
   // (інакше порожній seeds затер би seedIds до завершення фетчів).
   const seedRestoringRef = useRef(false);
+
+  // UX-медіа: батч-підгрузка постерів результатів («Швидко»/«Еталони»/«Студія»).
+  // Мердж — прямо в useState-масив items (лише картки без posterUrl;
+  // resolved id більше не колектяться, misses не повторюються — циклів нема).
+  usePosterBackfill(items ?? NO_ITEMS, (map) => {
+    setItems((prev) =>
+      prev
+        ? prev.map((it) => {
+            if (it.posterUrl) return it;
+            const hit = map.get(it.id);
+            return hit ? { ...it, posterUrl: hit.posterUrl ?? null } : it;
+          })
+        : prev,
+    );
+  });
 
   function pushHistory(label: string, data: SimilarItem[], un: boolean) {
     setHistory((prev) => [{ label, items: data, unavailable: un }, ...prev].slice(0, 8));

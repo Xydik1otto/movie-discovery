@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Api.Auth;
 using MovieDiscovery.Api.Contracts;
+using MovieDiscovery.Api.Extensions;
 using MovieDiscovery.Core;
 using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Discover;
@@ -42,6 +43,9 @@ public class Program
         MapEnvDefaults(builder.Configuration);
 
         builder.Services.AddControllers();
+        // Перф (10.11): компресія відповідей (Brotli+Gzip) + OutputCache каталогу —
+        // реєстрація одна (AddPerfOptimizations інкапсулює обидві); middleware нижче.
+        builder.Services.AddPerfOptimizations(builder.Configuration);
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
         builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
@@ -449,9 +453,13 @@ public class Program
             app.UseSwaggerUI();
         }
 
+        // Компресія найзовніша: OutputCache зберігає НЕстиснутий боді, стиснення per-запит на виході.
+        app.UseResponseCompression();
         app.UseCors();
         // XFF → RemoteIpAddress ДО auth-лімітів (інакше спільний бакет на всіх).
         app.UseForwardedHeaders();
+        // OutputCache: після UseCors (вимога docs), до auth/MapControllers; персональні зони поза політикою.
+        app.UseOutputCache();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();

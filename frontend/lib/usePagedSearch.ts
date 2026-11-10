@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isUnavailable } from "./fallback";
+import { warmPosterImages } from "./posterWarmup";
 import type { Paged } from "./types";
 
 /** Розмір сторінки каталогу (UX-01: 20) — єдине джерело для всіх споживачів. */
@@ -25,6 +26,11 @@ export const PAGE_SIZE = 20;
 
 /** Жорстка стеля глибини пагінації — синхронна з SearchService.MaxPages. */
 export const MAX_PAGES = 5000;
+
+/** TTL пам'ятного кешу префетчених сторінок (hover «Наступна») — анти-стейл. */
+const PREFETCH_TTL_MS = 60_000;
+/** Стеля пам'ятного кешу префетчу (записів по всіх resetKey разом). */
+const PREFETCH_CACHE_MAX = 24;
 
 export interface FetchPageArgs {
   page: number;
@@ -52,6 +58,12 @@ export interface PagedList<T> {
   goTo: (p: number) => void;
   /** Повторити поточну сторінку після помилки. */
   retry: () => void;
+  /** UX-медіа: точковий мердж items (постери батч-бекфілу) — той самий setItems,
+   *  що й у пагінації; без рефетчу і без запису в SWR-кеш localStorage. */
+  mergeItems: (updater: (prev: T[]) => T[]) => void;
+  /** UX-медіа: тихо префетчити сторінку (hover «Наступна») — пам'ятний кеш +
+   *  прогрівання постерів; перехід на цю сторінку тоді віддає результат з кешу. */
+  prefetchPage: (page: number) => void;
 }
 
 interface CachedTotal {
@@ -59,11 +71,38 @@ interface CachedTotal {
   capped: boolean;
 }
 
+interface CachedPage<T> {
+  entry: Paged<T>;
+  at: number;
+}
+
 function pruneTotalCache(cache: Map<string, CachedTotal>) {
   while (cache.size > 48) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
     cache.delete(oldest);
+  }
+}
+
+function prunePageCache<T>(cache: Map<string, Map<number, CachedPage<T>>>) {
+  let total = 0;
+  for (const m of cache.values()) total += m.size;
+  while (total > PREFETCH_CACHE_MAX) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    const m = cache.get(oldestKey);
+    if (!m) {
+      cache.delete(oldestKey);
+      continue;
+    }
+    const oldestPage = m.keys().next().value;
+    if (oldestPage === undefined) {
+      cache.delete(oldestKey);
+      continue;
+    }
+    m.delete(oldestPage);
+    if (m.size === 0) cache.delete(oldestKey);
+    total--;
   }
 }
 
@@ -96,6 +135,14 @@ export function usePagedSearch<T>(
   const reqRef = useRef(0);
   const acRef = useRef<AbortController | null>(null);
   const keyRef = useRef(resetKey);
+  // UX-медіа: пам'ятний кеш префетчених сторінок (per resetKey → page → entry)
+  // і множина сторінок, що вже префетчатся (≤1 prefetch на resetKey... на сторінку).
+  const pageCacheRef = useRef(new Map<string, Map<number, CachedPage<T>>>());
+  const prefetchInflightRef = useRef(new Map<string, Set<number>>());
+  const fetchRef = useRef(fetchPage);
+  const pageRef = useRef(page);
+  fetchRef.current = fetchPage;
+  pageRef.current = page;
   // «Щойно змінилися фільтри» — наступний прогін fetch-ефекту пропускаємо,
   // щоб сторінка зі СТАРИМ номером не полетіла з новими фільтрами (баг хвилі-1).
   const pendingResetRef = useRef(false);
@@ -103,7 +150,8 @@ export function usePagedSearch<T>(
   const totalCacheRef = useRef(new Map<string, CachedTotal>());
 
   // Зміна фільтрів/сортування/запиту/мови → сторінка 1, порожньо, скелетон;
-  // in-flight запит попереднього ключа скасовуємо.
+  // in-flight запит попереднього ключа скасовуємо. Кеш префетчу теж чистимо —
+  // він живе лише в межах одного resetKey.
   useEffect(() => {
     if (keyRef.current === resetKey) return;
     keyRef.current = resetKey;
@@ -116,6 +164,8 @@ export function usePagedSearch<T>(
     setPage(1);
     setFirstLoad(true);
     setError(false);
+    pageCacheRef.current.clear();
+    prefetchInflightRef.current.clear();
   }, [resetKey]);
 
   useEffect(() => {
@@ -139,30 +189,47 @@ export function usePagedSearch<T>(
     // завжди з count: він живить кеш і навігацію після reload на глибокій сторінці).
     const omitTotal = page > 1 && cached != null;
 
+    // Спільне застосування відповіді (реальний fetch або кеш префетчу).
+    const applyPaged = (r: Paged<T>, requestedPage: number) => {
+      // Бекенд може кліпнути сторінку (depth-cap) — приймаємо його page.
+      if (r.page >= 1 && r.page !== requestedPage) setPage(r.page);
+      if (r.total >= 0) {
+        const entry = { total: r.total, capped: r.totalCapped === true };
+        totalCacheRef.current.set(resetKey, entry);
+        pruneTotalCache(totalCacheRef.current);
+        setTotal(r.total);
+        setTotalCapped(entry.capped);
+      } else if (cached) {
+        // omitTotal-відповідь: total беремо з кешу цього resetKey.
+        setTotal(cached.total);
+        setTotalCapped(cached.capped);
+      } else {
+        setTotal(null);
+        setTotalCapped(false);
+      }
+      setItems(r.items);
+      setUnavailable(false);
+      setFirstLoad(false);
+    };
+
+    // UX-медіа (hover-префетч «Наступна»): сторінка вже в пам'ятному кеші —
+    // миттєвий рендер без запиту (TTL захищає від застарілого результату).
+    const cachedPage = pageCacheRef.current.get(resetKey)?.get(page);
+    if (cachedPage && Date.now() - cachedPage.at < PREFETCH_TTL_MS) {
+      setBusy(false);
+      setError(false);
+      applyPaged(cachedPage.entry, page);
+      return () => {
+        ac.abort();
+      };
+    }
+
     setBusy(true);
     setError(false);
     fetchPage({ page, omitTotal, signal: ac.signal })
       .then((r) => {
         if (reqRef.current !== myReq) return;
-        // Бекенд може кліпнути сторінку (depth-cap) — приймаємо його page.
-        if (r.page >= 1 && r.page !== page) setPage(r.page);
-        if (r.total >= 0) {
-          const entry = { total: r.total, capped: r.totalCapped === true };
-          totalCacheRef.current.set(resetKey, entry);
-          pruneTotalCache(totalCacheRef.current);
-          setTotal(r.total);
-          setTotalCapped(entry.capped);
-        } else if (cached) {
-          // omitTotal-відповідь: total беремо з кешу цього resetKey.
-          setTotal(cached.total);
-          setTotalCapped(cached.capped);
-        } else {
-          setTotal(null);
-          setTotalCapped(false);
-        }
-        setItems(r.items);
-        setUnavailable(false);
-        setFirstLoad(false);
+        applyPaged(r, page);
       })
       .catch((e) => {
         if (reqRef.current !== myReq) return;
@@ -204,6 +271,67 @@ export function usePagedSearch<T>(
 
   const retry = useCallback(() => setNonce((n) => n + 1), []);
 
+  // UX-медіа: точковий мердж items (постери батч-бекфілу usePosterBackfill) —
+  // той самий setItems, що й у пагінації. Кеш префетчу поточної сторінки патчимо
+  // теж, щоб повторне перевідкриття сторінки не втрачало резолвлені постери.
+  const mergeItems = useCallback((updater: (prev: T[]) => T[]) => {
+    setItems(updater);
+    const cachedPage = pageCacheRef.current.get(keyRef.current)?.get(pageRef.current);
+    if (cachedPage) {
+      cachedPage.entry = { ...cachedPage.entry, items: updater(cachedPage.entry.items) };
+    }
+  }, []);
+
+  // UX-медіа: hover-префетч сторінки — тихий виклик наявного пошукового API,
+  // результат у пам'ятному кешу (serve на goTo) + прогрівання постерів перших
+  // 20 карток (пул ≤6). Помилки мовчки ігноруються: реальний перехід все одно
+  // виконає повноцінний запит. ≤1 префетч на сторінку в межах resetKey.
+  const prefetchPage = useCallback((p: number) => {
+    const target = Math.floor(p);
+    if (!Number.isFinite(target) || target < 1 || target > MAX_PAGES) return;
+    if (target === pageRef.current) return;
+    const key = keyRef.current;
+    const hit = pageCacheRef.current.get(key)?.get(target);
+    if (hit && Date.now() - hit.at < PREFETCH_TTL_MS) return;
+    const load = fetchRef.current;
+    if (!load) return;
+    let inflight = prefetchInflightRef.current.get(key);
+    if (inflight?.has(target)) return;
+    if (!inflight) {
+      inflight = new Set<number>();
+      prefetchInflightRef.current.set(key, inflight);
+    }
+    inflight.add(target);
+    // Перегортання без COUNT: тотал уже відомий з попередніх сторінок (кеш).
+    const cachedTotal = totalCacheRef.current.get(key) ?? null;
+    const omitTotal = target > 1 && cachedTotal != null;
+    load({ page: target, omitTotal, signal: new AbortController().signal })
+      .then((r) => {
+        const still = prefetchInflightRef.current.get(key);
+        if (!still || !still.has(target)) return; // resetKey змінився — застаріла
+        let perKey = pageCacheRef.current.get(key);
+        if (!perKey) {
+          perKey = new Map();
+          pageCacheRef.current.set(key, perKey);
+        }
+        // Бекенд може кліпнути сторінку (depth-cap) — кешуємо під його page.
+        perKey.set(r.page >= 1 ? r.page : target, { entry: r, at: Date.now() });
+        prunePageCache(pageCacheRef.current);
+        // Паралельне прогрівання зображень по posterUrl перших 20 (дедуп усередині).
+        warmPosterImages(r.items);
+      })
+      .catch(() => {
+        // Тихо: префетч — оптимізація, помилку показувати не можна (немає UI-слота).
+      })
+      .finally(() => {
+        const still = prefetchInflightRef.current.get(key);
+        if (still) {
+          still.delete(target);
+          if (still.size === 0) prefetchInflightRef.current.delete(key);
+        }
+      });
+  }, []);
+
   return {
     items,
     page,
@@ -219,5 +347,7 @@ export function usePagedSearch<T>(
     canNext,
     goTo,
     retry,
+    mergeItems,
+    prefetchPage,
   };
 }

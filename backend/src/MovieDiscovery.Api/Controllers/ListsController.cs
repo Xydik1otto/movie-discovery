@@ -29,7 +29,7 @@ public sealed class ListsController(
         CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(kind) && !Core.Domain.ListKinds.IsValid(kind))
-            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked" });
+            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked | watching | reading | on_hold | dropped" });
 
         var langSafe = SearchController.Lang(lang);
         var bot = await ResolveBotAsync(ct);
@@ -102,13 +102,13 @@ public sealed class ListsController(
     }
 
     /// <summary>Додати тайтл у список (legacy-шлях із kind у body). Неіснуючий tmdbId/titleId → 404; дублікат → 409;
-    /// kind=read на не-мангу → 400 (аніме/манга мають NULL tmdb_id — використовуйте titleId).
+    /// kind=read/reading на не-мангу → 400 (аніме/манга мають NULL tmdb_id — використовуйте titleId).
     /// Cookie-юзер: profileId з body ігнорується — пишемо в ЙОГО постійний профіль (FR-16).</summary>
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] AddListItemRequest req, CancellationToken ct)
     {
         if (!Core.Domain.ListKinds.IsValid(req.Kind))
-            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked" });
+            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked | watching | reading | on_hold | dropped" });
         if (req.Rating is < 1 or > 10)
             return BadRequest(new { error = "invalid_request", message = "rating має бути 1–10" });
 
@@ -141,7 +141,7 @@ public sealed class ListsController(
                 ? $"Тайтл з id={req.TitleId} не знайдено"
                 : $"Тайтл з tmdbId={req.TmdbId} не знайдено" });
         if (!Core.Domain.ListKinds.AllowedForType(req.Kind, title.Type))
-            return BadRequest(new { error = "invalid_request", message = "kind=read допустимий лише для манги (type=manga)" });
+            return BadRequest(new { error = "invalid_request", message = "kind=read|reading допустимий лише для манги (type=manga)" });
 
         var exists = await db.ListEntries
             .AnyAsync(l => l.ProfileId == profile.Id && l.Kind == req.Kind && l.TitleId == title.Id, ct);
@@ -169,7 +169,7 @@ public sealed class ListsController(
     public async Task<IActionResult> PostKind(string kind, [FromBody] PostKindRequest req, CancellationToken ct)
     {
         if (!Core.Domain.ListKinds.IsValid(kind))
-            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked" });
+            return BadRequest(new { error = "invalid_request", message = "kind має бути watchlist | watched | read | liked | disliked | watching | reading | on_hold | dropped" });
 
         var bot = await ResolveBotAsync(ct);
         if (bot.Error is not null) return bot.Error;
@@ -198,7 +198,7 @@ public sealed class ListsController(
         if (title is null)
             return NotFound(new { error = "title_not_found", message = "Тайтл не знайдено" });
         if (!Core.Domain.ListKinds.AllowedForType(kind, title.Type))
-            return BadRequest(new { error = "invalid_request", message = "kind=read допустимий лише для манги (type=manga)" });
+            return BadRequest(new { error = "invalid_request", message = "kind=read|reading допустимий лише для манги (type=manga)" });
 
         var exists = await db.ListEntries
             .AnyAsync(l => l.ProfileId == profile.Id && l.Kind == kind && l.TitleId == title.Id, ct);
@@ -224,7 +224,9 @@ public sealed class ListsController(
     public Task<IActionResult> PostWatched([FromBody] PostKindRequest req, CancellationToken ct) =>
         PostKind(Core.Domain.ListKinds.Watched, req, ct);
 
-    /// <summary>GET /api/lists/stats (FR-17): {watchedCount, readCount, likedCount, dislikedCount, avgRating, topGenres}.</summary>
+    /// <summary>GET /api/lists/stats (FR-17): {watchedCount, readCount, likedCount, dislikedCount,
+    /// watchingCount, readingCount, onHoldCount, droppedCount, avgRating, topGenres} —
+    /// нові лічильники — паритет статусів трекерів (Shikimori).</summary>
     [Authorize]
     [HttpGet("stats")]
     public async Task<IActionResult> Stats(CancellationToken ct)
@@ -238,6 +240,10 @@ public sealed class ListsController(
             readCount = s.ReadCount,
             likedCount = s.LikedCount,
             dislikedCount = s.DislikedCount,
+            watchingCount = s.WatchingCount,
+            readingCount = s.ReadingCount,
+            onHoldCount = s.OnHoldCount,
+            droppedCount = s.DroppedCount,
             avgRating = s.AvgRating,
             topGenres = s.TopGenres.Select(g => new { genre = g.Genre, count = g.Count }),
         });

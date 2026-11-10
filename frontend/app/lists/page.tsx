@@ -12,6 +12,7 @@ import {
   rateListItem,
 } from "@/lib/fallback";
 import { rateListEntry } from "@/lib/listActions";
+import { usePosterBackfill, type ResolvedPostersMap } from "@/lib/usePosterBackfill";
 import {
   guestSnapshot,
   hasMigrationMarker,
@@ -28,8 +29,33 @@ import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 
-const TABS: ListKind[] = ["watchlist", "liked", "watched", "read", "disliked"];
+// Порядок вкладок як на Shikimori: перегляд → статуси → реакція → читання.
+const TABS: ListKind[] = [
+  "watchlist", // Хочу подивитись
+  "watching", // Дивлюсь
+  "watched", // Переглянуте
+  "on_hold", // Відкладено
+  "dropped", // Кинуто
+  "liked", // Подобається
+  "reading", // Читаю
+  "read", // Прочитане
+  "disliked", // Не моє
+];
 const RATEABLE: ListKind[] = ["watched", "read"];
+
+// Лічильник вкладки = поле stats відповідного kind. Поле відсутнє/null
+// (старий бекенд ще не вертає нові статуси) → лічильник не показуємо.
+const TAB_COUNT_FIELDS = {
+  watchlist: "watchlistCount",
+  watching: "watchingCount",
+  watched: "watchedCount",
+  on_hold: "onHoldCount",
+  dropped: "droppedCount",
+  liked: "likedCount",
+  reading: "readingCount",
+  read: "readCount",
+  disliked: "dislikedCount",
+} as const satisfies Record<ListKind, keyof ListStats>;
 
 // Категорії всередині списку: клієнтський фільтр поверх ПОТОЧНОГО kind-списку
 // (бекенд списків не змінюємо). Один item потрапляє в РІВНО одну категорію.
@@ -120,6 +146,10 @@ export default function ListsPage() {
   const [migrateError, setMigrateError] = useState(false);
   // Перезавантаження серверних списків після міграції.
   const [reload, setReload] = useState(0);
+  // UX-медіа: overlay резолвлених батч-бекфілом постерів (id → URL-и).
+  // Гостьові записи в localStorage НЕ переписуємо (контракт міграції CR-03) —
+  // постери живуть лише в стані сторінки; сесійний дедуп у хуці без циклів.
+  const [posterOverlay, setPosterOverlay] = useState<ResolvedPostersMap>(new Map());
 
   // Гостьові записи (усі kind) — для вкладок і локальної статистики.
   const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
@@ -179,10 +209,15 @@ export default function ListsPage() {
       ? Number((rated.reduce((s, e) => s + (e.rating ?? 0), 0) / rated.length).toFixed(1))
       : null;
     return {
+      watchlistCount: guestEntries.filter((e) => e.kind === "watchlist").length,
       watchedCount: guestEntries.filter((e) => e.kind === "watched").length,
       readCount: guestEntries.filter((e) => e.kind === "read").length,
       likedCount: guestEntries.filter((e) => e.kind === "liked").length,
       dislikedCount: guestEntries.filter((e) => e.kind === "disliked").length,
+      watchingCount: guestEntries.filter((e) => e.kind === "watching").length,
+      readingCount: guestEntries.filter((e) => e.kind === "reading").length,
+      onHoldCount: guestEntries.filter((e) => e.kind === "on_hold").length,
+      droppedCount: guestEntries.filter((e) => e.kind === "dropped").length,
       avgRating: avg,
     };
   }, [guestEntries]);
@@ -331,23 +366,36 @@ export default function ListsPage() {
     }
   }
 
-  const tabBtn = (k: ListKind, label: string) => (
-    <button
-      key={k}
-      type="button"
-      role="tab"
-      aria-selected={kind === k}
-      onClick={() => {
-        setKind(k);
-        setCategory("all"); // нова вкладка — категорія скидається на «Усі»
-      }}
-      className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
-        kind === k ? "bg-accent text-white" : "bg-panel text-mute hover:text-ink"
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const tabBtn = (k: ListKind, label: string) => {
+    const raw = shownStats?.[TAB_COUNT_FIELDS[k]];
+    const count = typeof raw === "number" ? raw : null;
+    return (
+      <button
+        key={k}
+        type="button"
+        role="tab"
+        aria-selected={kind === k}
+        onClick={() => {
+          setKind(k);
+          setCategory("all"); // нова вкладка — категорія скидається на «Усі»
+        }}
+        className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+          kind === k ? "bg-accent text-white" : "bg-panel text-mute hover:text-ink"
+        }`}
+      >
+        {label}
+        {count != null && (
+          <span
+            className={`ml-1.5 text-[11px] font-bold ${
+              kind === k ? "text-white/70" : "text-mute/80"
+            }`}
+          >
+            {count}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const statCell = (label: string, value: string | number) => (
     <div className="rounded-2xl border border-line bg-panel px-4 py-3 text-center">
@@ -356,7 +404,17 @@ export default function ListsPage() {
     </div>
   );
 
-  const shownItems = user ? items : guestItems;
+  // Показаний список: серверний або гостьовий + накладений overlay постерів
+  // (лише для карток БЕЗ posterUrl — справжні пости ніколи не перезаписуються).
+  const shownItems = useMemo(() => {
+    const base = user ? items : guestItems;
+    if (posterOverlay.size === 0) return base;
+    return base.map((it) => {
+      if (it.posterUrl) return it;
+      const hit = posterOverlay.get(it.id);
+      return hit ? { ...it, posterUrl: hit.posterUrl ?? null } : it;
+    });
+  }, [user, items, guestItems, posterOverlay]);
   // Лічильники категорій по ПОТОЧНОМУ kind-списку. Під час завантаження —
   // нулі, щоб не блимали лічильники попереднього kind.
   const categoryCounts = useMemo(() => {
@@ -380,13 +438,29 @@ export default function ListsPage() {
         : shownItems.filter((it) => listCategoryOf(it) === category),
     [shownItems, category],
   );
+
+  // UX-медіа: батч-підгрузка постерів показаної сітки. Мердж — через overlay-стан
+  // (накладається на показані items), бо для гостя джерело — localStorage.
+  usePosterBackfill(filteredItems, (map) => {
+    setPosterOverlay((prev) => {
+      if (map.size === 0) return prev;
+      const next = new Map(prev);
+      for (const [id, v] of map) next.set(id, v);
+      return next;
+    });
+  });
   const shownStats: ListStats | null = user
     ? stats
     : {
+        watchlistCount: guestStats.watchlistCount,
         watchedCount: guestStats.watchedCount,
         readCount: guestStats.readCount,
         likedCount: guestStats.likedCount,
         dislikedCount: guestStats.dislikedCount,
+        watchingCount: guestStats.watchingCount,
+        readingCount: guestStats.readingCount,
+        onHoldCount: guestStats.onHoldCount,
+        droppedCount: guestStats.droppedCount,
         avgRating: guestStats.avgRating,
       };
 

@@ -5,11 +5,15 @@ export const en: Dict = {
   "brand.name": "Movie Navigator",
   "brand.tagline": "Find what to watch — by parameters or “similar to…”",
 
+  // Header: panel dock grip (top|left|right)
+  "header.dockHint": "Drag the panel: left / right / top",
+
   // UX-02: poster honest states (PosterImage)
   "poster.unavailable": "Poster unavailable",
   "poster.retry": "Try again",
   "home.tabFilters": "By parameters",
   "home.tabSimilar": "Similar to...",
+  "home.forYou": "Recommended for you",
 
   "nav.home": "Home",
   "nav.similar": "Similar to...",
@@ -56,6 +60,17 @@ export const en: Dict = {
   "filters.sort.votes": "Number of votes",
   "filters.sort.year": "Year",
   "filters.sort.popularity": "Popularity",
+
+  // --- UX (filters): catalog themes + floating filter panel ---
+  "themes.all": "All",
+  "themes.movies": "Movies",
+  "themes.series": "Series",
+  "themes.cartoon": "Animation (movies)",
+  "themes.anime": "Anime (multi-episode)",
+  "filters.panel.title": "Filters",
+  "filters.panel.close": "Close",
+  "filters.short": "Short",
+  "filters.studios": "Studios",
 
   "title.similar": "Similar",
   "title.why": "Why similar?",
@@ -110,6 +125,10 @@ export const en: Dict = {
 
   "lists.watchlist": "Watchlist",
   "lists.watched": "Watched",
+  "lists.watching": "Watching",
+  "lists.reading": "Reading",
+  "lists.on_hold": "On hold",
+  "lists.dropped": "Dropped",
   "lists.empty": "Nothing here yet. Add titles from a title page or search.",
   "lists.rating": "Rating (1–10)",
   "lists.remove": "Remove",

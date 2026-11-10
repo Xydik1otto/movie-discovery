@@ -30,39 +30,69 @@ public static class ListKinds
     public const string Read = "read";
     public const string Liked = "liked";     // FR-17
     public const string Disliked = "disliked"; // FR-17
+    public const string Watching = "watching"; // дивиться зараз (паритет статусів Shikimori)
+    public const string Reading = "reading";   // читає зараз — лише для манги
+    public const string OnHold = "on_hold";    // відкладено
+    public const string Dropped = "dropped";   // кинуто
 
-    /// <summary>Види списків, які рахуються як «переглянутий контент» для discover-кандидатів (FR-18).</summary>
-    public static readonly string[] DiscoverExcluded = [Watchlist, Watched, Liked, Disliked];
+    /// <summary>Усі 9 kind списків (базові 5 + паритет статусів трекерів).</summary>
+    public static readonly string[] All = [Watchlist, Watched, Read, Liked, Disliked, Watching, Reading, OnHold, Dropped];
+
+    /// <summary>
+    /// Kind, які може створити імпорт трекерів. Ре-імпорт переносить наявні записи МІЖ ними
+    /// (напр. watchlist → watching після розширення мапінгу), а не дублює — см. ImportService.ApplyBatchAsync.
+    /// </summary>
+    public static readonly string[] ImportProduced = [Watchlist, Watched, Read, Watching, Reading, OnHold, Dropped];
+
+    /// <summary>
+    /// Види списків, які рахуються як «вже в списках» для discover-кандидатів (FR-18):
+    /// ВСІ 9 — нічого з будь-якого списку не рекомендувати повторно.
+    /// </summary>
+    public static readonly string[] DiscoverExcluded = All;
 
     public static bool IsValid(string? kind) =>
-        kind is Watchlist or Watched or Read or Liked or Disliked;
+        kind is Watchlist or Watched or Read or Liked or Disliked or Watching or Reading or OnHold or Dropped;
 
     /// <summary>Оцінка 1–10 або відсутня (FR-17).</summary>
     public static bool IsValidRating(int? rating) => rating is null or (>= 1 and <= 10);
 
-    /// <summary>kind списку → дія interaction_log (для перерахунку профілю смаку).</summary>
+    /// <summary>kind списку → дія interaction_log (для перерахунку профілю смаку).
+    /// watching/reading → "watchlist" (сигнал інтересу для смаку); on_hold/dropped → null (на смак не впливають).</summary>
     public static string? ActionForKind(string kind) => kind switch
     {
         Liked => "like",
         Disliked => "dislike",
         Watchlist => "watchlist",
+        Watching or Reading => "watchlist",
         Watched or Read => "watched",
-        _ => null,
+        _ => null, // on_hold/dropped — не впливають на смак (RecomputeAsync: "open" → вага 0)
     };
 
-    /// <summary>kind=read валідний лише для type='manga' (інакше контролер віддає 400).</summary>
-    public static bool AllowedForType(string kind, string type) =>
-        !string.Equals(kind, Read, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(type, "manga", StringComparison.OrdinalIgnoreCase);
+    /// <summary>kind=read|reading валідні лише для type='manga' (інакше контролер віддає 400); решта — для всіх типів.</summary>
+    public static bool AllowedForType(string kind, string type)
+    {
+        if (string.Equals(kind, Read, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(kind, Reading, StringComparison.OrdinalIgnoreCase))
+            return string.Equals(type, "manga", StringComparison.OrdinalIgnoreCase);
+        return true;
+    }
 
     /// <summary>
-    /// Статус трекера → kind списку: completed → watched (аніме) / read (манга);
-    /// watching/reading/current/repeating → watchlist; on_hold/dropped/planned/paused → null (скіп).
+    /// Статус трекера → kind списку (повний паритет Shikimori/MAL/AniList):
+    /// planned/plan_to_watch/plan_to_read/planning → watchlist («Хочу подивитись» — семантика збігається);
+    /// watching/current/repeating/rewatching → watching; reading → reading (лише манга; для аніме
+    /// reading не буває — фолбек watching); completed → watched (аніме) / read (манга);
+    /// on_hold/paused → on_hold; dropped → dropped; невідоме → null (скіп).
     /// </summary>
     public static string? KindForStatus(string? status, bool isManga) => status?.Trim().ToLowerInvariant() switch
     {
         "completed" => isManga ? Read : Watched,
-        "watching" or "reading" or "current" or "repeating" or "rewatching" => Watchlist,
+        "watching" or "current" or "repeating" or "rewatching" => Watching,
+        "reading" => isManga ? Reading : Watching,
+        "planned" or "plan_to_watch" or "plan_to_read" or "planning" => Watchlist,
+        "on_hold" => OnHold,
+        "paused" => OnHold,
+        "dropped" => Dropped,
         _ => null,
     };
 
@@ -85,6 +115,10 @@ public sealed class ImportStats
     public int AnimeWatched { get; set; }
     public int MangaRead { get; set; }
     public int WatchlistAdded { get; set; }
+    public int WatchingAdded { get; set; }
+    public int ReadingAdded { get; set; }
+    public int OnHoldAdded { get; set; }
+    public int DroppedAdded { get; set; }
     public int Skipped { get; set; }
     public List<string> Errors { get; set; } = [];
 
@@ -98,6 +132,10 @@ public sealed class ImportStats
         ["animeWatched"] = AnimeWatched,
         ["mangaRead"] = MangaRead,
         ["watchlistAdded"] = WatchlistAdded,
+        ["watchingAdded"] = WatchingAdded,
+        ["readingAdded"] = ReadingAdded,
+        ["onHoldAdded"] = OnHoldAdded,
+        ["droppedAdded"] = DroppedAdded,
         ["skipped"] = Skipped,
         ["errors"] = Errors.Take(20).ToList(),
     });

@@ -38,6 +38,7 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
         // ── Розширені фільтри ──
         [FromQuery] string? actor = null,
         [FromQuery] string? director = null,
+        [FromQuery] string? studio = null,
         [FromQuery] string? keyword = null,
         [FromQuery] string? language = null,
         [FromQuery] int? minVotes = null,
@@ -90,7 +91,7 @@ public sealed class SearchController(SearchService search, MovieDiscoveryDbConte
             q, type, genreList, yearFrom, yearTo, country,
             minRating, maxRating, minRuntime, maxRuntime, status,
             sort ?? "relevance", page, pageSize,
-            Actor: actor, Director: director, Keyword: keyword,
+            Actor: actor, Director: director, Studio: studio, Keyword: keyword,
             Language: language, MinVotes: minVotes,
             SeasonsFrom: seasonsFrom, SeasonsTo: seasonsTo,
             ExcludeGenres: excludeList,

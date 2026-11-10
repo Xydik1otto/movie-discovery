@@ -24,6 +24,7 @@ public sealed record SearchQuery(
     // ── Розширені фільтри ──
     string? Actor = null,
     string? Director = null,
+    string? Studio = null,
     string? Keyword = null,
     string? Language = null,
     int? MinVotes = null,
@@ -98,9 +99,13 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
 
         query = Sort(query, q.Sort);
 
+        // Перф-хвиля (11.11): чисте читання — трекінг EF не потрібен (сущності лише
+        // мапляться в TitleMapper, не модифікуються); економить ChangeTracker на
+        // кожній сторінці каталогу (до 50 entities за запит).
         var items = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .AsNoTracking()
             .ToListAsync(ct);
 
         return new SearchResult(items, total, page, pageSize, capped && total > CountCap);
@@ -167,6 +172,12 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         {
             var pat = "%" + EscapeLike(q.Director.Trim()) + "%";
             query = query.Where(t => t.Director != null && EF.Functions.ILike(t.Director, pat));
+        }
+        if (!string.IsNullOrWhiteSpace(q.Studio))
+        {
+            // Студії анімації (FR: плаваючі фільтри аніме) — точний матч по масиву studios.
+            var studio = q.Studio.Trim();
+            query = query.Where(t => t.Studios.Contains(studio));
         }
 
         if (!string.IsNullOrWhiteSpace(q.Keyword))

@@ -251,12 +251,14 @@ public sealed class SimilarityService(
 
         if (genres.Length > 0 && patterns.Length > 0)
         {
+            // Перф-хвиля (11.11): пул кандидатів — чисте читання (сущності скорляться,
+            // не мутуються) → без трекінгу ChangeTracker.
             pools.Add(await db.Titles.FromSqlInterpolated($@"
 SELECT * FROM titles
 WHERE genres && {genres}
    OR EXISTS (SELECT 1 FROM unnest(keywords) k WHERE k ILIKE ANY({patterns}))
 ORDER BY popularity DESC
-LIMIT 1500").ToListAsync(ct));
+LIMIT 1500").AsNoTracking().ToListAsync(ct));
         }
         else if (genres.Length > 0)
         {
@@ -272,7 +274,7 @@ LIMIT 1500").ToListAsync(ct));
 SELECT * FROM titles
 WHERE EXISTS (SELECT 1 FROM unnest(keywords) k WHERE k ILIKE ANY({patterns}))
 ORDER BY popularity DESC
-LIMIT 1500").ToListAsync(ct));
+LIMIT 1500").AsNoTracking().ToListAsync(ct));
         }
 
         // семантичний пул: тайтли з векторами

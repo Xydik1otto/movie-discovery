@@ -156,6 +156,141 @@ public sealed class DiscoverService(
         return result;
     }
 
+    // ─── Персональні рекомендації Головної (GET /api/recommendations/home) ───
+
+    /// <summary>Вага сигналу смаку за видом списку (liked 1.0 … disliked −0.8 = мінус);
+    /// dropped — не сигнал. Рейтинг 7+ підсилює лише watched до 0.8; read/reading — як watchlist (0.6).</summary>
+    internal static double HomeWeightOfKind(string kind, int? rating) => kind switch
+    {
+        ListKinds.Liked => 1.0,
+        ListKinds.Watched => rating is { } r && r >= 7 ? 0.8 : 0.5,
+        ListKinds.Watchlist or ListKinds.Watching or ListKinds.Read or ListKinds.Reading => 0.6,
+        ListKinds.OnHold => 0.3,
+        ListKinds.Disliked => -0.8,
+        _ => 0.0,
+    };
+
+    /// <summary>Результат домашніх рекомендацій: тайтли + сирий смак-мотив (жанр-ключ en + домінуючий
+    /// kind списку) — reason локалізує контролер, IMemoryCache per-user (TTL 5 хв) теж у контролері.</summary>
+    public sealed record HomeRecommendations(List<Title> Items, string? ReasonGenre, string? ReasonKind);
+
+    /// <summary>
+    /// Персональні рекомендації Головної: (a) смак юзера зі списків (liked 1.0, watched/read ≥7 — 0.8,
+    /// watched/read 0.5, watchlist/watching/read/reading 0.6, on_hold 0.3, disliked −0.8) → топ-жанри
+    /// тайтлів у списках; (b) кандидати — жанровий OR-пул по popularity DESC (SearchService-style),
+    /// тип будь-який, роки ±10 від медіани улюблених — soft-фільтр (пріоритет, НЕ відсікання);
+    /// (c) ЖОРТКЕ виключення тайтлів, які вже в списках юзера (усі 9 kind — DiscoverExcluded);
+    /// (d) диверсифікація: не більше 5 тайтлів одного жанру в топ-N.
+    /// </summary>
+    public async Task<HomeRecommendations> GetHomeRecommendationsAsync(
+        string userId, int limit, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 50);
+        var up = await taste.ResolveAsync(userId, ct);
+
+        var entries = await db.ListEntries.AsNoTracking()
+            .Where(l => l.ProfileId == up.ProfileId)
+            .Select(l => new { l.Kind, l.Rating, l.TitleId })
+            .ToListAsync(ct);
+        if (entries.Count == 0)
+            return new HomeRecommendations([], null, null); // порожній профіль → порожня секція (фронт ховає)
+
+        var listTitleIds = entries.Select(e => e.TitleId).Distinct().ToList();
+        var listTitles = await db.Titles.AsNoTracking()
+            .Where(t => listTitleIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Genres, t.Year })
+            .ToDictionaryAsync(t => t.Id, ct);
+
+        // (a) жанрові ваги: позитивні види списків накопичують, дизлайк дає мінус (жанр не потрапляє в топ).
+        var genres = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var kindWeights = new Dictionary<(string Genre, string Kind), double>();
+        var years = new List<int>();
+        foreach (var e in entries)
+        {
+            if (!listTitles.TryGetValue(e.TitleId, out var t)) continue;
+            var w = HomeWeightOfKind(e.Kind, e.Rating);
+            if (Math.Abs(w) < 1e-9) continue; // dropped та інші нуль-сигнали
+            if (w > 0 && t.Year is { } y) years.Add(y);
+            foreach (var g in t.Genres)
+            {
+                if (string.IsNullOrWhiteSpace(g)) continue;
+                genres[g] = genres.GetValueOrDefault(g) + w;
+                if (w > 0)
+                    kindWeights[(g, e.Kind)] = kindWeights.GetValueOrDefault((g, e.Kind)) + w;
+            }
+        }
+
+        var topGenres = genres.Where(kv => kv.Value > 1e-9)
+            .OrderByDescending(kv => kv.Value).Take(8).ToList();
+        if (topGenres.Count == 0)
+            return new HomeRecommendations([], null, null); // лише дизлайки — рекомендувати нічого
+
+        var topGenre = topGenres[0].Key;
+        var topKind = kindWeights
+            .Where(kv => kv.Key.Genre == topGenre)
+            .OrderByDescending(kv => kv.Value)
+            .Select(kv => kv.Key.Kind)
+            .FirstOrDefault() ?? ListKinds.Liked;
+
+        // (c) ЖОРТКЕ виключення: ВСЕ, що в будь-якому списку юзера (DiscoverExcluded — усі 9 kind).
+        var baseQuery = db.Titles.AsNoTracking()
+            .Where(t => !listTitleIds.Contains(t.Id) && !string.IsNullOrEmpty(t.TitleEn))
+            .Where(t => !t.IsAdult);
+
+        // (b) кандидати: жанровий OR, popularity DESC. Npgsql — overlap у SQL (перекладено
+        // NpgsqlTranslationTests); InMemory (тести) не перекладає Contains всередині масиву →
+        // клієнтський фільтр по популярному пулу (усталена адаптація, як у GetFeedAsync).
+        var poolSize = Math.Max(limit * 10, 200);
+        var genreKeys = topGenres.Select(kv => kv.Key).ToList();
+        List<Title> candidates;
+        if (db.Database.ProviderName!.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase))
+        {
+            candidates = await WithGenreOverlap(baseQuery, genreKeys)
+                .OrderByDescending(t => t.Popularity).Take(poolSize).ToListAsync(ct);
+        }
+        else
+        {
+            var popular = await baseQuery
+                .OrderByDescending(t => t.Popularity).Take(Math.Max(poolSize * 3, 600)).ToListAsync(ct);
+            candidates = popular
+                .Where(t => t.Genres.Any(g => genreKeys.Contains(g, StringComparer.OrdinalIgnoreCase)))
+                .ToList();
+        }
+        if (candidates.Count == 0)
+            return new HomeRecommendations([], topGenre, topKind);
+
+        // Роки ±10 від медіани улюблених — soft-фільтр: in-range ідуть першими, поза діапазоном НЕ відсікаються.
+        var median = MedianYear(years);
+        var ordered = candidates
+            .OrderByDescending(t => InYearWindow(t.Year, median))
+            .ThenByDescending(t => t.Popularity)
+            .ToList();
+
+        // (d) диверсифікація: не більше 5 тайтлів одного жанру в топ-N.
+        const int PerGenreCap = 5;
+        var perGenre = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var picked = new List<Title>(limit);
+        foreach (var t in ordered)
+        {
+            if (picked.Count >= limit) break;
+            if (t.Genres.Any(g => perGenre.GetValueOrDefault(g) >= PerGenreCap)) continue;
+            picked.Add(t);
+            foreach (var g in t.Genres)
+                perGenre[g] = perGenre.GetValueOrDefault(g) + 1;
+        }
+        return new HomeRecommendations(picked, topGenre, topKind);
+    }
+
+    private static int? MedianYear(List<int> years)
+    {
+        if (years.Count == 0) return null;
+        var sorted = years.OrderBy(y => y).ToList();
+        return sorted[sorted.Count / 2];
+    }
+
+    private static bool InYearWindow(int? year, int? median) =>
+        median is null || (year is { } y && Math.Abs(y - median.Value) <= 10);
+
     /// <summary>GENRES.Any(g => keys.Contains(g)) — підтверджено-перекладний патерн (NpgsqlTranslationTests).</summary>
     private static IQueryable<Title> WithGenreOverlap(IQueryable<Title> query, IReadOnlyList<string> keys) =>
         query.Where(t => t.Genres.Any(g => keys.Contains(g)));

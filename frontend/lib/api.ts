@@ -18,9 +18,12 @@ import type {
   ListItem,
   ListResponse,
   ListStats,
+  // UX (фільтри): довідник панелі фільтрів — нова функція getFilters нижче.
+  FiltersPayload,
   OnboardingAnswers,
   OnboardingQuestion,
   Paged,
+  PosterBatchResolveResponse,
   PresetCollection,
   SearchParams,
   SeriesResponse,
@@ -142,6 +145,7 @@ export async function searchTitles(
       status: p.status,
       actor: p.actor,
       director: p.director,
+      studio: p.studio ?? undefined,
       keyword: p.keyword,
       language: p.language,
       minVotes: p.minVotes ?? undefined,
@@ -507,4 +511,41 @@ export async function deleteCollection(id: number): Promise<void> {
 
 export async function getTitleSeries(id: number, lang: Lang): Promise<SeriesResponse> {
   return request<SeriesResponse>(`/api/titles/${id}/series${qs({ lang })}`);
+}
+
+// --- UX-медіа: батч-резолв відсутніх постерів (паралельна підгрузка) ---
+// POST /api/posters/batch-resolve {titleIds} →
+//   {resolved:{"<id>":{posterUrl,backdropUrl}}, misses:[]}.
+// Викликає lib/usePosterBackfill: ≤24 id за запит, максимум 1 запит in-flight;
+// той самий request()-хелпер (credentials same-origin, як для всіх запитів).
+export async function batchResolvePosters(
+  titleIds: number[],
+): Promise<PosterBatchResolveResponse> {
+  return request<PosterBatchResolveResponse>("/api/posters/batch-resolve", {
+    method: "POST",
+    body: JSON.stringify({ titleIds }),
+  });
+}
+
+// --- UX (фільтри): довідник секцій/лічильників плаваючої панелі фільтрів ---
+// GET /api/filters?category=<код> →
+//   {filters:{genres,years,countries,studios?|absent,statuses?|absent,sorts},counts:{...}}.
+// Бекенд віддає ЛИШЕ релевантні категорії поля — фронт толерантний до відсутніх
+// (undefined → секція не рендериться). Споживач — lib/useFiltersData (кеш TTL
+// 10 хв + дедуп паралельних запитів + деградація до статики при помилці).
+export async function getFilters(category: string | null): Promise<FiltersPayload> {
+  return request<FiltersPayload>(`/api/filters${qs({ category })}`);
+}
+
+// --- Персональні рекомендації Головної (auth): GET /api/recommendations/home ---
+// Тільки для залогінених: гість отримує 401 (секція ховається), 200 →
+// {items: TitleCard[], reason?: string|null} — reason опційний строковий мотив
+// («бо ти лайкнув жанр drama»). Споживач — components/PersonalReco.
+export async function getHomeRecommendations(
+  lang: Lang,
+  limit = 20,
+): Promise<{ items: TitleCard[]; reason?: string | null }> {
+  return request<{ items: TitleCard[]; reason?: string | null }>(
+    `/api/recommendations/home${qs({ limit, lang })}`,
+  );
 }

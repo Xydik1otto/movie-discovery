@@ -8,9 +8,12 @@ namespace MovieDiscovery.Infrastructure.AnimeManga;
 
 /// <summary>
 /// Фоновий імпорт переглянутого/прочитаного з трекерів (FR-13) за публічним нікнеймом.
-/// Для кожного джерела свій сценарій; статуси: completed → watched (аніме) / read (манга)
-/// з оцінкою користувача → rating 1–10; watching/reading → watchlist; on_hold/dropped → скіп.
-/// Матчинг за mal_id/anilist_id/shikimori_id → ідемпотентний upsert + list row.
+/// Для кожного джерела свій сценарій; повний паритет статусів трекерів (ListKinds.KindForStatus):
+/// completed → watched (аніме) / read (манга), watching/reading → watching/reading,
+/// planned → watchlist, on_hold/paused → on_hold, dropped → dropped —
+/// з оцінкою користувача → rating 1–10.
+/// Матчинг за mal_id/anilist_id/shikimori_id → ідемпотентний upsert + list row
+/// (ре-імпорт ПЕРЕНОСИТЬ запис у новий kind, якщо мапінг змінився — не дублює).
 /// stats оновлюється в БД кожні ~20 записів (живий прогрес для UI).
 /// </summary>
 public sealed class ImportService(
@@ -267,11 +270,20 @@ public sealed class ImportService(
                 {
                     case ListKinds.Watched: stats.AnimeWatched++; break;
                     case ListKinds.Read: stats.MangaRead++; break;
+                    case ListKinds.Watching: stats.WatchingAdded++; break;
+                    case ListKinds.Reading: stats.ReadingAdded++; break;
+                    case ListKinds.OnHold: stats.OnHoldAdded++; break;
+                    case ListKinds.Dropped: stats.DroppedAdded++; break;
                     default: stats.WatchlistAdded++; break;
                 }
             }
 
-            // ідемпотентність списків: UNIQUE(profile, kind, title) → існуючий рядок оновити rating, не дублювати
+            // Ідемпотентність списків: UNIQUE(profile, kind, title) → існуючий рядок оновити, не дублювати.
+            // Розширення мапінгу статусів: запис, який попередній імпорт поклав у СТАРИЙ kind
+            // (напр. watching-статус → watchlist), повторний імпорт має ПЕРЕНЕСТИ в новий kind
+            // (watching), а не задублювати. Тому: точний матч (kind, title) оновлює rating;
+            // фолбек — будь-який інший import-вироблений kind того ж тайтла → перенесення
+            // (liked/disliked імпорт не творить — такі записи не чіпаються).
             var existingIds = rows.Where(r => r.Title.Id != 0).Select(r => r.Title.Id).Distinct().ToList();
             var existingRows = existingIds.Count == 0
                 ? []
@@ -282,13 +294,25 @@ public sealed class ImportService(
             var fresh = new List<ListEntry>();
             foreach (var row in rows)
             {
-                var existing = row.Title.Id != 0
-                    ? existingRows.FirstOrDefault(l => l.TitleId == row.Title.Id && l.Kind == row.Kind)
-                    : null;
-                if (existing is not null)
+                if (row.Title.Id == 0)
                 {
-                    if (row.Rating is { } r && existing.Rating != r)
-                        existing.Rating = r; // оновити оцінку, якщо прийшла з імпорту
+                    fresh.Add(row); // щойно створений тайтл — запису списку ще нема
+                    continue;
+                }
+                var sameKind = existingRows.FirstOrDefault(l => l.TitleId == row.Title.Id && l.Kind == row.Kind);
+                if (sameKind is not null)
+                {
+                    if (row.Rating is { } r && sameKind.Rating != r)
+                        sameKind.Rating = r; // оновити оцінку, якщо прийшла з імпорту
+                    continue;
+                }
+                var foreign = existingRows.FirstOrDefault(l =>
+                    l.TitleId == row.Title.Id && ListKinds.ImportProduced.Contains(l.Kind));
+                if (foreign is not null)
+                {
+                    foreign.Kind = row.Kind; // перенести в новий kind
+                    if (row.Rating is { } moved) foreign.Rating = moved; // наявну оцінку не затирати відсутньою
+                    foreign.WatchedAt = row.WatchedAt; // семантика watched/read → kind
                     continue;
                 }
                 fresh.Add(row);

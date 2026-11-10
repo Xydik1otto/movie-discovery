@@ -25,8 +25,18 @@ export type AudioLangCode =
 export type DubCode = "ukr" | "russ" | "eng" | "original" | "multi";
 // "ads" — безкоштовний перегляд з рекламою (уніфікований watch-ендпоінт 09.11).
 export type ProviderKind = "stream" | "subscription" | "rent" | "buy" | "free" | "ads";
-// FR-17: liked/disliked розширюють системні списки.
-export type ListKind = "watchlist" | "watched" | "read" | "liked" | "disliked";
+// FR-17: liked/disliked розширюють системні списки. Watching/reading/on_hold/
+// dropped — статуси Shikimori-стилю для вкладок /lists (фільтр по kind).
+export type ListKind =
+  | "watchlist"
+  | "watching"
+  | "watched"
+  | "on_hold"
+  | "dropped"
+  | "liked"
+  | "reading"
+  | "read"
+  | "disliked";
 
 export interface TitleCard {
   id: number;
@@ -173,6 +183,7 @@ export interface SearchParams {
   // розширені
   actor?: string | null;
   director?: string | null;
+  studio?: string | null;
   keyword?: string | null;
   language?: string | null;
   minVotes?: number | null;
@@ -260,6 +271,13 @@ export interface ListStats {
   readCount?: number | null;
   likedCount?: number | null;
   dislikedCount?: number | null;
+  // Статуси Shikimori-стилю (вкладки /lists): бекенд може ще не вертати нові
+  // поля — фронт толерантний (undefined/null → лічильник не показуємо).
+  watchlistCount?: number | null;
+  watchingCount?: number | null;
+  readingCount?: number | null;
+  onHoldCount?: number | null;
+  droppedCount?: number | null;
   avgRating?: number | null;
   // topGenres може прийти масивом рядків або пар genre/count — толеруємо обидва.
   topGenres?: (string | { genre: string; count?: number | null })[] | null;
@@ -356,4 +374,50 @@ export interface SeriesResponse {
   seriesKey?: string | null;
   seriesName?: string | null;
   items: SeriesItem[];
+}
+
+// --- UX-медіа: паралельна підгрузка постерів (POST /api/posters/batch-resolve) ---
+
+// Резолвлені URL-и одного тайтла. posterUrl/backdropUrl — null, якщо джерело
+// не дало картинку (такі id повертаються у misses).
+export interface ResolvedPosterUrls {
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
+}
+
+// Відповідь батч-резолву: resolved — мапа "<id>" → URL-и; misses — id без постера.
+export interface PosterBatchResolveResponse {
+  resolved?: Record<string, ResolvedPosterUrls | null> | null;
+  misses?: number[] | null;
+}
+
+// --- UX (фільтри): довідник GET /api/filters?category=<код> ---
+// Бекенд віддає ЛИШЕ релевантні категорії поля: відсутнє/порожнє поле = секція
+// не рендериться (фронт свідомо толерантний до undefined).
+export interface FilterCountOption {
+  value: string;
+  count?: number | null;
+}
+
+export interface FiltersSections {
+  genres?: FilterCountOption[] | null;
+  years?: { min?: number | null; max?: number | null } | null;
+  countries?: FilterCountOption[] | null;
+  studios?: FilterCountOption[] | null;
+  statuses?: FilterCountOption[] | null;
+  sorts?: FilterCountOption[] | null;
+}
+
+export interface FiltersCounts {
+  total?: number | null;
+  movies?: number | null;
+  series?: number | null;
+  shorts?: number | null;
+  animation_movies?: number | null;
+  animation_series?: number | null;
+}
+
+export interface FiltersPayload {
+  filters?: FiltersSections | null;
+  counts?: FiltersCounts | null;
 }

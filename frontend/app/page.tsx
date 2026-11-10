@@ -15,6 +15,8 @@ import { guardedBySeedsEx, guardedSearch } from "@/lib/fallback";
 import { readCatalogCache, writeCatalogCache } from "@/lib/catalogCache";
 import { MAX_PAGES, PAGE_SIZE, usePagedSearch } from "@/lib/usePagedSearch";
 import type { FetchPageArgs } from "@/lib/usePagedSearch";
+import { usePosterBackfill } from "@/lib/usePosterBackfill";
+import { useFiltersData } from "@/lib/useFiltersData";
 import {
   AUDIO_LANG_OPTIONS,
   CATEGORY_OPTIONS,
@@ -22,8 +24,6 @@ import {
   GENRES,
   LANGUAGES,
   QUALITY_OPTIONS,
-  SORTS,
-  TITLE_TYPES,
 } from "@/lib/constants";
 import type { SimilarItem, TitleCard as TitleCardType } from "@/lib/types";
 import TitleCard from "@/components/TitleCard";
@@ -32,6 +32,10 @@ import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import Pagination from "@/components/Pagination";
 import SeedsBuilder from "@/components/SeedsBuilder";
+import PersonalReco from "@/components/PersonalReco";
+import ThemeTabs, { type ThemeValue } from "@/components/ThemeTabs";
+import FilterPanel, { buildActiveChips } from "@/components/FilterPanel";
+import type { PanelFilterState, PanelPatch } from "@/components/FilterPanel";
 import { Chip, ChipGroup } from "@/components/FilterChips";
 
 interface Applied {
@@ -60,6 +64,11 @@ interface Applied {
   category: string | null;
   audioLang: string | null;
   minQuality: number | null;
+  // Панель фільтрів: формат/статус. studio — поки лише в URL (?studio=):
+  // бекенд /api/search ще не приймає studio, тому в пошук не летить.
+  format: string | null;
+  status: string | null;
+  studio: string | null;
   sort: "relevance" | "rating" | "imdb" | "votes" | "year" | "popularity";
 }
 
@@ -88,10 +97,17 @@ const EMPTY: Applied = {
   category: null,
   audioLang: null,
   minQuality: null,
+  format: null,
+  status: null,
+  studio: null,
   sort: "popularity",
 };
 
 const SORT_VALUES = ["relevance", "rating", "imdb", "votes", "year", "popularity"] as const;
+
+// Стабільне порожнє значення для usePosterBackfill (неактивна сітка): літерал []
+// у місці виклику створював би новий масив на кожен рендер (ре-прогін ефекту).
+const NO_ITEMS: TitleCardType[] = [];
 
 function numOrNull(s: string): number | null {
   const v = s.trim();
@@ -144,6 +160,9 @@ function parseHomeParams(sp: URLSearchParams) {
     category: sp.get("category") || null,
     audioLang: sp.get("audioLang") || null,
     minQuality: num("minQuality"),
+    format: sp.get("format") || null,
+    status: sp.get("status") || null,
+    studio: sp.get("studio") || null,
     sort,
   };
   const page = Math.min(MAX_PAGES, Math.max(1, Number(sp.get("page")) || 1));
@@ -177,6 +196,9 @@ function serializeHomeParams(a: Applied, page: number): string {
   if (a.category) sp.set("category", a.category);
   if (a.audioLang) sp.set("audioLang", a.audioLang);
   if (a.minQuality != null) sp.set("minQuality", String(a.minQuality));
+  if (a.format) sp.set("format", a.format);
+  if (a.status) sp.set("status", a.status);
+  if (a.studio) sp.set("studio", a.studio);
   const defaultSort = a.q ? "relevance" : "popularity";
   if (a.sort !== defaultSort) sp.set("sort", a.sort);
   if (page > 1) sp.set("page", String(page));
@@ -230,6 +252,15 @@ function HomePageInner() {
   const [minQuality, setMinQuality] = useState(init.applied.minQuality != null ? String(init.applied.minQuality) : "");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [applied, setApplied] = useState<Applied>(init.applied);
+
+  // Панель фільтрів: формат/статус/студія (чернетки-стан; застосування — нижче).
+  const [format, setFormat] = useState<string | null>(init.applied.format);
+  const [status, setStatus] = useState<string | null>(init.applied.status);
+  const [studio, setStudio] = useState<string | null>(init.applied.studio);
+
+  // Довідник фільтрів /api/filters (кеш TTL 10 хв + дедуп паралельних запитів;
+  // ендпоінт недоступний → null → панель деградує до статики без падіння).
+  const filtersData = useFiltersData(category || null);
 
   // Серверна пагінація: page належить хуку, старт — з URL.
   // SWR-кеш (10.11): дефолтний вигляд (/ без параметрів: порожні фільтри,
@@ -312,6 +343,9 @@ function HomePageInner() {
     setCategory(p.applied.category ?? "");
     setAudioLang(p.applied.audioLang ?? "");
     setMinQuality(p.applied.minQuality != null ? String(p.applied.minQuality) : "");
+    setFormat(p.applied.format);
+    setStatus(p.applied.status);
+    setStudio(p.applied.studio ?? "");
     setApplied(p.applied);
     list.goTo(p.page);
     // list.goTo стабільний; читаємо лише searchParams, інакше цикл на кожен рендер
@@ -345,6 +379,9 @@ function HomePageInner() {
       category: category || null,
       audioLang: audioLang || null,
       minQuality: numOrNull(minQuality),
+      format: format || null,
+      status: status || null,
+      studio: studio || null,
       sort: q ? "relevance" : "popularity",
     });
   }
@@ -374,6 +411,9 @@ function HomePageInner() {
     setCategory("");
     setAudioLang("");
     setMinQuality("");
+    setFormat(null);
+    setStatus(null);
+    setStudio(null);
     setApplied(EMPTY);
   }
 
@@ -391,12 +431,153 @@ function HomePageInner() {
     [buildQs, router, listGoTo],
   );
 
+  // ── Панель фільтрів: чіпи/селюшки застосовуються негайно (onPatch),
+  // числові інпути — чернетка (onDraft) із commit на blur/Enter (onCommit). ──
+  const panelState: PanelFilterState = {
+    format,
+    status,
+    studio,
+    genres,
+    country: country || null,
+    yearFrom,
+    yearTo,
+    minRating,
+    maxRating,
+    minRuntime,
+    maxRuntime,
+    sort: applied.sort,
+  };
+  const patchPanel = useCallback(
+    (p: PanelPatch) => {
+      if ("format" in p) {
+        setFormat(p.format ?? null);
+        setApplied((prev) => ({ ...prev, format: p.format ?? null }));
+      }
+      if ("status" in p) {
+        setStatus(p.status ?? null);
+        setApplied((prev) => ({ ...prev, status: p.status ?? null }));
+      }
+      if ("studio" in p) {
+        // studio поки НЕ летить у пошук (бекенд /api/search не приймає studio);
+        // значення персиститься в URL ?studio= та в activeChips.
+        setStudio(p.studio ?? null);
+      }
+      if ("genres" in p) {
+        setGenres(p.genres ?? []);
+        setApplied((prev) => ({ ...prev, genres: p.genres ?? [] }));
+      }
+      if ("country" in p) {
+        setCountry(p.country ?? "");
+        setApplied((prev) => ({ ...prev, country: p.country ?? null }));
+      }
+      if ("sort" in p) {
+        setApplied((prev) => ({ ...prev, sort: p.sort as Applied["sort"] }));
+      }
+      if ("yearFrom" in p || "yearTo" in p) {
+        const nf = "yearFrom" in p ? (p.yearFrom ?? "") : yearFrom;
+        const nt = "yearTo" in p ? (p.yearTo ?? "") : yearTo;
+        setYearFrom(nf);
+        setYearTo(nt);
+        setApplied((prev) => ({ ...prev, yearFrom: numOrNull(nf), yearTo: numOrNull(nt) }));
+      }
+      if ("minRating" in p || "maxRating" in p) {
+        const nf = "minRating" in p ? (p.minRating ?? "") : minRating;
+        const nt = "maxRating" in p ? (p.maxRating ?? "") : maxRating;
+        setMinRating(nf);
+        setMaxRating(nt);
+        setApplied((prev) => ({ ...prev, minRating: numOrNull(nf), maxRating: numOrNull(nt) }));
+      }
+      if ("minRuntime" in p || "maxRuntime" in p) {
+        const nf = "minRuntime" in p ? (p.minRuntime ?? "") : minRuntime;
+        const nt = "maxRuntime" in p ? (p.maxRuntime ?? "") : maxRuntime;
+        setMinRuntime(nf);
+        setMaxRuntime(nt);
+        setApplied((prev) => ({ ...prev, minRuntime: numOrNull(nf), maxRuntime: numOrNull(nt) }));
+      }
+    },
+    [yearFrom, yearTo, minRating, maxRating, minRuntime, maxRuntime],
+  );
+  const draftPanel = useCallback((p: PanelPatch) => {
+    if ("yearFrom" in p) setYearFrom(p.yearFrom ?? "");
+    if ("yearTo" in p) setYearTo(p.yearTo ?? "");
+    if ("minRating" in p) setMinRating(p.minRating ?? "");
+    if ("maxRating" in p) setMaxRating(p.maxRating ?? "");
+    if ("minRuntime" in p) setMinRuntime(p.minRuntime ?? "");
+    if ("maxRuntime" in p) setMaxRuntime(p.maxRuntime ?? "");
+  }, []);
+  const commitPanel = useCallback(() => {
+    setApplied((prev) => ({
+      ...prev,
+      yearFrom: numOrNull(yearFrom),
+      yearTo: numOrNull(yearTo),
+      minRating: numOrNull(minRating),
+      maxRating: numOrNull(maxRating),
+      minRuntime: numOrNull(minRuntime),
+      maxRuntime: numOrNull(maxRuntime),
+    }));
+  }, [yearFrom, yearTo, minRating, maxRating, minRuntime, maxRuntime]);
+
+  const activeChips = buildActiveChips(
+    {
+      format: applied.format,
+      status: applied.status,
+      studio: applied.studio,
+      genres: applied.genres,
+      country: applied.country,
+      yearFrom: applied.yearFrom,
+      yearTo: applied.yearTo,
+      minRating: applied.minRating,
+      maxRating: applied.maxRating,
+      minRuntime: applied.minRuntime,
+      maxRuntime: applied.maxRuntime,
+    },
+    t,
+    lang,
+  );
+
+  // Тими (Фільми/Серіали/Анімація/Аніме): вибір = категорія пошуку (?category=),
+  // негайний рефеч; конфліктний статичний type скидається — тими його замінюють.
+  const selectTheme = useCallback((v: ThemeValue | null) => {
+    setType(null);
+    setCategory(v ?? "");
+    setApplied((prev) => ({ ...prev, category: v ?? null, type: null }));
+  }, []);
+
   // --- Вкладка «Схоже на...» ---
   const [seeds, setSeeds] = useState<TitleCardType[]>([]);
   const [similarBusy, setSimilarBusy] = useState(false);
   const [similarItems, setSimilarItems] = useState<SimilarItem[] | null>(null);
   const [similarUnavailable, setSimilarUnavailable] = useState(false);
   const [similarError, setSimilarError] = useState(false);
+
+  // UX-медіа: батч-підгрузка постерів (≤24 id/запит, 1 in-flight, дебаунс 300 мс).
+  // Основна сітка мерджиться через mergeItems usePagedSearch — той самий
+  // state-апдейт, що й у пагінації. SWR-кеш localStorage НЕ перезаписуємо:
+  // його пише лише успішна сторінка 1 дефолтного вигляду (запис пізніших
+  // батч-результатів змінював би зміст кешу і ризикував циклами). Без циклів:
+  // resolved id отримують posterUrl і більше не колектяться, misses не
+  // повторюються (module-level Set у хуці).
+  usePosterBackfill(tab === "filters" ? list.items : NO_ITEMS, (map) => {
+    list.mergeItems((prev) =>
+      prev.map((it) => {
+        if (it.posterUrl) return it;
+        const hit = map.get(it.id);
+        return hit ? { ...it, posterUrl: hit.posterUrl ?? null } : it;
+      }),
+    );
+  });
+  // Сітка вкладки «Схоже на...» — окремий useState-масив, мердж напряму.
+  usePosterBackfill(tab === "similar" ? similarItems ?? NO_ITEMS : NO_ITEMS, (map) => {
+    setSimilarItems((prev) =>
+      prev
+        ? prev.map((it) => {
+            if (it.posterUrl) return it;
+            const hit = map.get(it.id);
+            return hit ? { ...it, posterUrl: hit.posterUrl ?? null } : it;
+          })
+        : prev,
+    );
+  });
 
   async function findSimilar() {
     if (!seeds.length) return;
@@ -453,8 +634,19 @@ function HomePageInner() {
         {tabBtn("similar", t("home.tabSimilar"))}
       </div>
 
+      {/* Персональні рекомендації (FR: «за вподобаннями юзера») — сам ховається для гостя */}
+      <PersonalReco />
+
       {tab === "filters" ? (
         <section>
+          {/* Тими каталогу: Фільми/Серіали/Анімація/Аніме → ?category= в URL.
+              Лічильники — з /api/filters counts (коли досяжно). */}
+          <ThemeTabs
+            current={category || null}
+            counts={filtersData.data?.counts ?? null}
+            onSelect={selectTheme}
+          />
+
           {/* Пошуковий бар */}
           <div className="mb-4 flex gap-2">
             <input
@@ -474,155 +666,26 @@ function HomePageInner() {
             </button>
           </div>
 
-          {/* Фільтри */}
-          <div className="mb-5 space-y-3 rounded-2xl border border-line bg-panel p-4">
-            <div>
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mute">
-                {t("filters.type")}
-              </div>
-              <ChipGroup>
-                {TITLE_TYPES.map((tt) => (
-                  <Chip
-                    key={tt.value}
-                    selected={type === tt.value}
-                    onClick={() => setType(type === tt.value ? null : tt.value)}
-                  >
-                    {t(tt.key)}
-                  </Chip>
-                ))}
-              </ChipGroup>
-            </div>
-
-            <div>
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-mute">
-                {t("filters.genre")}
-              </div>
-              <ChipGroup>
-                {GENRES.map((g) => (
-                  <Chip
-                    key={g.value}
-                    small
-                    selected={genres.includes(g.value)}
-                    onClick={() =>
-                      setGenres((prev) =>
-                        prev.includes(g.value)
-                          ? prev.filter((x) => x !== g.value)
-                          : [...prev, g.value],
-                      )
-                    }
-                  >
-                    {g[lang]}
-                  </Chip>
-                ))}
-              </ChipGroup>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <label className="block">
-                <span className="mb-1 block text-xs text-mute">{t("filters.year")}</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={yearFrom}
-                    onChange={(e) => setYearFrom(e.target.value)}
-                    placeholder={t("filters.min")}
-                    aria-label={`${t("filters.year")} ${t("filters.min")}`}
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  />
-                  <span className="text-mute">–</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={yearTo}
-                    onChange={(e) => setYearTo(e.target.value)}
-                    placeholder={t("filters.max")}
-                    aria-label={`${t("filters.year")} ${t("filters.max")}`}
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  />
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-xs text-mute">{t("filters.rating")}</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="10"
-                    value={minRating}
-                    onChange={(e) => setMinRating(e.target.value)}
-                    placeholder={t("filters.min")}
-                    aria-label={`${t("filters.rating")} ${t("filters.min")}`}
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  />
-                  <span className="text-mute">–</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="10"
-                    value={maxRating}
-                    onChange={(e) => setMaxRating(e.target.value)}
-                    placeholder={t("filters.max")}
-                    aria-label={`${t("filters.rating")} ${t("filters.max")}`}
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  />
-                </div>
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-xs text-mute">
-                  {t("filters.runtime")} ({t("filters.min")})
-                </span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  value={minRuntime}
-                  onChange={(e) => setMinRuntime(e.target.value)}
-                  placeholder="90"
-                  className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                />
-              </label>
-
-              <div className="grid grid-cols-[1fr_auto] items-end gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-xs text-mute">
-                    {t("filters.runtime")} ({t("filters.max")})
-                  </span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={maxRuntime}
-                    onChange={(e) => setMaxRuntime(e.target.value)}
-                    placeholder="180"
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs text-mute">{t("filters.sort")}</span>
-                  <select
-                    value={applied.sort}
-                    onChange={(e) =>
-                      setApplied((prev) => ({
-                        ...prev,
-                        sort: e.target.value as Applied["sort"],
-                      }))
-                    }
-                    className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                  >
-                    {SORTS.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {t(s.key)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {/* Розширені фільтри (згортаються) */}
+          {/* Плаваюча адаптивна панель фільтрів: desktop — sticky бар з випадом,
+              mobile — bottom sheet. Секції з /api/filters?category=<категорія>;
+              порожні секції не рендеряться; ендпоінт недоступний → статика
+              (constants.ts). Розширені фільтри — слот advanced: стан і URL-логіка
+              сторінки без змін, застосування кнопкою «Застосувати». */}
+          <FilterPanel
+            category={category || null}
+            data={filtersData.data}
+            dataLoading={filtersData.loading}
+            state={panelState}
+            onPatch={patchPanel}
+            onDraft={draftPanel}
+            onCommit={commitPanel}
+            onReset={reset}
+            onApply={apply}
+            chips={activeChips}
+            allowedSorts={SORT_VALUES}
+            advanced={
+              <>
+                {/* Розширені фільтри (згортаються) */}
             <button
               type="button"
               onClick={() => setAdvancedOpen((v) => !v)}
@@ -849,25 +912,9 @@ function HomePageInner() {
                 </div>
               </div>
             )}
-          </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={apply}
-                className="rounded-xl bg-accent px-5 py-2 text-sm font-bold text-white transition-all hover:bg-accent-2 active:scale-95"
-              >
-                {t("filters.apply")}
-              </button>
-              <button
-                type="button"
-                onClick={reset}
-                className="rounded-xl border border-line bg-panel-2 px-4 py-2 text-sm text-mute transition-colors hover:text-ink"
-              >
-                {t("filters.reset")}
-              </button>
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Результати — серверні сторінки по 20: наступна замінює поточну */}
           {list.unavailable && <ApiBanner />}
@@ -918,6 +965,9 @@ function HomePageInner() {
                   capped={list.totalCapped}
                   maxPage={MAX_PAGES}
                   onChange={changePage}
+                  onNextHover={() => {
+                    if (list.canNext) list.prefetchPage(list.page + 1);
+                  }}
                 />
               )}
             </>

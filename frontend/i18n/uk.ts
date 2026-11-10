@@ -3,11 +3,15 @@ export const uk = {
   "brand.name": "КіноНавігатор",
   "brand.tagline": "Знайди, що дивитись — за параметрами чи «схоже на…»",
 
+  // Header: грип докінгу панелі (top|left|right)
+  "header.dockHint": "Перетягніть панель: ліворуч/праворуч/зверху",
+
   // UX-02: постери — чесні стани (PosterImage)
   "poster.unavailable": "Постер недоступний",
   "poster.retry": "Спробувати ще",
   "home.tabFilters": "За параметрами",
   "home.tabSimilar": "Схоже на...",
+  "home.forYou": "Рекомендовано для вас",
 
   "nav.home": "Головна",
   "nav.similar": "Схоже на...",
@@ -54,6 +58,17 @@ export const uk = {
   "filters.sort.votes": "Кількість голосів",
   "filters.sort.year": "Рік",
   "filters.sort.popularity": "Популярність",
+
+  // --- UX (фільтри): тими каталогу + плаваюча панель фільтрів ---
+  "themes.all": "Усі",
+  "themes.movies": "Фільми",
+  "themes.series": "Серіали",
+  "themes.cartoon": "Анімація (фільми)",
+  "themes.anime": "Аніме (багатосерійні)",
+  "filters.panel.title": "Фільтри",
+  "filters.panel.close": "Згорнути",
+  "filters.short": "Короткометражка",
+  "filters.studios": "Студії",
 
   "title.similar": "Схожі",
   "title.why": "Чому схоже?",
@@ -108,6 +123,10 @@ export const uk = {
 
   "lists.watchlist": "Хочу подивитись",
   "lists.watched": "Переглянуте",
+  "lists.watching": "Дивлюсь",
+  "lists.reading": "Читаю",
+  "lists.on_hold": "Відкладено",
+  "lists.dropped": "Кинуто",
   "lists.empty": "Тут поки порожньо. Додай тайтли з картки чи пошуку.",
   "lists.rating": "Оцінка (1–10)",
   "lists.remove": "Видалити",

@@ -60,3 +60,21 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
+/* ===== Докінг верхньої панелі (Header: top|left|right) ===== */
+/* Вертикальний док: контент сторінки відсувається padding'ом.
+   Атрибут data-header-dock на body ставить components/Header.tsx. */
+body > main,
+body > footer {
+  transition: padding 200ms ease;
+}
+
+body[data-header-dock="left"] > main,
+body[data-header-dock="left"] > footer {
+  padding-left: 92px; /* панель 68px + 24px повітря */
+}
+
+body[data-header-dock="right"] > main,
+body[data-header-dock="right"] > footer {
+  padding-right: 92px; /* панель 68px + 24px повітря */
+}
+

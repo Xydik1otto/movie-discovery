@@ -11,6 +11,10 @@ public sealed record ListStats(
     int ReadCount,
     int LikedCount,
     int DislikedCount,
+    int WatchingCount,
+    int ReadingCount,
+    int OnHoldCount,
+    int DroppedCount,
     double? AvgRating,
     IReadOnlyList<GenreCount> TopGenres);
 
@@ -39,7 +43,8 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         string userId, string kind, int? titleId, int? tmdbId, int? rating, CancellationToken ct = default)
     {
         if (!ListKinds.IsValid(kind))
-            return Fail("invalid_request", "kind має бути watchlist | watched | read | liked | disliked");
+            return Fail("invalid_request",
+                "kind має бути watchlist | watched | read | liked | disliked | watching | reading | on_hold | dropped");
         if (!ListKinds.IsValidRating(rating))
             return Fail("invalid_request", "rating має бути 1–10");
 
@@ -47,7 +52,7 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         if (title is null)
             return Fail("title_not_found", "Тайтл не знайдено");
         if (!ListKinds.AllowedForType(kind, title.Type))
-            return Fail("invalid_request", "kind=read допустимий лише для манги (type=manga)");
+            return Fail("invalid_request", "kind=read|reading допустимий лише для манги (type=manga)");
 
         var up = await taste.ResolveAsync(userId, ct);
         var exists = await db.ListEntries
@@ -114,7 +119,8 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         return true;
     }
 
-    /// <summary>Статистика списків юзера (FR-17): watched/liked/disliked, avgRating, topGenres.</summary>
+    /// <summary>Статистика списків юзера (FR-17): watched/read/liked/disliked + watching/reading/on_hold/dropped
+    /// (паритет статусів трекерів), avgRating, topGenres.</summary>
     public async Task<ListStats> StatsAsync(string userId, CancellationToken ct = default)
     {
         var up = await taste.ResolveAsync(userId, ct);
@@ -127,6 +133,10 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         var read = entries.Count(l => l.Kind == ListKinds.Read);
         var liked = entries.Count(l => l.Kind == ListKinds.Liked);
         var disliked = entries.Count(l => l.Kind == ListKinds.Disliked);
+        var watching = entries.Count(l => l.Kind == ListKinds.Watching);
+        var reading = entries.Count(l => l.Kind == ListKinds.Reading);
+        var onHold = entries.Count(l => l.Kind == ListKinds.OnHold);
+        var dropped = entries.Count(l => l.Kind == ListKinds.Dropped);
         var ratings = entries
             .Where(l => l.Rating is not null && l.Kind is ListKinds.Watched or ListKinds.Read or ListKinds.Liked)
             .Select(l => l.Rating!.Value).ToList();
@@ -140,7 +150,7 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
             .ToList();
 
         return new ListStats(
-            watched, read, liked, disliked,
+            watched, read, liked, disliked, watching, reading, onHold, dropped,
             ratings.Count == 0 ? null : Math.Round(ratings.Average(), 2),
             topGenres);
     }
