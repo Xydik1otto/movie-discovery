@@ -21,9 +21,11 @@ public sealed class OnboardingPostersService(MovieDiscoveryDbContext db, IMemory
         {
             e.AbsoluteExpirationRelativeToNow = CacheTtl;
             var url = await db.Titles
-                .Where(t => t.Genres.Any(g => g == genreKey) && t.PosterPath != null && t.PosterPath != "")
+                .Where(t => t.Genres.Contains(genreKey) &&
+                    ((t.PosterLocal != null && t.PosterLocal != "") ||
+                     (t.PosterPath != null && t.PosterPath != "")))
                 .OrderByDescending(t => t.Popularity)
-                .Select(t => t.PosterPath)
+                .Select(t => t.PosterLocal != null && t.PosterLocal != "" ? t.PosterLocal : t.PosterPath)
                 .FirstOrDefaultAsync(ct);
             return Url(url);
         }) ?? null;
@@ -37,9 +39,11 @@ public sealed class OnboardingPostersService(MovieDiscoveryDbContext db, IMemory
         {
             e.AbsoluteExpirationRelativeToNow = CacheTtl;
             var url = await db.Titles
-                .Where(t => t.Year >= from && t.Year <= to && t.PosterPath != null && t.PosterPath != "")
+                .Where(t => t.Year >= from && t.Year <= to &&
+                    ((t.PosterLocal != null && t.PosterLocal != "") ||
+                     (t.PosterPath != null && t.PosterPath != "")))
                 .OrderByDescending(t => t.Popularity)
-                .Select(t => t.PosterPath)
+                .Select(t => t.PosterLocal != null && t.PosterLocal != "" ? t.PosterLocal : t.PosterPath)
                 .FirstOrDefaultAsync(ct);
             return Url(url);
         }) ?? null;
@@ -62,7 +66,8 @@ public sealed class OnboardingPostersService(MovieDiscoveryDbContext db, IMemory
     private static string? Url(string? path) =>
         string.IsNullOrWhiteSpace(path)
             ? null
-            : path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            : path.StartsWith("/api/img/posters/", StringComparison.Ordinal) ||
+              path.StartsWith("http", StringComparison.OrdinalIgnoreCase)
                 ? path
                 : $"https://image.tmdb.org/t/p/w300{path}";
 }

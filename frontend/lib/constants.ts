@@ -185,6 +185,7 @@ const FAKE_POSTER_MARKERS = ["i.ytimg.com", "img.youtube.com", "missing_original
 // posterUrl з API може прийти повним URL або TMDB-шляхом /xxx.jpg.
 export function posterUrlFull(posterUrl?: string | null, size = "w500"): string | null {
   if (!posterUrl) return null;
+  if (posterUrl.startsWith("/api/img/posters/")) return posterUrl;
   if (posterUrl.startsWith("http")) {
     if (FAKE_POSTER_MARKERS.some((m) => posterUrl.includes(m))) return null; // фейковий «постер»
     return posterUrl;

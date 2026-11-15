@@ -109,7 +109,7 @@ public static class TitleMapper
             Countries = [.. t.Countries],
             RatingTmdb = t.RatingTmdb,
             RatingImdb = t.RatingImdb,
-            PosterUrl = ImgUrl(t.PosterPath, "w500"),
+            PosterUrl = ImgUrl(FirstNonEmpty(t.PosterLocal) ?? t.PosterPath, "w500"),
             RuntimeMin = t.RuntimeMin,
             Seasons = t.Seasons,
             // Описи: uk-режим uk → ru → en; ru-режим ru → uk → en (рішення власника 09.11/10.11;
@@ -136,7 +136,8 @@ public static class TitleMapper
     /// <summary>Шлях постера TMDB → URL; абсолютні URL (Jikan/AniList/Shikimori CDN) — як є.</summary>
     public static string? ImgUrl(string? path, string size) =>
         string.IsNullOrWhiteSpace(path) ? null
-        : path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path
+        : path.StartsWith("/api/img/posters/", StringComparison.Ordinal) ||
+          path.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? path
         : $"https://image.tmdb.org/t/p/{size}{path}";
 
     private static string? FirstNonEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
