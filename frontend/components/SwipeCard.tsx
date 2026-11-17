@@ -14,6 +14,7 @@ export default function SwipeCard({
   transition,
   overlay,
   onOpen,
+  background = false,
 }: {
   item: TitleCardType;
   transform: string;
@@ -21,6 +22,7 @@ export default function SwipeCard({
   // "like" | "dislike" — підсвітка під час drag.
   overlay?: "like" | "dislike" | null;
   onOpen: () => void;
+  background?: boolean;
 }) {
   const { t } = useI18n();
   const url = posterUrlFull(item.posterUrl);
@@ -38,7 +40,12 @@ export default function SwipeCard({
       <div className="relative h-full overflow-hidden rounded-3xl border border-line bg-panel shadow-2xl shadow-black/40 select-none">
         <div className="absolute inset-0 bg-panel-2">
           {/* UX-02: спільний постер-слот — заглушка з назвою, коли постера немає; 1 ретрай при 404 */}
-          <PosterImage src={url} title={item.title} eager />
+          <PosterImage
+            src={url}
+            title={item.title}
+            eager
+            fetchPriority={background ? "low" : "high"}
+          />
         </div>
 
         {/* Градієнт + підпис знизу */}

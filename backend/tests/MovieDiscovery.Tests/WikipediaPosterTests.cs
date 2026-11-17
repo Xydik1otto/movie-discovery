@@ -392,7 +392,7 @@ public class WikipediaPosterPgTests(ITestOutputHelper output)
         }
 
         var db = new MovieDiscoveryDbContext(new DbContextOptionsBuilder<MovieDiscoveryDbContext>()
-            .UseNpgsql(connStr).Options);
+            .UseNpgsql(connStr, npg => npg.UseVector()).Options);
         var svc = new WikipediaPosterService(
             new HttpClient(), db, Microsoft.Extensions.Options.Options.Create(new WikipediaPosterOptions()),
             Logs.Null<WikipediaPosterService>());
@@ -409,11 +409,17 @@ public class WikipediaPosterPgTests(ITestOutputHelper output)
                 await Exec(conn, $"DELETE FROM titles WHERE imdb_id LIKE '{ImdbPrefix}%'");
                 await Exec(conn, WikipediaPosterStaging.TruncateSql);
                 await Exec(conn, $"""
-                    INSERT INTO titles (type, title_en, year, imdb_id, poster_path) VALUES
-                    ('movie', 'PGT Null', 2001, '{ids[0]}', NULL),
-                    ('movie', 'PGT Empty', 2002, '{ids[1]}', ''),
-                    ('movie', 'PGT Valid', 2003, '{ids[2]}', '/tmdb_valid.jpg'),
-                    ('movie', 'PGT Null NoUrl', 2004, '{ids[3]}', NULL);
+                    INSERT INTO titles (type, title_en, year, imdb_id, poster_path,
+                        countries, genres, keywords, actors, popularity, created_at, updated_at)
+                    SELECT 'movie', title_en, year, imdb_id, poster_path,
+                        ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[],
+                        0, now(), now()
+                    FROM (VALUES
+                        ('PGT Null', 2001, '{ids[0]}', NULL),
+                        ('PGT Empty', 2002, '{ids[1]}', ''),
+                        ('PGT Valid', 2003, '{ids[2]}', '/tmdb_valid.jpg'),
+                        ('PGT Null NoUrl', 2004, '{ids[3]}', NULL)
+                    ) AS fixture(title_en, year, imdb_id, poster_path);
                     """);
             }
 

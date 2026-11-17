@@ -35,6 +35,7 @@ export default function PosterImage({
   title,
   alt,
   eager = false,
+  fetchPriority,
   compact = false,
   variant = "poster",
   imgClassName = "",
@@ -47,6 +48,7 @@ export default function PosterImage({
   alt?: string;
   /** loading="eager" для першого екрана (TitleCard), інакше lazy. */
   eager?: boolean;
+  fetchPriority?: "high" | "low";
   /** Міні-слоти (thumbnail-и): менші іконка/текст заглушки. */
   compact?: boolean;
   /** Форма слота: "poster" (2:3) або "backdrop" (16:9, hero). */
@@ -189,6 +191,7 @@ export default function PosterImage({
           src={bustedUrl}
           alt={alt ?? title}
           loading={eager ? "eager" : "lazy"}
+          fetchPriority={fetchPriority}
           decoding="async"
           draggable={false}
           onError={handleError}

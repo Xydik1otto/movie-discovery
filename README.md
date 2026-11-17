@@ -7,7 +7,7 @@
 ## Стек
 
 - **Backend:** ASP.NET Core 8 (C#), EF Core, PostgreSQL 16 + pgvector
-- **Frontend:** Next.js 15 + TypeScript + Tailwind (+ **PWA**: встановлюється на Android/iPhone як «ретранслятор» — manifest, service worker, офлайн-сторінка)
+- **Frontend:** Next.js 16 + TypeScript + Tailwind (+ **PWA**: встановлюється на Android/iPhone як «ретранслятор» — manifest, service worker, офлайн-сторінка)
 - **Бот:** Telegram.Bot (C#), long polling
 - **Дані:** TMDB (ядро) + OMDb + Wikidata + власні скрапери (Е3)
 - **Семантика:** локальні embeddings через Ollama (bge-m3, uk/en) — безкоштовно
@@ -36,6 +36,17 @@ cd frontend && npm install && npm run dev                    # :3000 (або -p 
 # 4. Бот (опційно, потрібен TG_BOT_TOKEN і BOT_API_KEY для авторизації запитів до API)
 cd bot && dotnet run
 ```
+
+## Публічне розгортання
+
+Підтримуються два варіанти.
+
+- Повний стек на Linux VPS або власному сервері через Tailscale Funnel — [покрокова інструкція](deploy/TAILSCALE_VPS_UK.md), профіль `docker-compose.funnel.yml`.
+- Next.js frontend на Cloudflare Workers через OpenNext, з ASP.NET API, PostgreSQL і MinIO на сервері — [інструкція Workers](deploy/CLOUDFLARE_WORKERS_UK.md).
+
+Для Workers Builds із коренем `/` залиште deploy command `npx wrangler deploy`. Кореневий `wrangler.jsonc` встановлює залежності фронтенду й виконує OpenNext build. Runtime-параметри API налаштовуються в Cloudflare після підготовки сервера.
+
+Перевірки оновлення від 17.11.2026 включають 1129 backend tests, 169 bot tests, production frontend build і browser smoke на ізольованій копії БД. Поточні перевірки Workers наведено в інструкції розгортання.
 
 ## Структура
 

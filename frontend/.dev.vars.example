@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local Workers preview. Configure real runtime values
+# in the Cloudflare dashboard before testing the deployed API.
+API_SERVER_URL=https://REPLACE_API_ORIGIN.ts.net
+API_PROXY_SHARED_SECRET=REPLACE_WITH_THE_SAME_SECRET_AS_VPS_WEB

@@ -24,18 +24,20 @@ public sealed class BotUpdateHandler
     private readonly ApiClient _api;
     private readonly ChatState _state;
     private readonly Action<string> _log;
+    private readonly TunnelService _tunnel;
 
-    public BotUpdateHandler(ITelegramSender sender, ApiClient api, ChatState state, Action<string>? log = null)
+    public BotUpdateHandler(ITelegramSender sender, ApiClient api, ChatState state, Action<string>? log = null, TunnelService? tunnel = null)
     {
         _tg = sender;
         _api = api;
         _state = state;
         _log = log ?? (_ => { });
+        _tunnel = tunnel ?? new TunnelService();
     }
 
     /// <summary>Конструктор для прод-використання з реальним Telegram-клієнтом.</summary>
-    public BotUpdateHandler(ITelegramBotClient botClient, ApiClient api, ChatState state, Action<string>? log = null)
-        : this(new TelegramSender(botClient), api, state, log)
+    public BotUpdateHandler(ITelegramBotClient botClient, ApiClient api, ChatState state, Action<string>? log = null, TunnelService? tunnel = null)
+        : this(new TelegramSender(botClient), api, state, log, tunnel)
     {
     }
 
@@ -619,18 +621,23 @@ public sealed class BotUpdateHandler
     // ------------------------------------------------------------------ /tunnel
 
     /// <summary>
-    /// /tunnel: свіжий публічний URL quick-тунелю (особистий застосунок — доступно будь-якому
-    /// юзеру бота, без адмін-перевірки). URL беремо з логу тунелю, живість перевіряємо через
-    /// /api/health; мертвий/нема URL → docker restart контейнера tunnel і повторна спроба,
-    /// інакше — чесне повідомлення про збій.
+    /// /tunnel повертає зареєстрований URL і результат перевірки /api/health.
+    /// Без FRONT_PUBLIC_URL зберігається старий сценарій quick-тунелю з перезапуском.
     /// </summary>
     private async Task RunTunnelAsync(long chatId, string lang, CancellationToken ct)
     {
-        var tunnel = new TunnelService();
+        var tunnel = _tunnel;
         var url = tunnel.ReadUrl();
         if (url is not null && await tunnel.IsHealthyAsync(url, ct))
         {
-            await SendText(chatId, Strings.F(lang, "tunnel.ok", url), null, ct);
+            await SendText(chatId, Strings.F(lang, tunnel.IsRegistered ? "tunnel.registeredOk" : "tunnel.ok", TextFormatter.Escape(url)), null, ct);
+            return;
+        }
+
+        if (tunnel.IsRegistered)
+        {
+            _log("Tunnel: registered URL health check failed");
+            await SendText(chatId, Strings.F(lang, "tunnel.registeredFail", TextFormatter.Escape(url)), null, ct);
             return;
         }
 

@@ -105,6 +105,34 @@ public class BotUpdateHandlerTests
             },
         };
 
+    [Theory]
+    [InlineData(200, "tunnel.registeredOk")]
+    [InlineData(503, "tunnel.registeredFail")]
+    [InlineData(0, "tunnel.registeredFail")]
+    public async Task Tunnel_RegisteredUrl_ReturnsStableLink_WithoutRestart(int status, string messageKey)
+    {
+        using var healthHandler = new StubHandler(_ => status == 0
+            ? throw new HttpRequestException("DNS resolution failed")
+            : Json(status, "{}"));
+        using var health = new HttpClient(healthHandler);
+        var tunnel = new TunnelService("https://kino.example.test/", health);
+        var sender = new FakeSender();
+        using var apiHandler = new StubHandler(_ => Json(200, "{}"));
+        var api = new ApiClient(new HttpClient(apiHandler) { BaseAddress = new Uri("http://api.test/") }, "key");
+        var log = new List<string>();
+        var handler = new BotUpdateHandler(sender, api, new ChatState(), log.Add, tunnel);
+
+        await handler.HandleUpdateAsync(null!, TextUpdate("/tunnel"), CancellationToken.None);
+
+        var sent = Assert.Single(sender.Sent);
+        Assert.Equal(Strings.F("uk", messageKey, "https://kino.example.test"), sent.Text);
+        Assert.Equal("https://kino.example.test/api/health", Assert.Single(healthHandler.Requests).RequestUri!.AbsoluteUri);
+        Assert.DoesNotContain(log, line => line.Contains("restart", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(apiHandler.Requests);
+        Assert.False(tunnel.RestartTunnel());
+        Assert.Equal("https://kino.example.test", tunnel.ReadUrl());
+    }
+
     private static Update CallbackUpdate(string data, long userId = UserA)
         => new()
         {

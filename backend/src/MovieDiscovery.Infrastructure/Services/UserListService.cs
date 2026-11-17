@@ -120,6 +120,16 @@ public sealed class UserListService(MovieDiscoveryDbContext db, TasteProfileServ
         return true;
     }
 
+    public Task<Dictionary<string, int>> CountsAsync(string userId, CancellationToken ct = default)
+    {
+        var profileIds = db.UserProfiles.Where(p => p.UserId == userId).Select(p => p.ProfileId);
+        return db.ListEntries
+            .Where(l => profileIds.Contains(l.ProfileId))
+            .GroupBy(l => l.Kind)
+            .Select(g => new { Kind = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(row => row.Kind, row => row.Count, ct);
+    }
+
     /// <summary>Статистика списків юзера (FR-17): watchlist («Хочу глянути») + watched/read/liked/disliked
     /// + watching/reading/on_hold/dropped (паритет статусів трекерів), avgRating, topGenres.</summary>
     public async Task<ListStats> StatsAsync(string userId, CancellationToken ct = default)

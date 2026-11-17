@@ -70,7 +70,9 @@ function markDown() {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  init?.signal?.throwIfAborted();
   if (isApiMarkedDown()) throw new ApiUnavailableError();
+  const timeout = AbortSignal.timeout(25_000);
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
@@ -82,13 +84,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
       // Пошук/агрегати по 2.8 млн рядків під навантаженням масових синків можуть
       // легально мислити 10-20 с; 8 с давало фальшивий «API недоступний» + демо-дані.
-      // Виклик із власним signal (скасування в useEffect) — таймаут не застосовується.
-      signal: init?.signal ?? AbortSignal.timeout(25_000),
+      signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
     });
   } catch (e) {
     // Скасування ззовні (unmount компонента) — не «API недоступний»: прокидаємо далі,
     // щоб UI тихо прибрав запит (markDown() чіпати не можна).
-    if (init?.signal && e instanceof DOMException && e.name === "AbortError") throw e;
+    if (init?.signal?.aborted) throw e;
     markDown();
     throw new ApiUnavailableError();
   }
@@ -132,6 +133,7 @@ export async function getHealth(): Promise<HealthResponse | null> {
 export async function searchTitles(
   p: SearchParams,
   lang: Lang,
+  signal?: AbortSignal,
 ): Promise<Paged<TitleCard>> {
   const path =
     `/api/search${qs({
@@ -170,7 +172,7 @@ export async function searchTitles(
       // Бекенд валідує лише "true"/"false" — "1" давало 400 на кожну сторінку >1.
       omitTotal: p.omitTotal ? "true" : undefined,
     })}&lang=${lang}`;
-  return request<Paged<TitleCard>>(path);
+  return request<Paged<TitleCard>>(path, { signal });
 }
 
 export async function getTitle(id: number | string, lang: Lang): Promise<TitleDetail> {
@@ -451,6 +453,10 @@ export async function postOnboardingAnswers(answers: OnboardingAnswers): Promise
 export async function getListStats(): Promise<ListStats> {
   const r = await request<ListStats | null>("/api/lists/stats");
   return r ?? {};
+}
+
+export function getListCounts(signal?: AbortSignal): Promise<Partial<Record<ListKind, number>>> {
+  return request("/api/lists/counts", { signal });
 }
 
 // MD-04: POST /api/lists/migrate-guest. CR-03: відповідь містить per-entry статуси

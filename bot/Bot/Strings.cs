@@ -26,7 +26,7 @@ public static class Strings
             "/watchlist [сторінка] — список «Хочу подивитись»\n" +
             "/watched [сторінка] — список «Переглянуте»\n" +
             "/lang uk|en — мова інтерфейсу\n" +
-            "/tunnel — свіжий публічний URL (перезапускає тунель, якщо мертвий)\n\n" +
+            "/tunnel — публічне посилання та перевірка доступності сайту\n\n" +
             "У результатах пошуку: ➕ — додати в «Хочу подивитись», ✅ — у «Переглянуте».\n" +
             "Можна просто надіслати назву без команди — виконаю пошук.",
 
@@ -115,6 +115,10 @@ public static class Strings
             "🌐 Публічний URL застосунку:\n{0}\n\n" +
             "URL змінюється після кожного перезапуску тунелю — старі посилання не працюють.",
         ["tunnel.restarting"] = "🔁 Тунель мертвий — перезапускаю контейнер tunnel, це до ~30 с…",
+        ["tunnel.registeredOk"] = "🌐 Публічне посилання на застосунок:\n{0}\n\n✅ Сайт доступний.",
+        ["tunnel.registeredFail"] =
+            "🌐 Публічне посилання на застосунок:\n{0}\n\n" +
+            "⚠️ Перевірка доступності сайту завершилась помилкою. Адміністратору потрібно перевірити сервер і Cloudflare Tunnel.",
         ["tunnel.fail"] =
             "🚫 Не вдалося підняти тунель навіть після перезапуску.\n" +
             "Подивіться логи: <code>docker compose logs tunnel</code>",
@@ -156,7 +160,7 @@ public static class Strings
             "/watchlist [page] — Watchlist\n" +
             "/watched [page] — Watched\n" +
             "/lang uk|en — interface language\n" +
-            "/tunnel — fresh public URL (restarts the tunnel when it's down)\n\n" +
+            "/tunnel — public link and website availability check\n\n" +
             "In search results: ➕ — add to Watchlist, ✅ — to Watched.\n" +
             "You can just send a title without a command — I'll search it.",
 
@@ -245,6 +249,10 @@ public static class Strings
             "🌐 Public application URL:\n{0}\n\n" +
             "The URL changes on every tunnel restart — old links stop working.",
         ["tunnel.restarting"] = "🔁 The tunnel is down — restarting the tunnel container, up to ~30 s…",
+        ["tunnel.registeredOk"] = "🌐 Public application link:\n{0}\n\n✅ The website is available.",
+        ["tunnel.registeredFail"] =
+            "🌐 Public application link:\n{0}\n\n" +
+            "⚠️ The website availability check failed. An administrator should check the server and Cloudflare Tunnel.",
         ["tunnel.fail"] =
             "🚫 Couldn't bring the tunnel up even after a restart.\n" +
             "Check the logs: <code>docker compose logs tunnel</code>",

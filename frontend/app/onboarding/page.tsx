@@ -79,16 +79,21 @@ export default function OnboardingPage() {
       setOptions([]);
       return;
     }
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
+        const r = await guardedSearch({ q, pageSize: 8, page: 1, omitTotal: true }, lang, controller.signal);
+        if (controller.signal.aborted) return;
         setOptions(r.data.items);
         setOpen(true);
       } catch {
         // помилки автокомпліту не блокуємо
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query, lang]);
 
   useEffect(() => {
@@ -202,6 +207,15 @@ export default function OnboardingPage() {
 
   const progress = totalSteps > 0 ? Math.min(100, ((step + 1) / totalSteps) * 100) : 0;
 
+  const addFavorite = (item: TitleCard) => {
+    if (favorites.length >= MAX_FAVORITES) return;
+    if (favorites.some((f) => f.id === item.id)) return;
+    setFavorites((prev) => [...prev, item]);
+    setQuery("");
+    setOptions([]);
+    setOpen(false);
+  };
+
   // Спільний пошуковий бокс улюблених тайтлів (кроки 8–10 і фінальний крок 11):
   // живе автодоповнення з постерами; Enter додає першу підказку.
   const searchBox = (
@@ -290,15 +304,6 @@ export default function OnboardingPage() {
         ))}
       </div>
     ) : null;
-
-  const addFavorite = (item: TitleCard) => {
-    if (favorites.length >= MAX_FAVORITES) return;
-    if (favorites.some((f) => f.id === item.id)) return;
-    setFavorites((prev) => [...prev, item]);
-    setQuery("");
-    setOptions([]);
-    setOpen(false);
-  };
 
   return (
     <div className="mx-auto max-w-2xl">

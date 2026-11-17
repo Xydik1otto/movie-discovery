@@ -1,0 +1,38 @@
+# Tailscale runs on the Linux host and proxies HTTPS to 127.0.0.1:3001.
+name: moviediscovery
+
+services:
+  db:
+    extends:
+      file: docker-compose.server.yml
+      service: db
+    stop_grace_period: 60s
+
+  minio:
+    extends:
+      file: docker-compose.server.yml
+      service: minio
+    stop_grace_period: 30s
+
+  api:
+    extends:
+      file: docker-compose.server.yml
+      service: api
+    environment:
+      MD_TRUSTED_NETWORKS: ${APP_NETWORK_SUBNET:-172.29.87.0/24},127.0.0.0/8,::1/128
+
+  web:
+    extends:
+      file: docker-compose.server.yml
+      service: web
+
+  bot:
+    extends:
+      file: docker-compose.server.yml
+      service: bot
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${APP_NETWORK_SUBNET:-172.29.87.0/24}

@@ -272,8 +272,9 @@ function HomePageInner() {
     serializeHomeParams(init.applied, init.page) === "" ? readCatalogCache(lang) : null,
   );
   const fetchPage = useCallback(
-    ({ page: pg, omitTotal }: FetchPageArgs) =>
-      guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE, omitTotal }, lang).then((r) => {
+    ({ page: pg, omitTotal, signal }: FetchPageArgs) =>
+      guardedSearch({ ...applied, page: pg, pageSize: PAGE_SIZE, omitTotal }, lang, signal).then((r) => {
+        signal.throwIfAborted();
         if (r.unavailable) {
           const e = new Error("api_unavailable");
           e.name = "ApiUnavailableError";
@@ -948,7 +949,7 @@ function HomePageInner() {
                 }`}
               >
                 {list.items.map((item, i) => (
-                  <TitleCard key={item.id} item={item} eager={i < PAGE_SIZE} />
+                  <TitleCard key={item.id} item={item} eager={i < 6} />
                 ))}
               </div>
               {list.busy && (

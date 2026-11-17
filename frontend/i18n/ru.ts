@@ -292,6 +292,11 @@ export const ru: Dict = {
   // --- FR-18: «Кинотека» (discover) ---
   "nav.discover": "Кинотека",
   "discover.title": "Кинотека",
+  "discover.lists.watchlist": "Запланировано",
+  "discover.lists.watching": "Смотрю",
+  "discover.lists.watched": "Просмотрено",
+  "discover.lists.on_hold": "Отложено",
+  "discover.lists.dropped": "Брошено",
   "discover.subtitle": "Свайпай: вправо — нравится, влево — нет. Или жми кнопки.",
   "discover.empty": "Ты уже всё посмотрел. Загляни позже — соберём новую подборку.",
   "discover.again": "Ещё подборку",

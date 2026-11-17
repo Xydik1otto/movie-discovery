@@ -1,4 +1,4 @@
-// Service Worker «ретранслятора»: мережа-перша з кеш-фолбеком.
+// Хешовані Next.js ресурси віддаємо з кешу, інші ресурси — мережа-перша.
 // Кешуємо лише статику (_next/static, іконки) і постери TMDB + навігації для офлайн-фолбеку.
 // /api/* НЕ кешуємо (живі дані). POST/інші методи не перехоплюємо.
 const CACHE = "mvdc-v1";
@@ -52,14 +52,21 @@ self.addEventListener("fetch", (event) => {
       url.pathname === "/manifest.webmanifest" ||
       url.pathname === "/favicon.ico");
   const isTmdbImage = url.hostname === "image.tmdb.org";
+  const isImmutable = url.origin === self.location.origin && url.pathname.startsWith("/_next/static/");
   if (!isNavigation && !isStatic && !isTmdbImage) return;
 
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
+      if (isImmutable) {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+      }
       try {
         const fresh = await fetch(req);
-        if (fresh && fresh.status === 200) await cache.put(req, fresh.clone());
+        if (fresh && fresh.status === 200) {
+          event.waitUntil(cache.put(req, fresh.clone()).catch(() => {}));
+        }
         return fresh;
       } catch (_) {
         const hit = await cache.match(req);

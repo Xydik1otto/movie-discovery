@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/auth";
 import {
@@ -115,10 +116,19 @@ function guestToItem(e: GuestEntry): ListItem {
 }
 
 export default function ListsPage() {
+  return (
+    <Suspense fallback={<LoadingSkeleton count={4} />}>
+      <ListsContent />
+    </Suspense>
+  );
+}
+
+function ListsContent() {
   const { t, lang } = useI18n();
   const { user, ready } = useAuth();
   const isGuest = ready && !user;
-  const [kind, setKind] = useState<ListKind>("watchlist");
+  const searchParams = useSearchParams();
+  const kind = TABS.find((tab) => tab === searchParams.get("kind")) ?? "watchlist";
   // Категорія всередині списку — ЛОКАЛЬНИЙ стан (без URL), скидається на
   // «Усі» при зміні вкладки kind.
   const [category, setCategory] = useState<ListCategoryId | "all">("all");
@@ -153,6 +163,8 @@ export default function ListsPage() {
 
   // Гостьові записи (усі kind) — для вкладок і локальної статистики.
   const [guestEntries, setGuestEntries] = useState<GuestEntry[]>([]);
+
+  useEffect(() => setCategory("all"), [kind]);
 
   useEffect(() => {
     if (!ready) return;
@@ -376,8 +388,11 @@ export default function ListsPage() {
         role="tab"
         aria-selected={kind === k}
         onClick={() => {
-          setKind(k);
-          setCategory("all"); // нова вкладка — категорія скидається на «Усі»
+          setCategory("all");
+          if (kind === k) return;
+          const params = new URLSearchParams(searchParams.toString());
+          params.set("kind", k);
+          window.history.pushState(null, "", `?${params}`);
         }}
         className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
           kind === k ? "bg-accent text-white" : "bg-panel text-mute hover:text-ink"
@@ -565,7 +580,7 @@ export default function ListsPage() {
         </section>
       )}
 
-      <div role="tablist" className="mb-4 flex gap-2">
+      <div role="tablist" className="mb-4 flex flex-wrap gap-2">
         {TABS.map((k) =>
           tabBtn(
             k,

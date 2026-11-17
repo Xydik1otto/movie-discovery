@@ -1,0 +1,18 @@
+{
+  "$schema": "./frontend/node_modules/wrangler/config-schema.json",
+  "name": "movie-discovery",
+  "main": "frontend/.open-next/worker.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "keep_vars": true,
+  "vars": {
+    "DEPLOYMENT_TARGET": "cloudflare"
+  },
+  "assets": {
+    "directory": "frontend/.open-next/assets",
+    "binding": "ASSETS"
+  },
+  "build": {
+    "command": "npm --prefix frontend ci --no-audit --no-fund && npm --prefix frontend run build:cloudflare"
+  }
+}

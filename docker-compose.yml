@@ -123,6 +123,8 @@ services:
       # Next проксіює на бекенд (rewrites) — працює за будь-яким доменом/тунелем.
       NEXT_PUBLIC_API_URL: ""
       API_SERVER_URL: http://api:5200
+      # Optional when a Cloudflare Workers frontend proxies to this VPS.
+      API_PROXY_SHARED_SECRET: ${API_PROXY_SHARED_SECRET:-}
     ports:
       - "${WEB_PORT:-3001}:3000"
     depends_on:

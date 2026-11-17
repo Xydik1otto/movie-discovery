@@ -317,6 +317,11 @@ export const en: Dict = {
   // --- FR-18: Cinema Shelf (discover) ---
   "nav.discover": "Cinema Shelf",
   "discover.title": "Cinema Shelf",
+  "discover.lists.watchlist": "Planned",
+  "discover.lists.watching": "Watching",
+  "discover.lists.watched": "Watched",
+  "discover.lists.on_hold": "On hold",
+  "discover.lists.dropped": "Dropped",
   "discover.subtitle": "Swipe: right — like it, left — not for me. Or use the buttons.",
   "discover.empty": "You’ve seen it all. Come back later — we’ll put together a new selection.",
   "discover.again": "Another round",

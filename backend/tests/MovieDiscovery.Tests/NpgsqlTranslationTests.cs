@@ -17,6 +17,13 @@ public class NpgsqlTranslationTests
             .Options);
 
     [Fact]
+    public void SearchFtsMigration_IsDiscovered()
+    {
+        using var db = CreateContext();
+        Assert.Contains("20261111000001_SearchFtsAndSortIndexes", db.Database.GetMigrations());
+    }
+
+    [Fact]
     public void Genres_Overlap_Translates()
     {
         using var db = CreateContext();
@@ -193,7 +200,8 @@ public class NpgsqlTranslationTests
             Q: "dune", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
             MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
             Status: null, Sort: "relevance", Page: 1, PageSize: 24);
-        var sql = svc.BuildFtsPopularityFetch(q, "dun:*", topN: true).Take(2002).ToQueryString();
+        var sql = SearchService.BuildFtsPopularityFetch(svc.BuildFtsQuery(q, "dun:*"), q.Sort, topN: true)
+            .Skip(24).Take(24).Select(r => r.Id).ToQueryString();
         var upper = sql.ToUpperInvariant();
 
         Assert.Contains("TITLE_SEARCH_MATCH", upper);
@@ -201,20 +209,21 @@ public class NpgsqlTranslationTests
         Assert.Contains("+ 0.0", upper);
         Assert.Contains("COALESCE", upper); // ThenByDescending(year ?? 0)
         Assert.Contains("LIMIT", upper);
+        Assert.Contains("OFFSET", upper);
     }
 
     [Fact]
     public void Search_Fts_PopularityFetch_Unsorted_HasNoOrderBy()
     {
-        // total ≤ FetchCap → фетчиться ВСІ збіги БЕЗ ORDER BY → Bitmap GIN без
-        // сортування; порядок сторінки будує C# — walk неможливий у принципі.
+        // Unsorted candidates supply both the capped count and the page sort keys.
         using var db = CreateContext();
         var svc = new SearchService(db);
         var q = new SearchQuery(
             Q: "dune", Type: "", Genres: [], YearFrom: null, YearTo: null, Country: null,
             MinRating: null, MaxRating: null, MinRuntime: null, MaxRuntime: null,
             Status: null, Sort: "relevance", Page: 1, PageSize: 24);
-        var sql = svc.BuildFtsPopularityFetch(q, "dun:*", topN: false).Take(2002).ToQueryString();
+        var sql = SearchService.BuildFtsPopularityFetch(svc.BuildFtsQuery(q, "dun:*"), q.Sort, topN: false)
+            .Take(2001).ToQueryString();
 
         Assert.Contains("TITLE_SEARCH_MATCH", sql.ToUpperInvariant());
         Assert.DoesNotContain("ORDER", sql.ToUpperInvariant());

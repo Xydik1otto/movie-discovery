@@ -48,7 +48,6 @@ export default function QuickSimilar({
   const [searchError, setSearchError] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   // Захист від гонок: відповіді застарілих запитів не застосовуються.
-  const seqRef = useRef(0);
 
   // Клік поза полем закриває дропдаун.
   useEffect(() => {
@@ -98,7 +97,6 @@ export default function QuickSimilar({
   useEffect(() => {
     const q = query.trim();
     if (q.length < MIN_QUERY) {
-      seqRef.current += 1; // інвалідуємо відповідь, що ще летить
       setOptions([]);
       setOpen(false);
       setNoResults(false);
@@ -106,13 +104,13 @@ export default function QuickSimilar({
       setSearchError(false);
       return;
     }
+    const ctl = new AbortController();
     const timer = setTimeout(async () => {
-      const seq = ++seqRef.current;
       setSearching(true);
       setSearchError(false);
       try {
-        const r = await searchTitles({ q, pageSize: 8, page: 1 }, lang);
-        if (seq !== seqRef.current) return;
+        const r = await searchTitles({ q, pageSize: 8, page: 1, omitTotal: true }, lang, ctl.signal);
+        if (ctl.signal.aborted) return;
         // FR-21: by-seeds резолвить внутрішні id — сидом може бути будь-який тайтл
         // каталогу (фільтр по tmdbId знімано: він обрізав 2.8 млн IMDb-рядків).
         const items = r.items ?? [];
@@ -121,16 +119,19 @@ export default function QuickSimilar({
         setOpen(true);
         setSearchError(false);
       } catch {
-        if (seq !== seqRef.current) return;
+        if (ctl.signal.aborted) return;
         setOptions([]);
         setOpen(false);
         setNoResults(false);
         setSearchError(true);
       } finally {
-        if (seq === seqRef.current) setSearching(false);
+        if (!ctl.signal.aborted) setSearching(false);
       }
     }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
   }, [query, lang]);
 
   const resetSuggestions = () => {

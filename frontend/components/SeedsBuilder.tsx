@@ -59,7 +59,6 @@ export default function SeedsBuilder({
   const [options, setOptions] = useState<TitleCardType[]>([]);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   // Клік поза полем закриває дропдаун.
   useEffect(() => {
@@ -77,12 +76,10 @@ export default function SeedsBuilder({
       setOptions([]);
       return;
     }
+    const ctl = new AbortController();
     const timer = setTimeout(async () => {
-      abortRef.current?.abort();
-      const ctl = new AbortController();
-      abortRef.current = ctl;
       try {
-        const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
+        const r = await guardedSearch({ q, pageSize: 8, page: 1, omitTotal: true }, lang, ctl.signal);
         if (!ctl.signal.aborted) {
           // FR-21: by-seeds резолвить внутрішні id — опції без обрізання по tmdbId.
           setOptions(r.data.items);
@@ -92,7 +89,10 @@ export default function SeedsBuilder({
         // помилки автокомпліту не блокуємо
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
   }, [query, lang]);
 
   const add = (item: TitleCardType) => {

@@ -68,6 +68,7 @@ export default function TitleCard({
     <div className="group">
       <Link
         href={`/title/${item.id}`}
+        prefetch={false}
         className="block overflow-hidden rounded-xl border border-line bg-panel transition-all hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-lg hover:shadow-accent/10"
       >
         <div className="relative aspect-[2/3] overflow-hidden bg-panel-2">

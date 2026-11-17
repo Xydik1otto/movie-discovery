@@ -1,0 +1,85 @@
+# Use this file by itself. It inherits application settings from the local stack.
+name: moviediscovery
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    extends:
+      file: docker-compose.yml
+      service: db
+    volumes:
+      - type: bind
+        source: ${PG_DATA_DIR:?Set PG_DATA_DIR to the selected server data disk}
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+    logging: *logging
+
+  minio:
+    extends:
+      file: docker-compose.yml
+      service: minio
+    image: moviediscovery-minio:${RELEASE_TAG:?Set the prepared release tag}
+    volumes:
+      - type: bind
+        source: ${MINIO_DATA_DIR:?Set MINIO_DATA_DIR to the selected server data disk}
+        target: /data
+        bind:
+          create_host_path: false
+    logging: *logging
+
+  api:
+    extends:
+      file: docker-compose.yml
+      service: api
+    image: movie-discovery-api:${RELEASE_TAG:?Set the prepared release tag}
+    environment:
+      FRONT_PUBLIC_URL: ${FRONT_PUBLIC_URL:?Set the public HTTPS URL}
+    volumes:
+      - type: bind
+        source: ${APP_KEYS_DIR:?Set APP_KEYS_DIR to persistent server storage}
+        target: /data/keys
+        bind:
+          create_host_path: false
+    logging: *logging
+
+  web:
+    extends:
+      file: docker-compose.yml
+      service: web
+    image: movie-discovery-web:${RELEASE_TAG:?Set the prepared release tag}
+    ports: !override
+      - "127.0.0.1:${WEB_PORT:-3001}:3000"
+    logging: *logging
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.3
+    container_name: moviediscovery-tunnel
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
+    secrets:
+      - tunnel_token
+    depends_on:
+      - web
+    restart: unless-stopped
+    logging: *logging
+
+  bot:
+    extends:
+      file: docker-compose.yml
+      service: bot
+    image: movie-discovery-bot:${RELEASE_TAG:?Set the prepared release tag}
+    environment:
+      FRONT_PUBLIC_URL: ${FRONT_PUBLIC_URL:?Set the public HTTPS URL}
+    volumes: !reset []
+    logging: *logging
+
+secrets:
+  tunnel_token:
+    file: ${CLOUDFLARE_TUNNEL_TOKEN_FILE:-/etc/movie-discovery/cloudflare-token}

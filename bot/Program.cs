@@ -50,7 +50,7 @@ if (string.IsNullOrWhiteSpace(config.Token))
 var api = new ApiClient(config.ApiUrl, config.BotApiKey);
 var state = new ChatState();
 var botClient = new TelegramBotClient(config.Token);
-var handler = new BotUpdateHandler(botClient, api, state, Log.Info);
+var handler = new BotUpdateHandler(botClient, api, state, Log.Info, new TunnelService(config.FrontPublicUrl));
 
 // Чекаємо валідний токен / зв'язок з Telegram — ретраї кожні 30 с, не падаємо.
 User? me = null;

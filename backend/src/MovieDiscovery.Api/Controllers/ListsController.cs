@@ -235,6 +235,16 @@ public sealed class ListsController(
     /// <summary>Максимум items у POST /api/lists/migrate-guest (захист від велетенського payload).</summary>
     internal const int MaxMigrateItems = 500;
 
+    [Authorize]
+    [HttpGet("counts")]
+    [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> Counts(CancellationToken ct)
+    {
+        if (!TryUserId(out var userId))
+            return Unauthorized(new { error = "unauthorized", message = "Потрібен вхід" });
+        return Ok(await userLists.CountsAsync(userId, ct));
+    }
+
     /// <summary>GET /api/lists/stats (FR-17): {watchlistCount, watchedCount, readCount, likedCount, dislikedCount,
     /// watchingCount, readingCount, onHoldCount, droppedCount, avgRating, topGenres} —
     /// нові лічильники — паритет статусів трекерів (Shikimori).</summary>

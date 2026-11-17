@@ -124,7 +124,7 @@ function CatalogInner({ kind }: { kind: CatalogKind }) {
   // studio поки НЕ летить у пошук (бекенд /api/search не приймає studio) і не
   // входить у resetKey — значення живе в URL, фільтр запрацює з підтримкою бекенда.
   const fetchPage = useCallback(
-    ({ page: pg, omitTotal }: FetchPageArgs) =>
+    ({ page: pg, omitTotal, signal }: FetchPageArgs) =>
       searchTitles(
         {
           type: kind,
@@ -144,6 +144,7 @@ function CatalogInner({ kind }: { kind: CatalogKind }) {
           omitTotal,
         },
         lang,
+        signal,
       ),
     [kind, format, status, genres, country, years, rating, runtime, sort, lang],
   );
@@ -418,7 +419,7 @@ function CatalogInner({ kind }: { kind: CatalogKind }) {
             }`}
           >
             {list.items.map((item, i) => (
-              <TitleCard key={item.id} item={item} eager={i < PAGE_SIZE} />
+              <TitleCard key={item.id} item={item} eager={i < 6} />
             ))}
           </div>
           {list.busy && (

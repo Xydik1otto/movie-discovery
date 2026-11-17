@@ -50,9 +50,11 @@ export default function StudioPanel({
       setOptions([]);
       return;
     }
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const r = await guardedSearch({ q, pageSize: 8, page: 1 }, lang);
+        const r = await guardedSearch({ q, pageSize: 8, page: 1, omitTotal: true }, lang, controller.signal);
+        if (controller.signal.aborted) return;
         // FR-21: by-seeds резолвить внутрішні id — опції без обрізання по tmdbId.
         setOptions(r.data.items);
         setOpen(true);
@@ -60,7 +62,10 @@ export default function StudioPanel({
         // помилки автокомпліту не блокують студію
       }
     }, 350);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query, lang]);
 
   const add = (item: TitleCardType) => {

@@ -315,6 +315,11 @@ export const uk = {
   // --- FR-18: «Кінотека» (discover) ---
   "nav.discover": "Кінотека",
   "discover.title": "Кінотека",
+  "discover.lists.watchlist": "Заплановано",
+  "discover.lists.watching": "Дивлюся",
+  "discover.lists.watched": "Переглянуто",
+  "discover.lists.on_hold": "Відкладено",
+  "discover.lists.dropped": "Кинуто",
   "discover.subtitle": "Свайпай: вправо — подобається, вліво — ні. Або тисни кнопки.",
   "discover.empty": "Ти вже все переглянув. Завітай пізніше — зробимо нову добірку.",
   "discover.again": "Ще добірку",

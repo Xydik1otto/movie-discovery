@@ -80,9 +80,17 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         if (tsQuery is not null && db.Database.IsNpgsql())
         {
             var ftsQuery = BuildFtsQuery(q, tsQuery);
+            var popularitySort = q.Sort is not ("rating" or "imdb" or "votes" or "year");
+            // For small popularity searches, one capped projection supplies both the total
+            // and the sort keys. Keeping it unordered lets PostgreSQL use the FTS GIN index.
+            var candidates = popularitySort && !q.OmitTotal
+                ? await BuildFtsPopularityFetch(ftsQuery, q.Sort, topN: false)
+                    .Take(CountCap + 1)
+                    .ToListAsync(ct)
+                : null;
             var ftsTotal = q.OmitTotal
                 ? -1
-                : await ftsQuery.Take(CountCap + 1).CountAsync(ct);
+                : candidates?.Count ?? await ftsQuery.Take(CountCap + 1).CountAsync(ct);
 
             if (ftsTotal != 0)
             {
@@ -94,7 +102,7 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
                     page = ftsMaxPage;
 
                 List<Title> ftsItems;
-                if (q.Sort is "rating" or "imdb" or "votes" or "year")
+                if (!popularitySort)
                 {
                     // COALESCE-ключі сортування не-sargable: popularity-walk неможливий,
                     // звичайний SQL Skip/Take як у Фазі B (семантика сортування точна —
@@ -107,17 +115,17 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
                 }
                 else
                 {
-                    // popularity-сімейство (popularity | relevance-дефолт) — walk-безпечний
-                    // C#-пайплайн (кроки 3a–3d ревізії).
-                    ftsItems = await FetchFtsPopularityPageAsync(q, tsQuery, page, pageSize, ftsTotal, ct);
+                    ftsItems = await FetchFtsPopularityPageAsync(
+                        ftsQuery, q.Sort, page, pageSize, ftsTotal <= CountCap ? candidates : null, ct);
                 }
 
-                return new SearchResult(ftsItems, ftsTotal, page, pageSize, capped && ftsTotal > CountCap);
+                // An empty page with omitted totals can mean either zero FTS matches or an
+                // offset beyond the last match. Only the first case should use substring search.
+                if (ftsTotal >= 0 || ftsItems.Count > 0 || await ftsQuery.AnyAsync(ct))
+                    return new SearchResult(ftsItems, ftsTotal, page, pageSize, ftsTotal > CountCap);
             }
 
-            // Фаза B: 0 FTS-збігів (або OmitTotal із порожнім фетчем неможливий —
-            // 0 рахується лише без OmitTotal) → ILIKE-фолбек зі своїм capped-рахунком
-            // (підрядки/часткові слова — семантика без змін).
+            // Фаза B: 0 FTS-збігів → ILIKE-фолбек зі своїм capped-рахунком.
         }
 
         var query = BuildQuery(q);
@@ -137,6 +145,8 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             : MaxPages;
         if (page > maxPage)
             page = maxPage;
+        if (total == 0)
+            return new SearchResult([], total, page, pageSize);
 
         query = Sort(query, q.Sort);
 
@@ -202,25 +212,15 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
     /// окремим = ANY(ids) лише для pageSize рядків сторінки.</summary>
     internal sealed record FtsRow(int Id, double Popularity, int? Year);
 
-    /// <summary>Вікно фетча Фази A: CountCap(2000) + 2 — покриває увесь capped-total
-    /// (≤ 2001), тож не-sorted фетч гарантовано забирає ВСІ збіги.</summary>
-    internal const int FtsFetchCap = 2002;
-
     /// <summary>
-    /// Крок 3 ревізії Фази A (popularity-сімейство): walk-безпечний фетч (id, popularity, year).
-    /// topN=false (total ≤ FetchCap — фетчиться ВСІ збіги): предикат+фільтри БЕЗ OrderBy →
-    /// Bitmap GIN без сортування; порядок дає C#. topN=true (total невідомий — OmitTotal,
-    /// або завеликий): топ-N фетч з OrderByDescending(popularity + 0.0) — арифметика ламає
-    /// sargability ORDER BY → планер ЗАМУШЕНИЙ брати Bitmap+top-N-sort, popularity-walk
-    /// неможливий. ORDER BY дзеркалить гілку сортування (popularity → Id; relevance → Year).
-    /// internal — тест трансляції без БД (NpgsqlTranslationTests).
+    /// The unordered projection can use the FTS GIN index. For a database-sorted page, adding
+    /// 0.0 to the sort key prevents a popularity-index walk that evaluates FTS on every row.
     /// </summary>
-    internal IQueryable<FtsRow> BuildFtsPopularityFetch(SearchQuery q, string tsQuery, bool topN)
+    internal static IQueryable<FtsRow> BuildFtsPopularityFetch(IQueryable<Title> pred, string sort, bool topN)
     {
-        var pred = BuildFtsQuery(q, tsQuery);
         var ordered = !topN
             ? pred
-            : q.Sort == "popularity"
+            : sort == "popularity"
                 ? pred.OrderByDescending(t => t.Popularity + 0.0).ThenBy(t => t.Id)
                 : pred.OrderByDescending(t => t.Popularity + 0.0)
                     .ThenByDescending(t => t.Year ?? 0)
@@ -228,29 +228,23 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         return ordered.Select(t => new FtsRow(t.Id, t.Popularity, t.Year));
     }
 
-    /// <summary>Кроки 3c–3d: сторінка Фази A для popularity-сортувань. Сортування списку
-    /// id — у C# (дублює SQL-семантику гілок popularity: «popularity» → Pop DESC, Id ASC;
-    /// relevance-дефолт → + Year??0 DESC), слайс Skip/Take — у C#, повні сутності — одним
-    /// = ANY(ids) фетчем по PK у порядку pageIds.</summary>
+    /// <summary>Sort complete candidate sets in memory and ask PostgreSQL for the globally
+    /// ordered page when the total was capped or omitted. Hydrate only the selected titles.</summary>
     private async Task<List<Title>> FetchFtsPopularityPageAsync(
-        SearchQuery q, string tsQuery, int page, int pageSize, int total, CancellationToken ct)
+        IQueryable<Title> query, string sort, int page, int pageSize, List<FtsRow>? candidates, CancellationToken ct)
     {
-        var topN = total < 0 || total > FtsFetchCap;
-        var rows = await BuildFtsPopularityFetch(q, tsQuery, topN)
-            .Take(FtsFetchCap)
-            .ToListAsync(ct);
-
-        var ordered = q.Sort == "popularity"
-            ? rows.OrderByDescending(r => r.Popularity).ThenBy(r => r.Id)
-            : rows.OrderByDescending(r => r.Popularity)
-                .ThenByDescending(r => r.Year ?? 0)
-                .ThenBy(r => r.Id);
-
-        var pageIds = ordered
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(r => r.Id)
-            .ToList();
+        var offset = (page - 1) * pageSize;
+        var pageIds = candidates is null
+            ? await BuildFtsPopularityFetch(query, sort, topN: true)
+                .Skip(offset)
+                .Take(pageSize)
+                .Select(r => r.Id)
+                .ToListAsync(ct)
+            : OrderFtsCandidates(candidates, sort)
+                .Skip(offset)
+                .Take(pageSize)
+                .Select(r => r.Id)
+                .ToList();
         if (pageIds.Count == 0)
             return [];
 
@@ -259,7 +253,15 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
             .AsNoTracking()
             .Where(t => pageIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, ct);
-        return pageIds.Select(id => byId[id]).ToList();
+        return pageIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+    }
+
+    private static IOrderedEnumerable<FtsRow> OrderFtsCandidates(IEnumerable<FtsRow> candidates, string sort)
+    {
+        var byPopularity = candidates.OrderByDescending(r => r.Popularity);
+        return sort == "popularity"
+            ? byPopularity.ThenBy(r => r.Id)
+            : byPopularity.ThenByDescending(r => r.Year ?? 0).ThenBy(r => r.Id);
     }
 
     /// <summary>Спільні фільтри обох фаз (type/genres/years/country/rating/runtime/status/

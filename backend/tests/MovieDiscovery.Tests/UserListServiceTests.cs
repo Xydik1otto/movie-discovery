@@ -83,6 +83,30 @@ public class UserListServiceTests
     }
 
     [Fact]
+    public async Task Counts_Groups_Only_The_Current_Users_Entries()
+    {
+        var (db, taste, lists, _) = New(nameof(Counts_Groups_Only_The_Current_Users_Entries));
+        var own = await taste.ResolveAsync("own");
+        var other = await taste.ResolveAsync("other");
+        db.Titles.AddRange(NewTitle(1, []), NewTitle(2, []));
+        db.ListEntries.AddRange(
+            new ListEntry { ProfileId = own.ProfileId, TitleId = 1, Kind = ListKinds.Watchlist },
+            new ListEntry { ProfileId = own.ProfileId, TitleId = 2, Kind = ListKinds.Watchlist },
+            new ListEntry { ProfileId = own.ProfileId, TitleId = 2, Kind = ListKinds.Watched },
+            new ListEntry { ProfileId = other.ProfileId, TitleId = 1, Kind = ListKinds.Watchlist },
+            new ListEntry { ProfileId = other.ProfileId, TitleId = 2, Kind = ListKinds.Dropped });
+        await db.SaveChangesAsync();
+
+        var counts = await lists.CountsAsync("own");
+
+        Assert.Equal(2, counts.Count);
+        Assert.Equal(2, counts[ListKinds.Watchlist]);
+        Assert.Equal(1, counts[ListKinds.Watched]);
+        Assert.Empty(await lists.CountsAsync("missing"));
+        Assert.Equal(2, await db.UserProfiles.CountAsync());
+    }
+
+    [Fact]
     public async Task Stats_Splits_Watched_And_Read_Counters()
     {
         // Дефект хвилі-1 (2): statsAPI рахував watched+read разом у watchedCount —

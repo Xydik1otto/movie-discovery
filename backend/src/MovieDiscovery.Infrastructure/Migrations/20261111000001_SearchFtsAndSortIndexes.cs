@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using MovieDiscovery.Infrastructure.Persistence;
 
 #nullable disable
 
@@ -16,6 +18,8 @@ namespace MovieDiscovery.Infrastructure.Migrations
     /// Усі об'єкти створюються idempotentно (IF NOT EXISTS / OR REPLACE) —
     /// безпечний повторний прогін на БД, де індекси вже створені вручну CONCURRENTLY.
     /// </summary>
+    [DbContext(typeof(MovieDiscoveryDbContext))]
+    [Migration("20261111000001_SearchFtsAndSortIndexes")]
     public partial class SearchFtsAndSortIndexes : Migration
     {
         /// <inheritdoc />

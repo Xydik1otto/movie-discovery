@@ -19,6 +19,7 @@ import SwipeCard from "@/components/SwipeCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import DiscoverListLinks from "@/components/DiscoverListLinks";
 
 const BATCH = 10;
 const REFILL_AT = 3;
@@ -38,9 +39,11 @@ export default function DiscoverPage() {
   const [mode, setMode] = useState<DiscoverMode | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [canRefill, setCanRefill] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState(false);
   const [actionError, setActionError] = useState(false);
+  const [listRevision, setListRevision] = useState(0);
 
   // Drag-стейт (одна активна картка = cards[index]).
   const [drag, setDrag] = useState<{ x: number; y: number; active: boolean }>({
@@ -66,6 +69,7 @@ export default function DiscoverPage() {
       try {
         const r = await guardedDiscover(lang, [...seenIds.current], BATCH);
         const fresh = (r.data.items ?? []).filter((c) => !seenIds.current.has(c.id));
+        setCanRefill(fresh.length > 0);
         for (const c of fresh) seenIds.current.add(c.id);
         setCards((prev) => (first ? fresh : [...prev, ...fresh]));
         setMode(r.data.mode ?? null);
@@ -76,6 +80,7 @@ export default function DiscoverPage() {
           indexRef.current = 0;
         }
       } catch (e) {
+        setCanRefill(false);
         // Cookie протух → на вхід, далі повернемось на /discover.
         if (e instanceof ApiError && e.status === 401) {
           router.replace("/login?needLogin=1&next=/discover");
@@ -107,7 +112,7 @@ export default function DiscoverPage() {
 
   // Нескінченний стек: добираємо, коли до кінця колоди лишилось <REFILL_AT.
   useEffect(() => {
-    if (loading || loadingMore || error) return;
+    if (loading || loadingMore || error || !canRefill) return;
     const remaining = cards.length - index;
     if (remaining < REFILL_AT && !fetchingMore.current) {
       fetchingMore.current = true;
@@ -115,7 +120,7 @@ export default function DiscoverPage() {
         fetchingMore.current = false;
       });
     }
-  }, [cards.length, index, loading, loadingMore, error, fetchBatch]);
+  }, [cards.length, index, loading, loadingMore, error, canRefill, fetchBatch]);
 
   // Віконний трім (UX-01): після кількох злетів зрізаємо пройдений префікс колоди.
   // Зсув узгоджений і для cards (slice(index)), і для index (→0): cards[0] = та сама
@@ -146,10 +151,16 @@ export default function DiscoverPage() {
       if (dir) setExit({ id: current.id, dir });
       // Демо-режим — лише локальний перехід, POST не смикаємо.
       if (!unavailable) {
-        postDiscoverAction(current.id, action).catch(() => {
-          // Збій одиночної дії не ламає стек — покажемо ноту.
-          setActionError(true);
-        });
+        postDiscoverAction(current.id, action)
+          .then(() => {
+            if (action === "watchlist" || action === "watched") {
+              setListRevision((revision) => revision + 1);
+            }
+          })
+          .catch(() => {
+            // Збій одиночної дії не ламає стек — покажемо ноту.
+            setActionError(true);
+          });
       }
       window.setTimeout(advance, dir ? 260 : 0);
     },
@@ -230,6 +241,8 @@ export default function DiscoverPage() {
         )}
       </div>
 
+      <DiscoverListLinks userId={user?.id ?? null} revision={listRevision} />
+
       {unavailable && <ApiBanner />}
       {actionError && (
         <p className="mb-3 text-sm text-amber-300">{t("common.error")}</p>
@@ -279,7 +292,7 @@ export default function DiscoverPage() {
                   }}
                   className="absolute inset-x-0 bottom-0 top-0 mx-auto max-w-sm"
                 >
-                  <SwipeCard item={c} transform="" transition onOpen={() => {}} />
+                  <SwipeCard item={c} transform="" transition onOpen={() => {}} background />
                 </div>
               ))}
 

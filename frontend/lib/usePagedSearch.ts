@@ -7,10 +7,7 @@
 // • total рахується на page=1 і кешується per resetKey; сторінки >1 летять з
 //   omitTotal=1 — бекенд пропускає дорогий COUNT і повертає total=-1 (невідомо),
 //   хук підставляє кешоване значення. Порожній кеш → перший запит завжди з count.
-// • Stale-guard: лічильник запитів + AbortController — застаріла повільна
-//   відповідь не перезаписує свіжу (guard), а новий запит скасовує попередній
-//   (abort; викликач може прокинути signal у fetch — api-шар наразі таймаутить
-//   сам, тому скасування гарантує щонайменше відкид результату).
+// • Лічильник запитів і AbortController захищають від застарілих відповідей.
 // • Depth-cap синхронний із бекендом (SearchService.MaxPages): глибші сторінки
 //   не пропонуються, кліпнута відповідь бекенда (page < запитаної) приймається.
 // • Зміна resetKey (фільтри/сортування/запит/мова) → скидає page=1, гасить
@@ -141,8 +138,10 @@ export function usePagedSearch<T>(
   const prefetchInflightRef = useRef(new Map<string, Set<number>>());
   const fetchRef = useRef(fetchPage);
   const pageRef = useRef(page);
-  fetchRef.current = fetchPage;
-  pageRef.current = page;
+  useEffect(() => {
+    fetchRef.current = fetchPage;
+    pageRef.current = page;
+  }, [fetchPage, page]);
   // «Щойно змінилися фільтри» — наступний прогін fetch-ефекту пропускаємо,
   // щоб сторінка зі СТАРИМ номером не полетіла з новими фільтрами (баг хвилі-1).
   const pendingResetRef = useRef(false);
@@ -228,17 +227,17 @@ export function usePagedSearch<T>(
     setError(false);
     fetchPage({ page, omitTotal, signal: ac.signal })
       .then((r) => {
-        if (reqRef.current !== myReq) return;
+        if (ac.signal.aborted || reqRef.current !== myReq) return;
         applyPaged(r, page);
       })
       .catch((e) => {
-        if (reqRef.current !== myReq) return;
+        if (ac.signal.aborted || reqRef.current !== myReq) return;
         if (isUnavailable(e)) setUnavailable(true);
         else setError(true);
         setFirstLoad(false);
       })
       .finally(() => {
-        if (reqRef.current !== myReq) return;
+        if (ac.signal.aborted || reqRef.current !== myReq) return;
         setBusy(false);
       });
 
@@ -317,8 +316,7 @@ export function usePagedSearch<T>(
         // Бекенд може кліпнути сторінку (depth-cap) — кешуємо під його page.
         perKey.set(r.page >= 1 ? r.page : target, { entry: r, at: Date.now() });
         prunePageCache(pageCacheRef.current);
-        // Паралельне прогрівання зображень по posterUrl перших 20 (дедуп усередині).
-        warmPosterImages(r.items);
+        warmPosterImages(r.items, 6);
       })
       .catch(() => {
         // Тихо: префетч — оптимізація, помилку показувати не можна (немає UI-слота).

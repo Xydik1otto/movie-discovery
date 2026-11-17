@@ -535,7 +535,7 @@ public class Program
                     await db.Database.MigrateAsync();
                 await DbSeeder.SeedDefaultProfileAsync(db);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!app.Environment.IsProduction())
             {
                 Console.Error.WriteLine($"[startup] БД недоступна — API стартує без міграцій: {ex.Message}");
             }

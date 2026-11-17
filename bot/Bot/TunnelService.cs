@@ -4,9 +4,8 @@ using System.Text.RegularExpressions;
 namespace MovieDiscovery.Bot;
 
 /// <summary>
-/// Логіка команди /tunnel: дістати останній URL quick-тунелю з логу (спільний volume
-/// tunnel-state із сервісом tunnel), перевірити живість через /api/health і за потреби
-/// перезапустити контейнер tunnel через docker-сокет (єдиний docker-дозвіл бота).
+/// Команда /tunnel перевіряє FRONT_PUBLIC_URL зареєстрованого тунелю.
+/// Без нього підтримується старий quick-тунель із логом і перезапуском контейнера.
 /// </summary>
 public sealed class TunnelService
 {
@@ -18,6 +17,22 @@ public sealed class TunnelService
 
     /// <summary>Таймаут HTTP-перевірки живості URL.</summary>
     public static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(5);
+
+    private static readonly HttpClient HealthClient = new() { Timeout = HealthTimeout };
+    private readonly HttpClient _healthClient;
+    public string? PublicUrl { get; }
+    public bool IsRegistered => PublicUrl is not null;
+
+    public TunnelService(string? publicUrl = null, HttpClient? healthClient = null)
+    {
+        _healthClient = healthClient ?? HealthClient;
+        if (string.IsNullOrWhiteSpace(publicUrl)) return;
+        if (!Uri.TryCreate(publicUrl.Trim(), UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+            || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+            throw new ArgumentException("FRONT_PUBLIC_URL must be an absolute HTTP(S) URL without credentials, query or fragment.", nameof(publicUrl));
+        PublicUrl = uri.AbsoluteUri.TrimEnd('/');
+    }
 
     /// <summary>Таймаут `docker restart` (зазвичай займає 1–2 с).</summary>
     public static readonly TimeSpan RestartTimeout = TimeSpan.FromSeconds(30);
@@ -34,6 +49,7 @@ public sealed class TunnelService
     /// <summary>Останній URL trycloudflare з логу тунелю; null — логу нема/порожній/без URL.</summary>
     public string? ReadUrl()
     {
+        if (IsRegistered) return PublicUrl;
         try
         {
             var text = File.ReadAllText(LogPath);
@@ -51,9 +67,12 @@ public sealed class TunnelService
     {
         try
         {
-            using var http = new HttpClient { Timeout = HealthTimeout };
-            using var res = await http.GetAsync(url.TrimEnd('/') + "/api/health", ct);
+            using var res = await _healthClient.GetAsync(url.TrimEnd('/') + "/api/health", ct);
             return (int)res.StatusCode is >= 200 and < 300;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -64,6 +83,7 @@ public sealed class TunnelService
     /// <summary>`docker restart {ContainerName}`; true — команда завершилась з кодом 0.</summary>
     public bool RestartTunnel()
     {
+        if (IsRegistered) return false;
         try
         {
             // вивід docker не перехоплюємо — він і так потрапить у лог контейнера bot

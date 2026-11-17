@@ -54,9 +54,10 @@ export interface Gate<T> {
 export async function guardedSearch(
   p: SearchParams,
   lang: Lang,
+  signal?: AbortSignal,
 ): Promise<Gate<Paged<TitleCard>>> {
   try {
-    return { data: await searchTitles(p, lang), unavailable: false };
+    return { data: await searchTitles(p, lang, signal), unavailable: false };
   } catch (e) {
     if (isUnavailable(e)) {
       const d = demoSearch(

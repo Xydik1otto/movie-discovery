@@ -44,9 +44,11 @@ export function usePosterBackfill(
   const abortRef = useRef<AbortController | null>(null);
   // Останні колбек/масив — через ref, ефект перерегистровується лише на items.
   const onResolvedRef = useRef(onResolved);
-  onResolvedRef.current = onResolved;
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+  useEffect(() => {
+    onResolvedRef.current = onResolved;
+    itemsRef.current = items;
+  }, [onResolved, items]);
 
   useEffect(() => {
     aliveRef.current = true; // StrictMode: повторний маунт того самого інстанса
