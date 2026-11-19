@@ -22,7 +22,7 @@ public static class WatchLinkLoader
         {
             var set = chunk.ToHashSet();
             var links = await db.WatchLinks.AsNoTracking()
-                .Where(w => w.IsAvailable && set.Contains(w.TitleId))
+                .Where(w => w.IsAvailable && w.Provider != TmdbProvidersService.LegacyProviderName && set.Contains(w.TitleId))
                 .Select(w => new { w.TitleId, w.Provider, w.Kind, w.Url })
                 .ToListAsync(ct);
             foreach (var l in links)

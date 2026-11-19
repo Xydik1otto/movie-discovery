@@ -16,7 +16,7 @@ public static class ImdbGzip
         string path,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
-        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, true);
+        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 1 << 16, true);
         await using var gz = new GZipStream(fs, CompressionMode.Decompress);
         using var reader = new StreamReader(gz);
         while (await reader.ReadLineAsync(ct) is { } line)
@@ -43,9 +43,10 @@ internal sealed class ImdbFileCache(
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, fileName);
 
+        var ttl = TimeSpan.FromHours(Math.Clamp(ttlHours, 1, int.MaxValue / 3600));
         var freshMeta = await cache.GetAsync(source, cacheKey, ct);
         if (File.Exists(path) && new FileInfo(path).Length > 0 && TryFetchedAt(freshMeta, out var at) &&
-            DateTime.UtcNow - at < TimeSpan.FromHours(Math.Max(1, ttlHours)))
+            DateTime.UtcNow - at < ttl)
         {
             log.LogInformation("IMDb {File}: свіжий кеш ({Hours:0.0} год) — пропускаю завантаження",
                 fileName, (DateTime.UtcNow - at).TotalHours);
@@ -55,12 +56,25 @@ internal sealed class ImdbFileCache(
         log.LogInformation("IMDb: завантажую {Url} → {Path}", url, path);
         using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         resp.EnsureSuccessStatusCode();
-        await using var src = await resp.Content.ReadAsStreamAsync(ct);
-        await using var dst = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, true);
-        await src.CopyToAsync(dst, ct);
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await using var src = await resp.Content.ReadAsStreamAsync(ct);
+            await using (var dst = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, true))
+            {
+                await src.CopyToAsync(dst, ct);
+                if (dst.Length == 0 || resp.Content.Headers.ContentLength is { } length && dst.Length != length)
+                    throw new IOException($"Неповний IMDb-датасет: {fileName}");
+            }
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
 
         await cache.SetAsync(source, cacheKey,
-            JsonSerializer.Serialize(new ImdbFileCacheMeta(DateTime.UtcNow)), 86_400, ct);
+            JsonSerializer.Serialize(new ImdbFileCacheMeta(DateTime.UtcNow)), (int)ttl.TotalSeconds, ct);
         return path;
     }
 

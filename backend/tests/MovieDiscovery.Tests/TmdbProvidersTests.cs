@@ -14,12 +14,12 @@ public class TmdbProviderKindMapperTests
     [Theory]
     [InlineData("flatrate", "subscription")]
     [InlineData("free", "free")]
+    [InlineData("ads", "ads")]
     [InlineData("rent", "rent")]
     [InlineData("buy", "buy")]
     public void Map_Known_Lists(string list, string kind) => Assert.Equal(kind, TmdbProviderKindMapper.Map(list));
 
     [Theory]
-    [InlineData("ads")]
     [InlineData("cinema")]
     [InlineData("")]
     public void Map_Unknown_Lists_Null(string list) => Assert.Null(TmdbProviderKindMapper.Map(list));
@@ -48,16 +48,20 @@ public class TmdbProvidersServiceTests
 {
     private const string FindJson = """{"movie_results":[{"id":123,"title":"U Are the Universe"}],"tv_results":[]}""";
     private const string ProvidersJson = """
-        {"id":123,"results":{"UA":{"link":"https://www.themoviedb.org/movie/123-watch","flatrate":[
-            {"provider_id":8,"provider_name":"Netflix","display_priority":1}],
+        {"id":123,"results":{"UA":{"link":"https://www.themoviedb.org/movie/123/watch?locale=UA","flatrate":[
+            {"provider_id":8,"provider_name":"Netflix","display_priority":1},
+            {"provider_id":9,"provider_name":"Prime Video","display_priority":2}],
             "rent":[{"provider_id":2,"provider_name":"Apple TV","display_priority":2}],
-            "buy":[],"free":[{"provider_id":33,"provider_name":"Sweet.TV","display_priority":3}]}}}
+            "buy":[],"free":[{"provider_id":33,"provider_name":"Sweet.TV","display_priority":3}]},
+            "PL":{"link":"https://www.themoviedb.org/movie/123/watch?locale=PL","ads":[
+            {"provider_id":8,"provider_name":"Netflix","display_priority":1}]}}}
         """;
 
-    private static TmdbProvidersService NewService(MovieDiscoveryDbContext db, StubHttpHandler handler, string apiKey)
+    private static TmdbProvidersService NewService(MovieDiscoveryDbContext db, StubHttpHandler handler, string apiKey,
+        TestDb.CacheStub? cache = null)
     {
         var tmdb = new TmdbClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.themoviedb.org/3/") },
-            new TestDb.CacheStub(), Options.Create(new TmdbOptions { ApiKey = apiKey }), Logs.Null<TmdbClient>());
+            cache ?? new TestDb.CacheStub(), Options.Create(new TmdbOptions { ApiKey = apiKey }), Logs.Null<TmdbClient>());
         return new TmdbProvidersService(tmdb, db, Logs.Null<TmdbProvidersService>());
     }
 
@@ -80,7 +84,7 @@ public class TmdbProvidersServiceTests
     }
 
     [Fact]
-    public async Task With_Key_Creates_Links_By_Kind()
+    public async Task With_Key_Creates_Named_Regional_Catalog_Offers()
     {
         await using var db = TestDb.Create("tmdb-prov-sync");
         db.Titles.AddRange(
@@ -92,23 +96,56 @@ public class TmdbProvidersServiceTests
         var result = await service.SyncAsync(10);
 
         Assert.Equal(1, result.TitlesChecked);
-        Assert.Equal(3, result.Links); // flatrate→subscription + free→free + rent→rent
+        Assert.Equal(5, result.Links);
 
-        var links = await db.WatchLinks.Where(w => w.Provider == "tmdb-streaming").ToListAsync();
-        Assert.Equal(3, links.Count);
-        Assert.Contains(links, l => l.Kind == "subscription");
-        Assert.Contains(links, l => l.Kind == "free");
-        Assert.Contains(links, l => l.Kind == "rent");
+        var links = await db.Providers.Where(w => w.Source == TmdbProvidersService.Source).ToListAsync();
+        Assert.Equal(5, links.Count);
+        Assert.Contains(links, l => l.ProviderName == "Netflix" && l.Kind == "stream" && l.Region == "UA");
+        Assert.Contains(links, l => l.ProviderName == "Prime Video" && l.Kind == "stream" && l.Region == "UA");
+        Assert.Contains(links, l => l.ProviderName == "Netflix" && l.Kind == "ads" && l.Region == "PL");
+        Assert.Contains(links, l => l.ProviderName == "Sweet.TV" && l.Kind == "free");
+        Assert.Contains(links, l => l.ProviderName == "Apple TV" && l.Kind == "rent");
         Assert.All(links, l =>
         {
-            Assert.Equal("UA", l.Region);
-            Assert.True(l.IsAvailable);
-            Assert.Equal("https://www.themoviedb.org/movie/123-watch", l.Url);
+            Assert.Null(l.AudioLangs);
+            Assert.Null(l.SubLangs);
+            Assert.Equal(WatchUrlClassifier.Find, WatchUrlClassifier.Classify(l.Url));
         });
 
         // повторний sync — не дублює
         await service.SyncAsync(10);
-        Assert.Equal(3, await db.WatchLinks.CountAsync());
+        Assert.Equal(5, await db.Providers.CountAsync());
+        Assert.Empty(db.WatchLinks);
+    }
+
+    [Fact]
+    public async Task Successful_Empty_Snapshot_Clears_Stale_Catalog_Only()
+    {
+        await using var db = TestDb.Create("tmdb-prov-refresh");
+        var anime = new Title { Type = "anime", Format = "movie", TitleEn = "Anime film", TmdbId = 123 };
+        db.Titles.Add(anime);
+        await db.SaveChangesAsync();
+        var importedOffer = new Provider
+        {
+            TitleId = anime.Id, Source = "justwatch", Region = "PL", ProviderName = "Plex",
+            Url = "https://watch.plex.tv/movie/anime-film",
+        };
+        db.Providers.Add(importedOffer);
+        await db.SaveChangesAsync();
+
+        var empty = false;
+        var handler = new StubHttpHandler(request =>
+        {
+            Assert.EndsWith("/movie/123/watch/providers", request.RequestUri!.AbsolutePath);
+            return StubHttp.Json(empty ? """{"id":123,"results":{}}""" : ProvidersJson);
+        });
+        var cache = new TestDb.CacheStub();
+        var service = NewService(db, handler, apiKey: "test", cache);
+        Assert.Equal(5, await service.SyncTitleAsync(anime.Id, default));
+        cache.Items.Clear(); // expire the provider response before the replacement check
+        empty = true;
+        Assert.Equal(0, await service.SyncTitleAsync(anime.Id, default));
+        Assert.Equal(importedOffer.Id, (await db.Providers.SingleAsync()).Id);
     }
 
     [Fact]
@@ -123,6 +160,27 @@ public class TmdbProvidersServiceTests
 
         var result = await service.SyncAsync(10);
         Assert.Equal(0, result.Links);
+    }
+}
+
+public class WatchProviderDirectoryTests
+{
+    [Fact]
+    public void Regional_Anime_Catalog_Uses_Validated_Destinations_And_Encoded_Search()
+    {
+        var links = Api.Contracts.WatchProviderDirectory.Get("anime", "Film A & B", "JP");
+        Assert.Contains(links, link => link.Provider == "d Anime Store" && link.Region == "JP");
+        Assert.Contains(links, link => link.Region == "*" && link.Url.EndsWith("Film%20A%20%26%20B"));
+        Assert.DoesNotContain(links, link => link.Provider == "BiliBili");
+        Assert.Empty(Api.Contracts.WatchProviderDirectory.Get("manga", "Film A & B", "JP"));
+    }
+
+    [Fact]
+    public void Catalogs_Are_Selected_By_Country_Independent_Of_Title_Language()
+    {
+        var links = Api.Contracts.WatchProviderDirectory.Get("series", "Серіал", "PL");
+        Assert.Equal(new[] { "Player.pl", "TVP VOD" }, links.Select(link => link.Provider));
+        Assert.All(links, link => Assert.Equal("PL", link.Region));
     }
 }
 

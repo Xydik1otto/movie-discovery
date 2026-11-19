@@ -161,6 +161,7 @@ public class JustWatchReplaceProvidersTests
         db.Titles.Add(t);
         await db.SaveChangesAsync();
         db.Providers.Add(new Provider { TitleId = t.Id, ProviderName = "Old", Kind = "stream", Source = "justwatch", Region = "UA" });
+        db.Providers.Add(new Provider { TitleId = t.Id, ProviderName = "Other country", Kind = "stream", Source = "justwatch", Region = "PL" });
         db.Providers.Add(new Provider { TitleId = t.Id, ProviderName = "Sweet.TV", Kind = "free", Source = "sweettv", Region = "UA" });
         await db.SaveChangesAsync();
 
@@ -169,13 +170,14 @@ public class JustWatchReplaceProvidersTests
         await JustWatchSyncService.ReplaceProvidersAsync(db, t.Id, fresh, default);
 
         var rows = await db.Providers.Where(p => p.TitleId == t.Id).ToListAsync();
-        Assert.Equal(2, rows.Count); // stale justwatch видалено, sweettv живий, 1 новий justwatch
+        Assert.Equal(3, rows.Count);
         Assert.Contains(rows, r => r.Source == "sweettv" && r.ProviderName == "Sweet.TV");
+        Assert.Contains(rows, r => r.Source == "justwatch" && r.Region == "PL");
         Assert.Contains(rows, r => r.Source == "justwatch" && r.ProviderName == "Apple TV Store" && r.Kind == "rent");
 
         // повторний прогін — той самий набір (ідемпотентність)
         await JustWatchSyncService.ReplaceProvidersAsync(db, t.Id, fresh, default);
-        Assert.Equal(2, await db.Providers.CountAsync(p => p.TitleId == t.Id));
+        Assert.Equal(3, await db.Providers.CountAsync(p => p.TitleId == t.Id));
     }
 
     [Fact]

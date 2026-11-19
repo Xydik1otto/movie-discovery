@@ -45,4 +45,6 @@ public sealed record CardWatchProvider(string Provider, string Kind, string? Url
 public sealed class TitleWatchResponse
 {
     public List<WatchProviderInfo> Providers { get; set; } = [];
+    public bool DiscoveryPending { get; init; }
+    public List<WatchSearchLink> SearchLinks { get; init; } = [];
 }

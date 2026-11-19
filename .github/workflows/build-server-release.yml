@@ -1,0 +1,75 @@
+name: Build server release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: server-release-main
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository == 'Xydik1otto/movie-discovery' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate application tests and server profiles
+        env:
+          POSTGRES_PASSWORD: ci-compose-model-only
+          MINIO_MINIO_PASSWORD: ci-compose-model-only
+        run: |
+          set -euo pipefail
+          dotnet test backend/MovieDiscovery.sln --configuration Release
+          dotnet test bot/tests/Bot.Tests.csproj --configuration Release
+          python3 -m unittest discover -s deploy/runner
+          for profile in server funnel; do
+            docker compose --env-file "deploy/$profile.env.example" -f "docker-compose.$profile.yml" config --quiet
+          done
+      - name: Build all release images locally
+        run: |
+          set -euo pipefail
+          for service in api web bot; do
+            case "$service" in
+              api) context=backend; args=() ;;
+              web) context=frontend; args=(--build-arg NEXT_PUBLIC_API_URL=) ;;
+              bot) context=bot; args=() ;;
+            esac
+            docker build --platform linux/amd64 "${args[@]}" \
+              --label org.opencontainers.image.source=https://github.com/Xydik1otto/movie-discovery \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --tag "ghcr.io/xydik1otto/movie-discovery-$service:$GITHUB_SHA" "$context"
+          done
+      - name: Publish images and record their digests
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          for service in api web bot; do
+            repository="ghcr.io/xydik1otto/movie-discovery-$service"
+            image="$repository:$GITHUB_SHA"
+            docker push "$image"
+            docker image inspect --format '{{json .RepoDigests}}' "$image" \
+              | jq -er --arg prefix "$repository@" '.[] | select(startswith($prefix)) | split("@")[1]' \
+              > "$RUNNER_TEMP/$service.digest"
+          done
+          python3 scripts/server-release-manifest.py "$GITHUB_SHA" "$RUNNER_TEMP"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-release
+          path: ${{ runner.temp }}/server-release.json
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true

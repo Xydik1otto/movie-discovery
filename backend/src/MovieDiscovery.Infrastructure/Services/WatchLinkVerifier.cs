@@ -33,7 +33,7 @@ public sealed record WatchLinkVerificationResult(
 /// Провал верифікації (404/410) НЕ означає episode: coverage лишається незмінним,
 /// прапорець недоступності йде наявним IsAvailable-шляхом (watch_links.is_available=false).
 /// </summary>
-public sealed record WatchLinkVerificationJob(int? MaxRows);
+public sealed record WatchLinkVerificationJob(int? MaxRows, bool TrustedOnly = false);
 
 /// <summary>Черга watch-верифікації (патерн WikipediaPosterSyncQueue: BoundedChannel 10, DropOldest).</summary>
 public sealed class WatchLinkVerificationQueue
@@ -62,14 +62,15 @@ public sealed class WatchLinkVerificationBackgroundService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var queue = scopeFactory.CreateScope().ServiceProvider.GetRequiredService<WatchLinkVerificationQueue>();
+        using var queueScope = scopeFactory.CreateScope();
+        var queue = queueScope.ServiceProvider.GetRequiredService<WatchLinkVerificationQueue>();
         await foreach (var job in queue.ReadAllAsync(stoppingToken))
         {
             try
             {
                 using var scope = scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<WatchLinkVerificationService>();
-                var result = await service.RunAsync(job.MaxRows, stoppingToken);
+                var result = await service.RunAsync(job.MaxRows, stoppingToken, job.TrustedOnly);
                 log.LogInformation(
                     "Watch-верифікація завершена: checked={Checked}, full={Full}, episode={Episode}, unavailable={Unavailable}, transient={Transient}",
                     result.Checked, result.Full, result.Episode, result.Unavailable, result.Transient);
@@ -108,7 +109,7 @@ public sealed class WatchLinkVerificationService(
 
     private readonly TimeSpan _throttle = throttle ?? TimeSpan.FromMilliseconds(400);
 
-    public async Task<WatchLinkVerificationResult> RunAsync(int? maxRows, CancellationToken ct = default)
+    public async Task<WatchLinkVerificationResult> RunAsync(int? maxRows, CancellationToken ct = default, bool trustedOnly = false)
     {
         var cutoff = DateTime.UtcNow.AddDays(-30); // verified_at старша за 30 днів — перевірити знову
         var stats = new Stats();
@@ -116,9 +117,11 @@ public sealed class WatchLinkVerificationService(
 
         // Спочатку watch_links (перевірені лінки з метаданими FR-19 — те, що бачить юзер),
         // потім providers-каталог. Бюджет діляться.
-        budget = await VerifyWatchLinksAsync(budget, cutoff, stats, ct);
-        if (budget > 0)
-            await VerifyProvidersAsync(budget, cutoff, stats, ct);
+        var watchBudget = trustedOnly ? budget / 2 : budget;
+        var watchRemainder = await VerifyWatchLinksAsync(watchBudget, cutoff, stats, ct, trustedOnly);
+        var providerBudget = budget - (watchBudget - watchRemainder);
+        if (providerBudget > 0)
+            await VerifyProvidersAsync(providerBudget, cutoff, stats, ct, trustedOnly);
 
         log.LogInformation(
             "Watch-верифікація: checked={Checked}, full={Full}, episode={Episode}, unavailable={Unavailable}, transient={Transient}",
@@ -137,7 +140,7 @@ public sealed class WatchLinkVerificationService(
 
     // ── watch_links ────────────────────────────────────────────────────────────
 
-    private async Task<int> VerifyWatchLinksAsync(int budget, DateTime cutoff, Stats stats, CancellationToken ct)
+    private async Task<int> VerifyWatchLinksAsync(int budget, DateTime cutoff, Stats stats, CancellationToken ct, bool trustedOnly)
     {
         var done = new HashSet<int>();
         while (budget > 0)
@@ -146,7 +149,8 @@ public sealed class WatchLinkVerificationService(
             // усередині — популярність тайтла DESC. «done» не дає зациклитись на
             // transient-рядках (їх verified_at не змінюється — вони випадуть лише з цього прогону).
             var page = await db.WatchLinks.AsNoTracking()
-                .Where(w => !done.Contains(w.Id) && (w.VerifiedAt == null || w.VerifiedAt < cutoff))
+                .Where(w => w.Provider != TmdbProvidersService.LegacyProviderName && !done.Contains(w.Id) &&
+                    (w.VerifiedAt == null || w.VerifiedAt < cutoff))
                 .Join(db.Titles.AsNoTracking(),
                     w => w.TitleId, t => t.Id,
                     (w, t) => new { w.Id, w.VerifiedAt, Popularity = t.Popularity, MediaType = t.Type })
@@ -173,7 +177,7 @@ public sealed class WatchLinkVerificationService(
                 else
                 {
                     var mediaType = meta.GetValueOrDefault(row.Id);
-                    var outcome = await VerifyOneUrlAsync(row.Url.Trim(), row.Provider, mediaType, ct);
+                    var outcome = await VerifyOneUrlAsync(row.Url.Trim(), row.Provider, mediaType, ct, trustedOnly);
                     ApplyWatchLink(row, outcome, stats);
                 }
                 done.Add(row.Id);
@@ -217,13 +221,14 @@ public sealed class WatchLinkVerificationService(
 
     // ── providers (каталог JustWatch/Plex/Megogo/…) ───────────────────────────
 
-    private async Task VerifyProvidersAsync(int budget, DateTime cutoff, Stats stats, CancellationToken ct)
+    private async Task VerifyProvidersAsync(int budget, DateTime cutoff, Stats stats, CancellationToken ct, bool trustedOnly)
     {
         var done = new HashSet<int>();
         while (budget > 0)
         {
             var page = await db.Providers.AsNoTracking()
-                .Where(p => !done.Contains(p.Id) && (p.VerifiedAt == null || p.VerifiedAt < cutoff))
+                .Where(p => p.Source != TmdbProvidersService.Source && p.Source != WebWatchSearch.Source && !done.Contains(p.Id) &&
+                    (p.VerifiedAt == null || p.VerifiedAt < cutoff))
                 .Join(db.Titles.AsNoTracking(),
                     p => p.TitleId, t => t.Id,
                     (p, t) => new { p.Id, p.VerifiedAt, Popularity = t.Popularity, MediaType = t.Type })
@@ -250,7 +255,7 @@ public sealed class WatchLinkVerificationService(
                 else
                 {
                     var mediaType = meta.GetValueOrDefault(row.Id);
-                    var outcome = await VerifyOneUrlAsync(row.Url.Trim(), row.ProviderName, mediaType, ct);
+                    var outcome = await VerifyOneUrlAsync(row.Url.Trim(), row.ProviderName, mediaType, ct, trustedOnly);
                     // у providers нема прапорця доступності (tri-state рахується на читанні) —
                     // пишемо лише coverage + verified_at
                     switch (outcome.Kind)
@@ -310,8 +315,9 @@ public sealed class WatchLinkVerificationService(
     }
 
     /// <summary>Верифікувати один URL: GET з ретраями → вердикт покриття/доступності.</summary>
-    private async Task<FetchOutcome> VerifyOneUrlAsync(string url, string providerName, string? mediaType, CancellationToken ct)
+    private async Task<FetchOutcome> VerifyOneUrlAsync(string url, string providerName, string? mediaType, CancellationToken ct, bool trustedOnly)
     {
+        if (trustedOnly && !IsTrustedDirectUrl(url)) return FetchOutcome.Unverified;
         if (!IsYouTube(url, providerName))
         {
             var main = await GetWithRetryAsync(url, ct);
@@ -339,6 +345,19 @@ public sealed class WatchLinkVerificationService(
         var page = await GetWithRetryAsync(url, ct);
         return DecideFromPage(page, url, providerName, mediaType, isYouTube: true);
     }
+
+    private static readonly string[] TrustedProviderDomains =
+    [
+        "amazon.com", "apple.com", "archive.org", "crunchyroll.com", "disneyplus.com", "hbomax.com", "hulu.com",
+        "max.com", "megogo.net", "megogo.ua", "netflix.com", "paramountplus.com", "peacocktv.com", "plex.tv",
+        "pluto.tv", "primevideo.com", "rakuten.tv", "sweet.tv", "tubitv.com", "viki.com", "youtu.be", "youtube.com",
+    ];
+
+    private static bool IsTrustedDirectUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && string.IsNullOrEmpty(uri.UserInfo) &&
+        WatchUrlClassifier.Classify(url) == WatchUrlClassifier.Direct &&
+        TrustedProviderDomains.Any(domain => uri.Host.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.EndsWith($".{domain}", StringComparison.OrdinalIgnoreCase));
 
     private static string BuildOembedUrl(string watchUrl) =>
         "https://www.youtube.com/oembed?url=" + Uri.EscapeDataString(watchUrl) + "&format=json";
@@ -378,7 +397,7 @@ public sealed class WatchLinkVerificationService(
                 using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
 
                 if (resp.StatusCode == HttpStatusCode.OK)
-                    return new FetchResult(resp.StatusCode, await ReadHeadAsync(resp, ct), Transient: false);
+                    return new FetchResult(resp.StatusCode, await ReadHeadAsync(resp, timeoutCts.Token), Transient: false);
                 if (resp.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
                     return new FetchResult(resp.StatusCode, null, Transient: false);
                 if (resp.StatusCode is HttpStatusCode.TooManyRequests

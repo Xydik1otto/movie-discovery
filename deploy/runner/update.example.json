@@ -1,0 +1,32 @@
+{
+  "profile": "funnel",
+  "compose_dir": "/etc/movie-discovery/compose",
+  "env_file": "/etc/movie-discovery/production.env",
+  "state_dir": "/srv/app-storage/movie-discovery/update",
+  "backup_dir": "/srv/backup-storage/movie-discovery/update",
+  "containerd_dir": "/srv/app-storage/containerd",
+  "ready_timeout_seconds": 600,
+  "keep_database_copies": 1,
+  "keep_release_archives": 3,
+  "allow_root_storage": false,
+  "mounts": {
+    "db": "/srv/app-storage",
+    "minio": "/srv/app-storage",
+    "api": "/srv/app-storage",
+    "catalog_cache": "/srv/app-storage",
+    "state": "/srv/app-storage",
+    "backup": "/srv/backup-storage",
+    "docker": "/srv/app-storage",
+    "containerd": "/srv/app-storage"
+  },
+  "reserve_gib": {
+    "db": 15,
+    "minio": 10,
+    "api": 2,
+    "catalog_cache": 10,
+    "state": 2,
+    "backup": 8,
+    "docker": 10,
+    "root": 8
+  }
+}

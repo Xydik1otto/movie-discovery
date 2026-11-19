@@ -5,12 +5,18 @@ namespace MovieDiscovery.Infrastructure.Tmdb;
 
 // ─── Загальні DTO TMDB API (v3). Поля лише ті, що використовуємо. ───
 
-public sealed class TmdbPage<T>
+public sealed class TmdbPage<T>(List<T> results)
 {
     [JsonPropertyName("page")] public int Page { get; set; }
-    [JsonPropertyName("results")] public List<T> Results { get; set; } = [];
+    [JsonPropertyName("results")] public List<T> Results { get; } = results ?? throw new JsonException("TMDB page is missing its results array.");
     [JsonPropertyName("total_pages")] public int TotalPages { get; set; }
     [JsonPropertyName("total_results")] public int TotalResults { get; set; }
+}
+
+internal sealed class TmdbExternalIds
+{
+    [JsonPropertyName("id")] public int Id { get; set; }
+    [JsonPropertyName("imdb_id")] public string? ImdbId { get; set; }
 }
 
 public sealed class TmdbGenre
@@ -129,6 +135,7 @@ public sealed class TmdbWatchRegion
     [JsonPropertyName("rent")] public List<TmdbProviderEntry>? Rent { get; set; }
     [JsonPropertyName("buy")] public List<TmdbProviderEntry>? Buy { get; set; }
     [JsonPropertyName("free")] public List<TmdbProviderEntry>? Free { get; set; }
+    [JsonPropertyName("ads")] public List<TmdbProviderEntry>? Ads { get; set; }
 }
 
 public sealed class TmdbWatchProviders

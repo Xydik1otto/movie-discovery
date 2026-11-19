@@ -70,7 +70,8 @@ public static class WatchOptionsMerger
         "youtube" => 3,
         "internet-archive" => 4,
         "justwatch" => 5,
-        _ => 6, // невідоме джерело — в кінці
+        TmdbProvidersService.Source => 6,
+        _ => 7,
     };
 
     /// <summary>
@@ -152,7 +153,7 @@ public static class WatchOptionsMerger
     /// (єдина нормалізація з upsert-ключем і міграційним UNIQUE-індексом).</summary>
     private static void Upsert(Dictionary<string, WatchOption> byKey, WatchOption option)
     {
-        var key = DedupeKey(option.Provider, option.Url, option.AudioLangs, option.AudioLang);
+        var key = DedupeKey(option);
         if (!byKey.TryGetValue(key, out var existing))
         {
             byKey[key] = option;
@@ -203,7 +204,7 @@ public static class WatchOptionsMerger
     private static void ReconcileUnknownSigs(Dictionary<string, WatchOption> byKey)
     {
         var groups = byKey.Values
-            .GroupBy(o => BaseKey(o.Provider, o.Url), StringComparer.Ordinal);
+            .GroupBy(BaseKey, StringComparer.Ordinal);
         foreach (var group in groups)
         {
             var rows = group.ToList();
@@ -216,7 +217,7 @@ public static class WatchOptionsMerger
             if (knownMinRank == int.MaxValue) continue;
             foreach (var u in rows.Where(r => EffectiveSig(r.AudioLangs, r.AudioLang).Length == 0).ToList())
                 if (KindRank(u.Kind) >= knownMinRank)
-                    byKey.Remove(DedupeKey(u.Provider, u.Url, u.AudioLangs, u.AudioLang));
+                    byKey.Remove(DedupeKey(u));
         }
     }
 
@@ -235,11 +236,16 @@ public static class WatchOptionsMerger
 
     /// <summary>Ключ дедупу: provider + url + ефективна мова-сигнатура (NULL-мова → «»)
     /// — та сама нормалізація, що в upsert-ключа WatchLinkUpsertCore і міграційному індексі.</summary>
-    private static string DedupeKey(string provider, string? url, string? audioLangs, string? audioLang = null) =>
-        $"{BaseKey(provider, url)}\u0002{EffectiveSig(audioLangs, audioLang)}";
+    private static string DedupeKey(WatchOption option) =>
+        $"{BaseKey(option)}\u0002{EffectiveSig(option.AudioLangs, option.AudioLang)}";
 
-    private static string BaseKey(string provider, string? url) =>
-        $"{provider.ToLowerInvariant()}\u0001{url?.Trim() ?? string.Empty}";
+    private static string BaseKey(WatchOption option)
+    {
+        // A catalog URL is shared by all offers. Keep its subscription/rent/buy options distinct.
+        var kind = option.Source == TmdbProvidersService.Source || WatchUrlClassifier.IsCatalogUrl(option.Url)
+            ? option.Kind : string.Empty;
+        return $"{option.Provider.ToLowerInvariant()}\u0001{option.Url?.Trim()}\u0001{option.Region?.Trim().ToUpperInvariant()}\u0001{kind}";
+    }
 
     /// <summary>csv мов — union з ігноруванням порожніх (null = невідома, не «порожньо»).</summary>
     private static string? Union(string? a, string? b) => WatchLanguages.Union(a, b);

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Core.Search;
 using MovieDiscovery.Infrastructure.Persistence;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Infrastructure.Services;
 
@@ -340,12 +341,13 @@ public sealed class SearchService(MovieDiscoveryDbContext db)
         if (q.HasProviders == true)
         {
             var region = string.IsNullOrWhiteSpace(q.ProviderRegion) ? "UA" : q.ProviderRegion.Trim().ToUpperInvariant();
-            query = query.Where(t => db.Providers.Any(p => p.TitleId == t.Id && p.Region == region));
+            query = query.Where(t => db.Providers.Any(p => p.TitleId == t.Id && p.Region == region && p.Source != WebWatchSearch.Source));
         }
 
         // FR-14: «лише те, що можна подивитись» — EXISTS watch_links is_available
         if (q.Watchable == true)
-            query = query.Where(t => db.WatchLinks.Any(w => w.TitleId == t.Id && w.IsAvailable));
+            query = query.Where(t => db.WatchLinks.Any(w => w.TitleId == t.Id && w.IsAvailable &&
+                w.Provider != MovieDiscovery.Infrastructure.Watchability.TmdbProvidersService.LegacyProviderName));
 
         // ── FR-19: віртуальні категорії, країна-виробник, озвучки, якість ──
 

@@ -181,7 +181,7 @@ public class TmdbMappingTests
         Assert.Contains(providers, p => p.ProviderName == "Apple TV" && p.Kind == "buy");
         Assert.All(providers, p =>
         {
-            Assert.Equal("justwatch", p.Source);
+            Assert.Equal("tmdb-providers", p.Source);
             Assert.Equal("UA", p.Region);
             Assert.Equal(7, p.TitleId);
             Assert.Equal("https://www.themoviedb.org/movie/12345/watch?locale=UA", p.Url);

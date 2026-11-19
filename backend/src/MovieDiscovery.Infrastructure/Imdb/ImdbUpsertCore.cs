@@ -4,8 +4,7 @@ namespace MovieDiscovery.Infrastructure.Imdb;
 
 /// <summary>
 /// Ідемпотентне ядро злиття IMDb-патчів у titles за imdb_id (FR-15). Чисті функції (без I/O),
-/// покриті тестами: повторний sync оновлює, не дублює; title_uk (sweet.tv/TMDB) і type
-/// наявного тайтла НЕ затираються.
+/// Повторний sync оновлює той самий запис, зберігаючи українську назву та зв’язки.
 /// </summary>
 public static class ImdbUpsertCore
 {
@@ -29,7 +28,8 @@ public static class ImdbUpsertCore
         TitleEn = patch.TitleEn,
         TitleUk = null, // uk-назви — sweet.tv/TMDB, не з IMDb
         Year = patch.Year,
-        RuntimeMin = patch.RuntimeMin,
+        RuntimeMin = patch.Type == "movie" && patch.RuntimeMin > 0 ? patch.RuntimeMin : null,
+        EpisodeRuntimeMin = patch.Type == "series" && patch.RuntimeMin > 0 ? patch.RuntimeMin : null,
         Genres = patch.Genres,
         RatingImdb = patch.RatingImdb,
         VotesImdb = patch.VotesImdb,
@@ -41,14 +41,38 @@ public static class ImdbUpsertCore
 
     /// <summary>
     /// Оновити наявний тайтл патчем: метадані IMDb — авторитетні (назва/рік/тривалість/жанри/
-    /// рейтинг/голоси/isAdult). type наявного тайтла і title_uk НЕ змінюються; рейтинг/голоси
-    /// оновлюються лише коли є (не null); popularity — коли є голоси. Повторний apply — стабільний.
+    /// рейтинг/голоси/isAdult). Тип фільму або серіалу звіряється за точним IMDb ID.
     /// </summary>
     public static void Merge(Title target, ImdbTitlePatch patch)
     {
+        // TMDB використовує окремі простори ID для фільмів та серіалів.
+        if (target.ImdbId == patch.ImdbId && target.TmdbId is null &&
+            target.Type is "movie" or "series" && patch.Type is "movie" or "series" && target.Type != patch.Type)
+        {
+            target.Type = patch.Type;
+            target.RuntimeMin = null;
+            target.EpisodeRuntimeMin = null;
+            target.Seasons = null;
+            target.Status = null;
+        }
+
         if (!string.IsNullOrWhiteSpace(patch.TitleEn)) target.TitleEn = patch.TitleEn;
         if (patch.Year is > 0) target.Year = patch.Year;
-        if (patch.RuntimeMin is > 0) target.RuntimeMin = patch.RuntimeMin;
+        if (target.Type == patch.Type && target.Type == "movie" && patch.RuntimeMin is > 0 &&
+            (target.TmdbId is null || target.RuntimeMin is null))
+            target.RuntimeMin = patch.RuntimeMin;
+
+        if (target.Type == patch.Type && target.Type == "series")
+        {
+            var runtime = patch.RuntimeMin is > 0 ? patch.RuntimeMin : null;
+            if (target.TmdbId is null)
+            {
+                target.EpisodeRuntimeMin = runtime ?? target.EpisodeRuntimeMin ?? (target.RuntimeMin is > 0 ? target.RuntimeMin : null);
+                target.RuntimeMin = null;
+            }
+            else
+                target.EpisodeRuntimeMin ??= runtime;
+        }
         if (patch.Genres is { Length: > 0 }) target.Genres = patch.Genres;
         if (patch.RatingImdb is > 0) target.RatingImdb = patch.RatingImdb;
         if (patch.VotesImdb is > 0)

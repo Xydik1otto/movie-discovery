@@ -43,6 +43,13 @@ public sealed class TmdbClient(
             $"discover/tv?api_key={_opt.ApiKey}&language={lang}&page={page}&sort_by=popularity.desc&include_adult=false",
             _opt.ListTtlSeconds, ct);
 
+    internal Task<TmdbExternalIds?> ExternalIdsAsync(string catalogType, int tmdbId, CancellationToken ct)
+    {
+        var tmdbType = catalogType == "movie" ? "movie" : "tv";
+        return FetchAsync<TmdbExternalIds>($"catalog:external-ids:{tmdbType}:{tmdbId}",
+            $"{tmdbType}/{tmdbId}/external_ids?api_key={_opt.ApiKey}", 24 * 3600, ct);
+    }
+
     // ─── Деталі тайтла: append_to_response = credits,keywords,videos,watch/providers,similar,recommendations ───
     // Метадані — фактично безстроковий кеш (ttl=0).
 
@@ -71,15 +78,15 @@ public sealed class TmdbClient(
 
     public Task<TmdbWatchProviders?> MovieWatchProvidersAsync(int id, CancellationToken ct = default) =>
         FetchAsync<TmdbWatchProviders>(
-            TmdbCacheKeys.Providers("movie", id, "UA"),
+            TmdbCacheKeys.Providers("movie", id, "all"),
             $"movie/{id}/watch/providers?api_key={_opt.ApiKey}",
-            0, ct);
+            TmdbOptions.WatchProvidersTtlSeconds, ct);
 
     public Task<TmdbWatchProviders?> TvWatchProvidersAsync(int id, CancellationToken ct = default) =>
         FetchAsync<TmdbWatchProviders>(
-            TmdbCacheKeys.Providers("series", id, "UA"),
+            TmdbCacheKeys.Providers("series", id, "all"),
             $"tv/{id}/watch/providers?api_key={_opt.ApiKey}",
-            0, ct);
+            TmdbOptions.WatchProvidersTtlSeconds, ct);
 
     // ─── Загальний механізм: кеш → HTTP з ретраями ───
 
@@ -109,8 +116,10 @@ public sealed class TmdbClient(
 
         try
         {
-            await cache.SetAsync(TmdbCacheKeys.Source, cacheKey, json, ttlSeconds, ct);
-            return JsonSerializer.Deserialize<T>(json, TmdbJson.Options);
+            var result = JsonSerializer.Deserialize<T>(json, TmdbJson.Options);
+            if (result is not null)
+                await cache.SetAsync(TmdbCacheKeys.Source, cacheKey, json, ttlSeconds, ct);
+            return result;
         }
         catch (JsonException ex)
         {
@@ -121,6 +130,7 @@ public sealed class TmdbClient(
 
     private async Task<string?> SendWithRetryAsync(string pathAndQuery, CancellationToken ct)
     {
+        var path = pathAndQuery.Split('?', 2)[0];
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -131,27 +141,27 @@ public sealed class TmdbClient(
 
                 if (resp.StatusCode == HttpStatusCode.NotFound)
                 {
-                    log.LogInformation("TMDB 404: {Path}", pathAndQuery);
+                    log.LogInformation("TMDB 404: {Path}", path);
                     return null;
                 }
 
                 if ((int)resp.StatusCode >= 400 && (int)resp.StatusCode < 500 && resp.StatusCode != HttpStatusCode.TooManyRequests)
                 {
-                    log.LogWarning("TMDB {Code} на {Path} — без ретраїв", (int)resp.StatusCode, pathAndQuery);
+                    log.LogWarning("TMDB {Code} на {Path} — без ретраїв", (int)resp.StatusCode, path);
                     return null;
                 }
 
                 // 429 / 5xx → ретраї з backoff
                 if (attempt >= _opt.MaxRetries)
                 {
-                    log.LogWarning("TMDB {Code} на {Path} — ліміт ретраїв вичерпано", (int)resp.StatusCode, pathAndQuery);
+                    log.LogWarning("TMDB {Code} на {Path} — ліміт ретраїв вичерпано", (int)resp.StatusCode, path);
                     return null;
                 }
 
                 var delay = BackoffDelay(attempt, resp.StatusCode == HttpStatusCode.TooManyRequests
                     ? ParseRetryAfter(resp.Headers)
                     : null);
-                log.LogInformation("TMDB {Code} на {Path} — ретрай через {Delay}с", (int)resp.StatusCode, pathAndQuery, delay.TotalSeconds);
+                log.LogInformation("TMDB {Code} на {Path} — ретрай через {Delay}с", (int)resp.StatusCode, path, delay.TotalSeconds);
                 await Task.Delay(delay, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -162,7 +172,8 @@ public sealed class TmdbClient(
             {
                 if (attempt >= _opt.MaxRetries)
                 {
-                    log.LogWarning(ex, "TMDB недоступний ({Path}) — здаюся після {N} ретраїв", pathAndQuery, _opt.MaxRetries);
+                    log.LogWarning("TMDB недоступний ({Path}) — здаюся після {N} ретраїв ({HttpRequestError})",
+                        path, _opt.MaxRetries, ex.HttpRequestError);
                     return null;
                 }
                 await Task.Delay(BackoffDelay(attempt, null), ct);

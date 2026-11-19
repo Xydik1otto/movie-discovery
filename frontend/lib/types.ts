@@ -123,6 +123,13 @@ export interface WatchProvider {
   availabilityStatus?: string | null;
 }
 
+export interface WatchSearchLink {
+  provider: string;
+  region: string;
+  url: string;
+  source?: string | null;
+}
+
 export interface TitleDetail extends TitleCard {
   actors?: string[];
   director?: string | null;

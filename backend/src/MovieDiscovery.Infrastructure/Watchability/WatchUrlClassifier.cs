@@ -66,6 +66,9 @@ public static partial class WatchUrlClassifier
         var full = url.Trim();
         var path = SafeUnescape(uri.AbsolutePath);
 
+        // These hosts route the user through an availability catalog, even on title pages.
+        if (IsCatalogHost(uri.Host)) return Find;
+
         if (Search(CollectionPath(), path)) return Find; // колекції/категорії/пошук — не тайтл
         if (Search(SearchHint(), full)) return Find;
         if (Search(Rootish(), path.TrimEnd('/'))) return Find;
@@ -96,6 +99,15 @@ public static partial class WatchUrlClassifier
         }
         return Find;
     }
+
+    public static bool IsCatalogUrl(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        IsCatalogHost(uri.Host);
+
+    private static bool IsCatalogHost(string host) =>
+        host.Equals("themoviedb.org", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith(".themoviedb.org", StringComparison.OrdinalIgnoreCase) ||
+        host.Equals("justwatch.com", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith(".justwatch.com", StringComparison.OrdinalIgnoreCase);
 
     private static string SafeUnescape(string path)
     {

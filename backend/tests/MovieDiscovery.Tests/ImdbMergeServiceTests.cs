@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using MovieDiscovery.Core.Abstractions;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Imdb;
 using MovieDiscovery.Infrastructure.Persistence;
+using System.IO.Compression;
+using System.Text;
 
 namespace MovieDiscovery.Tests;
 
@@ -25,12 +26,16 @@ public class ImdbMergeServiceTests
     }
 
     [Fact]
-    public void MergeSql_Does_Not_Touch_TitleUk_Or_Type()
+    public void MergeSql_Corrects_Imdb_Only_Media_Types_And_Keeps_Localized_Name()
     {
         var sql = ImdbStaging.MergeSql;
         Assert.DoesNotContain("title_uk =", sql);           // uk-назви — sweet.tv/TMDB
-        Assert.DoesNotContain("type = EXCLUDED.type", sql); // type наявних не змінюється
+        Assert.Contains("type = CASE WHEN titles.tmdb_id IS NULL AND titles.type IN ('movie', 'series')", sql);
+        Assert.Contains("THEN EXCLUDED.type ELSE titles.type END", sql);
         Assert.Contains("title_en = EXCLUDED.title_en", sql);
+        Assert.Contains("episode_runtime_min = CASE", sql);
+        Assert.Contains("THEN COALESCE(titles.episode_runtime_min, EXCLUDED.episode_runtime_min)", sql);
+        Assert.Contains("THEN EXCLUDED.genres ELSE titles.genres END", sql);
         Assert.Contains("votes_imdb = COALESCE(EXCLUDED.votes_imdb, titles.votes_imdb)", sql);
     }
 
@@ -44,7 +49,8 @@ public class ImdbMergeServiceTests
             "COPY imdb_raw (tconst, title_type, primary_title, original_title, is_adult, start_year, runtime_min, genres, average_rating, num_votes, popularity) FROM STDIN (FORMAT BINARY)",
             ImdbStaging.CopyFromStdinSql());
         Assert.Contains("genres text[]", ImdbStaging.CreateTableSql);
-        Assert.Contains("TRUNCATE TABLE imdb_raw", ImdbStaging.TruncateSql);
+        Assert.Contains("CREATE TEMP TABLE imdb_raw", ImdbStaging.CreateTempTableSql);
+        Assert.Contains("ON COMMIT DROP", ImdbStaging.CreateTempTableSql);
     }
 
     [Fact]
@@ -128,6 +134,144 @@ public class ImdbMergeServiceTests
         var t = await db.Titles.SingleAsync(x => x.ImdbId == "tt35769");
         Assert.Equal("Ти — космос", t.TitleUk);       // uk — sweet.tv, не IMDb
         Assert.Equal("U Are the Universe", t.TitleEn); // en оновлено з IMDb
+    }
+
+    [Theory]
+    [InlineData("movie", "series", null, "series")]
+    [InlineData("series", "movie", null, "movie")]
+    [InlineData("movie", "series", 42, "movie")]
+    [InlineData("anime", "series", null, "anime")]
+    [InlineData("show", "series", null, "show")]
+    [InlineData("manga", "series", null, "manga")]
+    public async Task ApplyPatches_Reconciles_Type_By_Exact_Imdb_Id(
+        string catalogType, string imdbType, int? tmdbId, string expectedType)
+    {
+        await using var db = TestDb.Create(Guid.NewGuid().ToString());
+        var title = new Title
+        {
+            Type = catalogType, ImdbId = "tt0903747", TmdbId = tmdbId, TitleUk = "Пуститися берега",
+            RuntimeMin = 95, EpisodeRuntimeMin = 50, Seasons = 5, Status = "ended",
+        };
+        db.Titles.Add(title);
+        await db.SaveChangesAsync();
+        var id = title.Id;
+
+        var service = NewService(db);
+        await service.ApplyPatchesAsync([Patch("tt0903747", "Breaking Bad", imdbType)]);
+
+        var result = await db.Titles.SingleAsync();
+        Assert.Equal(id, result.Id);
+        Assert.Equal(expectedType, result.Type);
+        Assert.Equal(tmdbId, result.TmdbId);
+        Assert.Equal("Пуститися берега", result.TitleUk);
+        if (expectedType != catalogType)
+        {
+            Assert.Null(result.Seasons);
+            Assert.Null(result.Status);
+            Assert.Equal(expectedType == "movie" ? 100 : (int?)null, result.RuntimeMin);
+            Assert.Equal(expectedType == "series" ? 100 : (int?)null, result.EpisodeRuntimeMin);
+        }
+        else
+        {
+            Assert.Equal(95, result.RuntimeMin);
+            Assert.Equal(50, result.EpisodeRuntimeMin);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, null, null, 37)]
+    [InlineData(null, null, 45, 45)]
+    [InlineData(12, 53, 45, 53)]
+    [InlineData(12, null, 45, 45)]
+    public async Task ApplyPatches_Repairs_Legacy_Series_Runtime_And_Preserves_Tmdb_Runtime(
+        int? tmdbId, int? currentRuntime, int? sourceRuntime, int expectedEpisodeRuntime)
+    {
+        await using var db = TestDb.Create(Guid.NewGuid().ToString());
+        db.Titles.Add(new Title { Type = "series", ImdbId = "tt0903747", TmdbId = tmdbId,
+            RuntimeMin = 37, EpisodeRuntimeMin = currentRuntime });
+        await db.SaveChangesAsync();
+
+        await NewService(db).ApplyPatchesAsync([Patch("tt0903747", "Breaking Bad", "series") with { RuntimeMin = sourceRuntime }]);
+
+        var title = await db.Titles.SingleAsync();
+        Assert.Equal(expectedEpisodeRuntime, title.EpisodeRuntimeMin);
+        Assert.Equal(tmdbId is null ? (int?)null : 37, title.RuntimeMin);
+    }
+
+    [Fact]
+    public async Task RunAsync_Records_Full_Sync_After_Inserting_And_Correcting_Titles()
+    {
+        await using var db = TestDb.Create(Guid.NewGuid().ToString());
+        var existing = new Title { Type = "movie", ImdbId = "tt0903747", TitleUk = "Пуститися берега" };
+        db.Titles.Add(existing);
+        await db.SaveChangesAsync();
+
+        var dir = Directory.CreateTempSubdirectory("movie-discovery-imdb-tests-");
+        try
+        {
+            const string basics = "tconst\ttitleType\tprimaryTitle\toriginalTitle\tisAdult\tstartYear\tendYear\truntimeMinutes\tgenres\n"
+                + "tt0903747\ttvSeries\tBreaking Bad\tBreaking Bad\t0\t2008\t2013\t49\tDrama\n"
+                + "tt0114369\tmovie\tSe7en\tSe7en\t0\t1995\t\\N\t127\tThriller\n";
+            const string ratings = "tconst\taverageRating\tnumVotes\ntt0903747\t9.5\t200\ntt0114369\t8.6\t100\n";
+            using var http = StubHttp.Client(request => new(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(Gzip(request.RequestUri!.AbsoluteUri == ImdbBulkService.BasicsUrl ? basics : ratings))
+            });
+            var service = new ImdbBulkService(http, db, new TestDb.CacheStub(),
+                Options.Create(new ImdbOptions { CacheDir = dir.FullName }), Logs.Null<ImdbBulkService>());
+            var interval = TimeSpan.FromDays(7);
+
+            await service.RunAsync([], maxRows: 1);
+            Assert.True(await service.IsFullSyncDueAsync(interval, default));
+
+            var result = await service.RunAsync([], maxRows: null);
+            Assert.Equal(new ImdbSyncResult(1, 1, 0), result);
+            Assert.Equal(2, await db.Titles.CountAsync());
+            Assert.Equal("series", (await db.Titles.FindAsync(existing.Id))!.Type);
+            Assert.Equal(2, (await db.SyncStates.SingleAsync(s => s.Kind == ImdbBulkService.FullSyncKind)).LastCount);
+            Assert.False(await service.IsFullSyncDueAsync(interval, default));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task FileCache_Preserves_Previous_Dataset_If_New_Download_Is_Incomplete()
+    {
+        var dir = Directory.CreateTempSubdirectory("movie-discovery-imdb-tests-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "title.basics.tsv.gz");
+            var prior = Gzip("previous dataset");
+            await File.WriteAllBytesAsync(path, prior);
+
+            using var http = StubHttp.Client(_ => new(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([1, 2, 3]) { Headers = { ContentLength = 4 } }
+            });
+            var cache = new TestDb.CacheStub();
+            var files = new ImdbFileCache(http, cache, Logs.Null<ImdbBulkService>());
+
+            await Assert.ThrowsAsync<IOException>(() => files.DownloadAsync("imdb", Path.GetFileName(path),
+                ImdbBulkService.BasicsUrl, "file:basics", dir.FullName, 24, default));
+            Assert.Equal(prior, await File.ReadAllBytesAsync(path));
+            Assert.Single(dir.GetFiles());
+            Assert.Empty(cache.Items);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    private static byte[] Gzip(string text)
+    {
+        using var bytes = new MemoryStream();
+        using (var gzip = new GZipStream(bytes, CompressionMode.Compress, leaveOpen: true))
+            gzip.Write(Encoding.UTF8.GetBytes(text));
+        return bytes.ToArray();
     }
 
     private static ImdbBulkService NewService(MovieDiscoveryDbContext db) =>

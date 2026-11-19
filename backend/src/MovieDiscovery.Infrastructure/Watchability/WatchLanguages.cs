@@ -1,4 +1,4 @@
-using System.Text;
+using System.Globalization;
 
 namespace MovieDiscovery.Infrastructure.Watchability;
 
@@ -12,6 +12,11 @@ namespace MovieDiscovery.Infrastructure.Watchability;
 /// </summary>
 public static class WatchLanguages
 {
+    private static readonly HashSet<string> IsoLanguageCodes = CultureInfo.GetCultures(CultureTypes.NeutralCultures)
+        .Select(c => c.TwoLetterISOLanguageName)
+        .Where(c => c.Length == 2 && c != "iv")
+        .ToHashSet(StringComparer.Ordinal);
+
     /// <summary>Синоніми → ISO-639-1. Ключі нижнім регістром; sweet-слаги, укр/рос/англ-лейбли, легасі-коди.</summary>
     private static readonly Dictionary<string, string> Aliases = new(StringComparer.Ordinal)
     {
@@ -88,9 +93,10 @@ public static class WatchLanguages
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var token = raw.Trim().ToLowerInvariant();
         if (Aliases.TryGetValue(token, out var mapped)) return mapped;
-        // невідомий 2-літерний latin-код (ISO-подібний) — берегось вигадок: лише з довідника вище.
-        // Тому НЕ повертаємо token як є — чесний null.
-        return null;
+        var subtags = token.Split('-', '_');
+        if (subtags.Skip(1).Any(s => s.Length is < 2 or > 8 || !s.All(char.IsAsciiLetterOrDigit)))
+            return null;
+        return IsoLanguageCodes.Contains(subtags[0]) ? subtags[0] : null;
     }
 
     /// <summary>

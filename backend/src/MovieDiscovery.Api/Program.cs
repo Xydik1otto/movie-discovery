@@ -63,6 +63,7 @@ public class Program
         builder.Services.Configure<MalOfficialOptions>(builder.Configuration.GetSection("MalOfficial"));
         builder.Services.Configure<JikanOptions>(builder.Configuration.GetSection("Jikan"));
         builder.Services.Configure<ImdbOptions>(builder.Configuration.GetSection("Imdb"));
+        builder.Services.Configure<CatalogSyncOptions>(builder.Configuration.GetSection("CatalogSync"));
         builder.Services.Configure<ImdbAkasOptions>(builder.Configuration.GetSection("Imdb"));
         builder.Services.Configure<ImdbCrewOptions>(builder.Configuration.GetSection("Imdb"));
         // Назви/постери з Wikidata (uk + ru-фолбек; рішення власника 09.11).
@@ -71,6 +72,7 @@ public class Program
         builder.Services.Configure<TitleSeriesSyncOptions>(builder.Configuration.GetSection("TitleSeries"));
         // «Де подивитись»: JustWatch (усі провайдери, рішення власника 09.11) + Megogo free (UA) + Plex free.
         builder.Services.Configure<JustWatchSyncOptions>(builder.Configuration.GetSection("JustWatch"));
+        builder.Services.Configure<WatchWebOptions>(builder.Configuration.GetSection("WatchWeb"));
         builder.Services.Configure<MegogoOptions>(builder.Configuration.GetSection("Megogo"));
         // Auth-листи (10.11): SMTP env-gated (MAIL_ENABLED=false → чесний лог-режим).
         builder.Services.AddEmailing(builder.Configuration);
@@ -242,6 +244,12 @@ public class Program
             c.BaseAddress = new Uri("https://api.themoviedb.org/3/");
             c.Timeout = TimeSpan.FromSeconds(30);
         });
+        builder.Services.AddHttpClient<WebWatchSearch>(c =>
+            {
+                c.Timeout = TimeSpan.FromSeconds(8);
+                c.MaxResponseContentBufferSize = 256 * 1024;
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         builder.Services.AddHttpClient<OmdbClient>(c =>
         {
             c.BaseAddress = new Uri("https://www.omdbapi.com/");
@@ -367,7 +375,8 @@ public class Program
         builder.Services.AddScoped<PosterSourceSyncService>();
         // Watch-верифікація (10.11): coverage full|episode|unknown — фоновий обхід лінків.
         builder.Services.AddHttpClient<WatchLinkVerificationService>((sp, c) =>
-            c.Timeout = TimeSpan.FromSeconds(15));
+            c.Timeout = TimeSpan.FromSeconds(15))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         builder.Services.AddSingleton<WatchLinkVerificationQueue>();
         // UX-04: перевірка «Where to Watch» сторінки тайтла (tri-state, обмежений кеш) —
         // окремий короткий таймаут (PlexOptions.AvailabilityTimeoutMs, 10s), не sync-таймаут.
@@ -410,6 +419,7 @@ public class Program
         builder.Services.AddSingleton<ImportQueue>();
         builder.Services.AddSingleton<ImdbSyncQueue>();
         builder.Services.AddSingleton<WatchSyncQueue>();
+        builder.Services.AddSingleton<WebWatchQueue>();
         builder.Services.AddSingleton<ImdbAkasSyncQueue>();
         builder.Services.AddSingleton<ImdbCrewSyncQueue>();
         builder.Services.AddSingleton<WikidataNamesSyncQueue>();
@@ -460,9 +470,9 @@ public class Program
         builder.Services.AddScoped<OnboardingPostersService>(); // FR-18: постери варіантів онбордингу
         builder.Services.AddScoped<BotIdentityService>(); // MD-05: telegram-ідентичність → профіль списків
 
-        // Тестове середовище (WebApplicationFactory): фонові сервіси не потрібні — інакше
-        // вони стартують синхронізації проти InMemory-БД. Прод-поведінка не змінюється.
-        if (!builder.Environment.IsEnvironment("Testing"))
+        // Тести та перевірка релізу запускають API без фонових імпортів і синхронізацій.
+        var deploymentProbe = builder.Configuration.GetValue<bool>("MovieDiscovery:DeploymentProbe");
+        if (!builder.Environment.IsEnvironment("Testing") && !deploymentProbe)
         {
             builder.Services.AddHostedService<EmbeddingBackgroundService>();
             builder.Services.AddHostedService<SyncBackgroundService>();
@@ -487,6 +497,8 @@ public class Program
             builder.Services.AddHostedService<PosterStorageSyncBackgroundService>();
             builder.Services.AddHostedService<PosterSourceSyncBackgroundService>();
             builder.Services.AddHostedService<WatchLinkVerificationBackgroundService>();
+            builder.Services.AddHostedService<WatchDiscoveryScheduler>();
+            builder.Services.AddHostedService<WebWatchDiscovery>();
         }
 
         var app = builder.Build();
@@ -533,7 +545,8 @@ public class Program
                     await db.Database.EnsureCreatedAsync(); // InMemory у WAF-тестах — міграції не потрібні
                 else
                     await db.Database.MigrateAsync();
-                await DbSeeder.SeedDefaultProfileAsync(db);
+                if (!deploymentProbe)
+                    await DbSeeder.SeedDefaultProfileAsync(db);
             }
             catch (Exception ex) when (!app.Environment.IsProduction())
             {

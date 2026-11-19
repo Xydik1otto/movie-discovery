@@ -31,6 +31,9 @@ public class WatchLanguagesTests
     [InlineData("polska", "pl")]
     [InlineData("Польська", "pl")]
     [InlineData("pl", "pl")]
+    [InlineData("pt-BR", "pt")]
+    [InlineData("zh-Hant-TW", "zh")]
+    [InlineData("vi", "vi")]
     [InlineData("original", "original")]
     [InlineData("multi", "multi")]
     public void Normalize_Known_Tokens(string raw, string expected) =>
@@ -43,6 +46,7 @@ public class WatchLanguagesTests
     [InlineData("zhongwen")]   // невідомий слаг — НЕ вигадуємо
     [InlineData("klingon")]    // невідома мова
     [InlineData("xx")]         // невідомий 2-літерний код — чесний null
+    [InlineData("xx-US")]
     public void Normalize_Unknown_Is_Null(string? raw) => Assert.Null(WatchLanguages.Normalize(raw));
 
     [Fact]
@@ -91,6 +95,8 @@ public class WatchLanguagesTests
 public class WatchUrlClassifierTests
 {
     [Theory]
+    [InlineData("https://www.themoviedb.org/movie/123/watch?locale=UA", "find")]
+    [InlineData("https://www.justwatch.com/pl/film/the-matrix", "find")]
     [InlineData("https://www.netflix.com/title/81087583", "direct")]           // netflix/title/\d+
     [InlineData("https://tv.apple.com/ua/movie/the-matrix/umc.cmc.af8k9kcq9r1s1qmmdxpq4itn", "direct")] // umc.cmc.*
     [InlineData("https://megogo.ua/ua/view/1003951-Dictator.html", "direct")]  // megogo числовий id

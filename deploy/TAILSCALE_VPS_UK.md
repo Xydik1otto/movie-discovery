@@ -53,7 +53,7 @@ tailscale status --json | python3 -c 'import json,sys; print("https://" + json.l
 
 Приватний комплект містить `funnel.env` із перенесеними інтеграціями та новими окремими ADMIN_KEY, BOT_API_KEY, POSTGRES_PASSWORD і MINIO_MINIO_PASSWORD. Скопіюйте його в `deploy/funnel.env` із правами `0600`.
 
-Для ручного налаштування використовуйте `deploy/funnel.env.example` разом із конфігурацією вихідного застосунку. Вкажіть фактичні PG_DATA_DIR, MINIO_DATA_DIR, APP_KEYS_DIR, BACKUP_DIR та отриманий FRONT_PUBLIC_URL.
+Для ручного налаштування використовуйте `deploy/funnel.env.example` разом із конфігурацією вихідного застосунку. Вкажіть фактичні PG_DATA_DIR, MINIO_DATA_DIR, APP_KEYS_DIR, CATALOG_CACHE_DIR, BACKUP_DIR та отриманий FRONT_PUBLIC_URL. `CATALOG_CACHE_DIR` зберігає стиснені файли IMDb між оновленнями.
 
 Коли розгортаєте поточний код із GitHub, задайте власний унікальний RELEASE_TAG і зберіть образи через `docker compose --env-file deploy/funnel.env -f docker-compose.funnel.yml build api web bot minio`. Теги та офлайн-образи попередніх комплектів відповідають збереженим знімкам цих комплектів.
 
@@ -133,6 +133,8 @@ sudo python3 scripts/export-server-state.py /mnt/BACKUP_DISK/movie-discovery/NEW
 ```
 
 Це онлайн-копія. Для фінального перемикання після зупинки процесів запису додайте `--final`. Окремо збережіть секретний стан `/var/lib/tailscale` або повний зашифрований snapshot VPS, щоб відновлювати ту саму ідентичність Tailscale.
+
+Після приймання можна під’єднати [автоматичні оновлення через GitHub Actions](runner/README_UK.md). Приклад конфігурації оновлювача використовує профіль `funnel`.
 
 ## Межі підготовки
 

@@ -1,6 +1,3 @@
-using System.IO.Compression;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,6 +20,9 @@ public sealed class ImdbOptions
 
     /// <summary>Розмір батчу staging COPY → MERGE.</summary>
     public int BatchSize { get; set; } = 50_000;
+
+    /// <summary>Інтервал повного автоматичного синку IMDb в годинах. Нуль вимикає розклад.</summary>
+    public int AutoSyncIntervalHours { get; set; }
 }
 
 /// <summary>Результат прогону imdb sync.</summary>
@@ -42,31 +42,31 @@ public sealed class ImdbBulkService(
     ILogger<ImdbBulkService> log)
 {
     public const string Source = "imdb";
+    public const string FullSyncKind = "full";
     public const string BasicsUrl = "https://datasets.imdbws.com/title.basics.tsv.gz";
     public const string RatingsUrl = "https://datasets.imdbws.com/title.ratings.tsv.gz";
 
     private readonly ImdbOptions _opt = options.Value;
+    private readonly ImdbFileCache _files = new(http, cache, log);
+
+    internal async Task<bool> IsFullSyncDueAsync(TimeSpan interval, CancellationToken ct)
+    {
+        var lastRun = await db.SyncStates.Where(s => s.Source == Source && s.Kind == FullSyncKind)
+            .Select(s => s.LastRunAt).FirstOrDefaultAsync(ct);
+        return lastRun is null || DateTime.UtcNow - lastRun.Value >= interval;
+    }
 
     /// <summary>Повний прогін: download → parse → stage/merge → sync_state.</summary>
     public async Task<ImdbSyncResult> RunAsync(
         IReadOnlyCollection<string> mediaTypes, int? maxRows, CancellationToken ct = default)
     {
         var types = NormalizeTypes(mediaTypes);
+        var fullSync = maxRows is null && types.Count == 2;
         var basicsPath = await DownloadCachedAsync("title.basics.tsv.gz", BasicsUrl, "file:basics", ct);
         var ratingsPath = await DownloadCachedAsync("title.ratings.tsv.gz", RatingsUrl, "file:ratings", ct);
 
         var ratings = await LoadRatingsAsync(ratingsPath, ct);
         log.LogInformation("IMDb ratings: {Count} записів", ratings.Count);
-
-        if (db.Database.IsRelational() && db.Database.ProviderName!.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase))
-        {
-            // Стейджинг — відновлювані проміжні дані: UNLOGGED різко зменшує тиск на WAL під час COPY
-            // (на WSL2/Docker WAL-записи інколи падають з "Interrupted system call").
-            await using var ac = new NpgsqlConnection(db.Database.GetConnectionString());
-            await ac.OpenAsync(ct);
-            await using var alter = new NpgsqlCommand("ALTER TABLE IF EXISTS imdb_raw SET UNLOGGED", ac);
-            await alter.ExecuteNonQueryAsync(ct);
-        }
 
         var movies = 0;
         var series = 0;
@@ -78,7 +78,10 @@ public sealed class ImdbBulkService(
             await ApplyPatchesAsync(batch, ct);
         }
 
-        await UpdateSyncStateAsync(types, movies, series, ct);
+        if (fullSync && (movies == 0 || series == 0))
+            throw new InvalidDataException("Повний IMDb-датасет має містити фільми та серіали.");
+
+        await UpdateSyncStateAsync(types, movies, series, fullSync, ct);
         log.LogInformation("IMDb sync завершено: movies={Movies}, series={Series}", movies, series);
         return new ImdbSyncResult(movies, series, 0);
     }
@@ -99,7 +102,7 @@ public sealed class ImdbBulkService(
             foreach (var chunk in list.Chunk(batchSize))
             {
                 // Ретрай транзитних збоїв PG (WSL2/Docker I/O: 57P03, 08006, XX000 EINTR).
-                // Весь StageAndMerge ідемпотентний: TRUNCATE на вході чистить сміття попередньої спроби.
+                // Кожна спроба має власний staging і транзакцію.
                 var rows = chunk.Select(ToStagingRow).ToList();
                 for (var attempt = 1; ; attempt++)
                 {
@@ -120,26 +123,28 @@ public sealed class ImdbBulkService(
         }
 
         // EF-шлях (тестовий провайдер): та сама логіка злиття через ImdbUpsertCore
-        var patchList = list.ToList();
-        var ids = patchList.Select(p => p.ImdbId).Distinct().ToList();
+        var ids = list.Select(p => p.ImdbId).Distinct().ToList();
         var existing = await db.Titles
             .Where(t => t.ImdbId != null && ids.Contains(t.ImdbId))
             .ToListAsync(ct);
 
-        var created = 0;
-        foreach (var patch in patchList)
+        foreach (var patch in list)
         {
             var (target, isNew) = ImdbUpsertCore.Resolve(existing, patch);
             if (isNew)
             {
-                var entity = ImdbUpsertCore.ToEntity(patch);
-                db.Titles.Add(entity);
-                existing.Add(entity); // дублікати imdb_id у тому самому батчі зливаються в один рядок
-                created++;
+                db.Titles.Add(target);
+                existing.Add(target); // дублікати imdb_id у тому самому батчі зливаються в один рядок
+            }
+            else if (target.TmdbId is not null && target.Type is "movie" or "series" &&
+                     patch.Type is "movie" or "series" && target.Type != patch.Type)
+            {
+                log.LogWarning("IMDb type conflict: {ImdbId}, TMDB {TmdbId}, catalog type {CatalogType}, IMDb type {ImdbType}",
+                    patch.ImdbId, target.TmdbId, target.Type, patch.Type);
             }
         }
         await db.SaveChangesAsync(ct);
-        return patchList.Count; // кожен патч або вставлений, або оновив наявний рядок
+        return list.Count; // кожен патч або вставлений, або оновив наявний рядок
     }
 
     /// <summary>Рядок staging-запису з патча (жанри вже нормалізовані, popularity порахована).</summary>
@@ -149,57 +154,15 @@ public sealed class ImdbBulkService(
 
     // ─── Завантаження з кешем 24 год (source_cache + існування файлу) ───
 
-    internal async Task<string> DownloadCachedAsync(string fileName, string url, string cacheKey, CancellationToken ct)
-    {
-        var dir = string.IsNullOrWhiteSpace(_opt.CacheDir)
-            ? Path.Combine(Path.GetTempPath(), "movie-discovery", "imdb")
-            : _opt.CacheDir;
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, fileName);
-
-        var freshMeta = await cache.GetAsync(Source, cacheKey, ct);
-        if (File.Exists(path) && new FileInfo(path).Length > 0 && TryFetchedAt(freshMeta, out var at) &&
-            DateTime.UtcNow - at < TimeSpan.FromHours(Math.Max(1, _opt.CacheTtlHours)))
-        {
-            log.LogInformation("IMDb {File}: свіжий кеш ({Hours:0.0} год) — пропускаю завантаження",
-                fileName, (DateTime.UtcNow - at).TotalHours);
-            return path;
-        }
-
-        log.LogInformation("IMDb: завантажую {Url} → {Path}", url, path);
-        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-        resp.EnsureSuccessStatusCode();
-        await using var src = await resp.Content.ReadAsStreamAsync(ct);
-        await using var dst = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, true);
-        await src.CopyToAsync(dst, ct);
-
-        await cache.SetAsync(Source, cacheKey,
-            JsonSerializer.Serialize(new ImdbCacheMeta(DateTime.UtcNow)), 86_400, ct);
-        return path;
-    }
-
-    private sealed record ImdbCacheMeta([property: JsonPropertyName("fetchedAt")] DateTime FetchedAt);
-
-    private static bool TryFetchedAt(string? json, out DateTime at)
-    {
-        at = default;
-        if (json is null) return false;
-        try
-        {
-            var meta = JsonSerializer.Deserialize<ImdbCacheMeta>(json);
-            if (meta is null) return false;
-            at = meta.FetchedAt;
-            return true;
-        }
-        catch (JsonException) { return false; }
-    }
+    internal Task<string> DownloadCachedAsync(string fileName, string url, string cacheKey, CancellationToken ct) =>
+        _files.DownloadAsync(Source, fileName, url, cacheKey, _opt.CacheDir, _opt.CacheTtlHours, ct);
 
     // ─── Потоковий парсинг ───
 
     internal async Task<Dictionary<string, (double Rating, int Votes)>> LoadRatingsAsync(string path, CancellationToken ct)
     {
         var dict = new Dictionary<string, (double, int)>(capacity: 2_000_000);
-        await foreach (var row in TsvLinesAsync(path, ct))
+        await foreach (var row in ImdbGzip.TsvLinesAsync(path, ct))
         {
             var r = ImdbTsv.ParseRating(row);
             if (r is not null) dict[r.Tconst] = (r.AverageRating, r.NumVotes);
@@ -218,7 +181,7 @@ public sealed class ImdbBulkService(
         var batch = new List<ImdbTitlePatch>(_opt.BatchSize);
         var emitted = 0;
 
-        await foreach (var line in TsvLinesAsync(basicsPath, ct))
+        await foreach (var line in ImdbGzip.TsvLinesAsync(basicsPath, ct))
         {
             var basics = ImdbTsv.ParseBasics(line);
             if (basics is null) continue;
@@ -240,18 +203,6 @@ public sealed class ImdbBulkService(
     private static ImdbRatingRow? Map(Dictionary<string, (double Rating, int Votes)> ratings, string tconst) =>
         ratings.TryGetValue(tconst, out var r) ? new ImdbRatingRow(tconst, r.Rating, r.Votes) : null;
 
-    /// <summary>Розпаковка .gz → рядки TSV (стрім, без повного завантаження в пам'ять).</summary>
-    private static async IAsyncEnumerable<string> TsvLinesAsync(
-        string path,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
-    {
-        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, true);
-        await using var gz = new GZipStream(fs, CompressionMode.Decompress);
-        using var reader = new StreamReader(gz);
-        while (await reader.ReadLineAsync(ct) is { } line)
-            yield return line;
-    }
-
     // ─── Staging + MERGE (PostgreSQL) ───
 
     /// <summary>Транзитні збої PG/інфраструктури, що заслуговують ретраю.</summary>
@@ -265,42 +216,49 @@ public sealed class ImdbBulkService(
         // (await using спільного з'єднання ламав наступні батчі — ObjectDisposedException).
         await using var conn = new NpgsqlConnection(db.Database.GetConnectionString());
         await conn.OpenAsync(ct);
-        try
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using (var create = new NpgsqlCommand(ImdbStaging.CreateTempTableSql, conn, tx))
+            await create.ExecuteNonQueryAsync(ct);
+
+        await using (var writer = await conn.BeginBinaryImportAsync(ImdbStaging.CopyFromStdinSql(), ct))
         {
-            // Масове завантаження відновлюваних даних: синхронний fsync не потрібен.
-            await using (var sc = new NpgsqlCommand("SET synchronous_commit TO OFF", conn))
-                await sc.ExecuteNonQueryAsync(ct);
-
-            await using (var truncate = new NpgsqlCommand(ImdbStaging.TruncateSql, conn))
-                await truncate.ExecuteNonQueryAsync(ct);
-
-            await using (var writer = await conn.BeginBinaryImportAsync(ImdbStaging.CopyFromStdinSql(), ct))
+            foreach (var r in rows)
             {
-                foreach (var r in rows)
-                {
-                    await writer.StartRowAsync(ct);
-                    await writer.WriteAsync(r.Tconst, NpgsqlDbType.Text, ct);
-                    await writer.WriteAsync(r.TitleType, NpgsqlDbType.Text, ct);
-                    await writer.WriteAsync(r.PrimaryTitle, NpgsqlDbType.Text, ct);
-                    await writer.WriteAsync(r.OriginalTitle, NpgsqlDbType.Text, ct);
-                    await writer.WriteAsync(r.IsAdult, NpgsqlDbType.Boolean, ct);
-                    await WriteNullableInt(writer, r.StartYear, ct);
-                    await WriteNullableInt(writer, r.RuntimeMinutes, ct);
-                    await writer.WriteAsync(r.Genres, NpgsqlDbType.Array | NpgsqlDbType.Text, ct);
-                    await WriteNullableDouble(writer, r.AverageRating, ct);
-                    await WriteNullableInt(writer, r.NumVotes, ct);
-                    await writer.WriteAsync(r.Popularity, NpgsqlDbType.Double, ct);
-                }
-                await writer.CompleteAsync(ct);
+                await writer.StartRowAsync(ct);
+                await writer.WriteAsync(r.Tconst, NpgsqlDbType.Text, ct);
+                await writer.WriteAsync(r.TitleType, NpgsqlDbType.Text, ct);
+                await writer.WriteAsync(r.PrimaryTitle, NpgsqlDbType.Text, ct);
+                await writer.WriteAsync(r.OriginalTitle, NpgsqlDbType.Text, ct);
+                await writer.WriteAsync(r.IsAdult, NpgsqlDbType.Boolean, ct);
+                await WriteNullableInt(writer, r.StartYear, ct);
+                await WriteNullableInt(writer, r.RuntimeMinutes, ct);
+                await writer.WriteAsync(r.Genres, NpgsqlDbType.Array | NpgsqlDbType.Text, ct);
+                await WriteNullableDouble(writer, r.AverageRating, ct);
+                await WriteNullableInt(writer, r.NumVotes, ct);
+                await writer.WriteAsync(r.Popularity, NpgsqlDbType.Double, ct);
             }
+            await writer.CompleteAsync(ct);
+        }
 
-            await using var merge = new NpgsqlCommand(ImdbStaging.MergeSql + ";", conn);
-            return await merge.ExecuteNonQueryAsync(ct);
-        }
-        finally
+        await using (var conflicts = new NpgsqlCommand(ImdbStaging.LinkedTypeConflictsSql, conn, tx))
+        await using (var reader = await conflicts.ExecuteReaderAsync(ct))
         {
-            // await using повертає з'єднання в пул
+            var samples = new List<string>();
+            long count = 0;
+            while (await reader.ReadAsync(ct))
+            {
+                count = reader.GetInt64(4);
+                samples.Add($"{reader.GetString(0)} [TMDB {reader.GetInt32(1)}, {reader.GetString(2)} → {reader.GetString(3)}]");
+            }
+            if (count > 0)
+                log.LogWarning("IMDb type audit found {Count} TMDB-linked conflicts in this batch. Sample: {Conflicts}",
+                    count, string.Join(", ", samples));
         }
+
+        await using var merge = new NpgsqlCommand(ImdbStaging.MergeSql, conn, tx);
+        var affected = await merge.ExecuteNonQueryAsync(ct);
+        await tx.CommitAsync(ct);
+        return affected;
     }
 
     private static async Task WriteNullableInt(NpgsqlBinaryImporter writer, int? value, CancellationToken ct) =>
@@ -311,9 +269,11 @@ public sealed class ImdbBulkService(
 
     // ─── sync_state ───
 
-    private async Task UpdateSyncStateAsync(IReadOnlySet<string> types, int movies, int series, CancellationToken ct)
+    private async Task UpdateSyncStateAsync(IReadOnlySet<string> types, int movies, int series, bool fullSync, CancellationToken ct)
     {
-        foreach (var kind in types)
+        var finishedAt = DateTime.UtcNow;
+        var kinds = fullSync ? types.Append(FullSyncKind) : types;
+        foreach (var kind in kinds)
         {
             var state = await db.SyncStates.FirstOrDefaultAsync(s => s.Source == Source && s.Kind == kind, ct);
             if (state is null)
@@ -321,8 +281,13 @@ public sealed class ImdbBulkService(
                 state = new SyncState { Source = Source, Kind = kind };
                 db.SyncStates.Add(state);
             }
-            state.LastRunAt = DateTime.UtcNow;
-            state.LastCount = kind == "movie" ? movies : series;
+            state.LastRunAt = finishedAt;
+            state.LastCount = kind switch
+            {
+                "movie" => movies,
+                "series" => series,
+                _ => movies + series,
+            };
         }
         await db.SaveChangesAsync(ct);
     }

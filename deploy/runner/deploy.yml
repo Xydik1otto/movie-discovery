@@ -1,0 +1,21 @@
+name: Deploy Movie Discovery
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: movie-discovery-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.repository.private && github.ref == 'refs/heads/main' && vars.MOVIE_DISCOVERY_AUTO_DEPLOY == 'true'
+    runs-on: [self-hosted, linux, x64, movie-discovery-production]
+    timeout-minutes: 120
+    steps:
+      - name: Run the installed release updater
+        run: sudo -n /usr/local/sbin/movie-discovery-update --deploy

@@ -25,6 +25,9 @@ services:
       file: docker-compose.yml
       service: minio
     image: moviediscovery-minio:${RELEASE_TAG:?Set the prepared release tag}
+    ports: !override
+      - "127.0.0.1:${MINIO_API_PORT:-9002}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - type: bind
         source: ${MINIO_DATA_DIR:?Set MINIO_DATA_DIR to the selected server data disk}
@@ -40,10 +43,22 @@ services:
     image: movie-discovery-api:${RELEASE_TAG:?Set the prepared release tag}
     environment:
       FRONT_PUBLIC_URL: ${FRONT_PUBLIC_URL:?Set the public HTTPS URL}
+      Imdb__CacheDir: /data/catalog-cache/imdb
+      Imdb__AutoSyncIntervalHours: ${IMDB_AUTO_SYNC_INTERVAL_HOURS:-24}
+      CatalogSync__TmdbIntervalHours: ${TMDB_AUTO_SYNC_INTERVAL_HOURS:-24}
+      CatalogSync__TmdbPages: ${TMDB_AUTO_SYNC_PAGES:-5}
+      WatchWeb__Enabled: ${WATCH_WEB_ENABLED:-false}
+      WatchWeb__ApiKey: ${BRAVE_SEARCH_API_KEY:-}
+      WatchWeb__DailyRequests: ${WATCH_WEB_DAILY_REQUESTS:-32}
     volumes:
       - type: bind
         source: ${APP_KEYS_DIR:?Set APP_KEYS_DIR to persistent server storage}
         target: /data/keys
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CATALOG_CACHE_DIR:?Set CATALOG_CACHE_DIR to the selected server data disk}
+        target: /data/catalog-cache
         bind:
           create_host_path: false
     logging: *logging

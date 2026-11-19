@@ -1,26 +1,22 @@
 "use client";
 
-// Панель «Де подивитись» (UX-04, хвиля 2) — повний власник зони watch у title-сторінці:
-//   • перемикач МОВИ ПЕРЕГЛЯДУ (uk/ru/оригінал/невідома) НЕЗАЛЕЖНИЙ від мови UI;
-//   • групи чесні: «Українською (дубляж/аудіо/субтитри)» — теги лише з реальних даних;
-//   • direct-лінки окремо від «Знайти на сервісу» (find — з іконкою пошуку);
-//   • tri-state доступності: unknown (неперевірений каталог Plex) ≠ «Безкоштовно»;
-//   • ціни чесні (rent/buy — якщо ціна є в даних), платні за перемикачем,
-//     дефолт — безкоштовні (рішення власника 09.11 збережено);
-//   • empty states окремі: «нема у вашому регіоні (UA)» vs «нема цією мовою — інші доступні».
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useI18n } from "../i18n/I18nContext";
-import { PROVIDER_KIND_STYLE } from "../lib/constants";
+import { getWatch } from "../lib/api";
+import { PROVIDER_KIND_STYLE, REGIONS } from "../lib/constants";
 import {
   groupWatchByLang,
   parseLangCsv,
-  watchAvailabilityStatus,
-  watchLangGroupOf,
-  watchUrlKind,
   qualityLabel,
-  type ViewLangGroupKey,
+  watchAvailabilityStatus,
+  watchUrlKind,
 } from "../lib/watch";
-import type { ProviderKind, WatchProvider } from "../lib/types";
+import type { ViewLangGroupKey } from "../lib/watch";
+import type { WatchProvider, WatchSearchLink } from "../lib/types";
+
+const POLL_DELAYS = [800, 1500, 2500, 4000, 6500];
+const LEGACY_LANGUAGES: Record<string, string> = { ukr: "uk", russ: "ru", eng: "en", jpn: "ja", kor: "ko", zho: "zh" };
+const COUNTRY_CODES = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
 
 const GROUP_LABEL_KEYS: Record<ViewLangGroupKey, string> = {
   uk: "watch.lang.uk",
@@ -29,252 +25,260 @@ const GROUP_LABEL_KEYS: Record<ViewLangGroupKey, string> = {
   unknown: "watch.lang.unknown",
 };
 
-const TAG_KEYS: Record<string, string> = {
-  dub: "watch.tag.dub",
-  audio: "watch.tag.audio",
-  sub: "watch.tag.sub",
-};
+function offerLanguages(provider: WatchProvider) {
+  return [
+    ...parseLangCsv(provider.audioLangs),
+    ...parseLangCsv(provider.subLangs),
+    LEGACY_LANGUAGES[provider.audioLang ?? ""] ?? provider.audioLang ?? "",
+  ].filter((code) => /^[a-z]{2}$/.test(code));
+}
 
-function providerDisplayName(t: (k: string) => string, provider: string): string {
-  const key = `provider.${provider}`;
-  const label = t(key);
-  return label && label !== key ? label : provider;
+function countryCode(value: string | null | undefined) {
+  const code = value?.trim().toUpperCase();
+  if (!code || !/^[A-Z]{2}$/.test(code)) return null;
+  return COUNTRY_CODES.of(code) ? code : null;
+}
+
+function readRegion() {
+  try {
+    return countryCode(localStorage.getItem("region")) ?? "UA";
+  } catch {
+    return "UA";
+  }
+}
+
+function subscribeRegion(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
 }
 
 export default function WatchPanel({
-  providers,
-  region,
+  titleId,
+  initialProviders = [],
+  online,
 }: {
-  providers: WatchProvider[];
-  region: string;
+  titleId: number;
+  initialProviders?: WatchProvider[];
+  online: boolean;
 }) {
-  const { t } = useI18n();
-  // Рішення власника (09.11): за замовчуванням лише безкоштовні (free|ads),
-  // платні — за перемикачем (стан локальний панелі).
+  const { lang, t } = useI18n();
+  const savedRegion = useSyncExternalStore(subscribeRegion, readRegion, () => null);
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const requestRegion = selectedRegion ?? savedRegion;
+  const region = requestRegion ?? "UA";
+  const [options, setOptions] = useState<WatchProvider[] | null>(null);
+  const [searchLinks, setSearchLinks] = useState<WatchSearchLink[]>([]);
+  const [completedRegion, setCompletedRegion] = useState<string | null>(null);
   const [showPaid, setShowPaid] = useState(false);
-  const isFreeish = (p: WatchProvider) => p.kind === "free" || p.kind === "ads";
-  const hasPaid = providers.some((p) => !isFreeish(p));
-  const visible = showPaid ? providers : providers.filter(isFreeish);
-
-  const groups = useMemo(() => groupWatchByLang(visible), [visible]);
-  const hasLangData = useMemo(() => groups.some((g) => g.key !== "unknown"), [groups]);
-  // Початковий вибір мови: uk → ru → оригінал → невідома (перша непорожня група).
-  const defaultGroup = groups[0]?.key ?? "unknown";
+  const [language, setLanguage] = useState("");
   const [selected, setSelected] = useState<ViewLangGroupKey | null>(null);
-  const active = selected && groups.some((g) => g.key === selected) ? selected : defaultGroup;
-  const activeGroup = groups.find((g) => g.key === active);
 
-  // ── Empty state 1: у регіоні взагалі немає даних ──
-  if (providers.length === 0) {
-    return (
-      <section className="rounded-2xl border border-line bg-panel p-4">
-        <h2 className="mb-2 text-base font-bold">{t("title.watch.where")}</h2>
-        <p className="text-sm text-mute">{t("watch.empty.region", { region })}</p>
-      </section>
-    );
+  useEffect(() => {
+    if (!online || !requestRegion) return;
+
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
+    async function refresh() {
+      try {
+        const result = await getWatch(titleId, signal, requestRegion ?? undefined);
+        signal.throwIfAborted();
+        setOptions(result.providers.filter((provider) => watchAvailabilityStatus(provider) !== "unavailable"));
+        setSearchLinks(result.searchLinks ?? []);
+        const delay = POLL_DELAYS[attempt++];
+        if (result.discoveryPending && delay !== undefined) {
+          timer = setTimeout(refresh, delay);
+          return;
+        }
+      } catch {
+        // Keep the last successful response, or the title page's cached offers.
+      }
+      if (!controller.signal.aborted) setCompletedRegion(requestRegion);
+    }
+
+    void refresh();
+    return () => {
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [online, requestRegion, titleId]);
+
+  const regionNames = useMemo(() => new Intl.DisplayNames([lang], { type: "region" }), [lang]);
+  const languageNames = useMemo(() => new Intl.DisplayNames([lang], { type: "language" }), [lang]);
+  const pool = options ?? initialProviders;
+  const countries = [...new Set([...REGIONS, region,
+    ...[...pool, ...searchLinks].map((p) => countryCode(p.region)).filter((code) => code !== null)])]
+    .sort((a, b) => regionNames.of(a)!.localeCompare(regionNames.of(b)!, lang));
+  const providers = pool.filter((p) => !p.region || p.region === "*" || p.region.toUpperCase() === region);
+  const regionalLinks = searchLinks.filter((link) => link.region === region || link.region === "*");
+  const catalogs = regionalLinks.filter((link) => !link.source);
+  const discovered = regionalLinks.filter((link) => link.source === "brave-web");
+  const pending = online && completedRegion !== requestRegion;
+  const isFree = (p: WatchProvider) => p.kind === "free" || p.kind === "ads";
+  const hasPaid = providers.some((p) => !isFree(p));
+  const byPrice = showPaid ? providers : providers.filter(isFree);
+  const languages = [...new Set(byPrice.flatMap(offerLanguages))]
+    .sort((a, b) => languageNames.of(a)!.localeCompare(languageNames.of(b)!, lang));
+  const visible = byPrice.filter((p) => !language || offerLanguages(p).includes(language));
+  const groups = groupWatchByLang(visible);
+  const activeGroup = groups.find((group) => group.key === selected) ?? groups[0];
+  const hasJustWatch = activeGroup?.items.some((p) => p.source === "tmdb-providers" || p.source === "justwatch");
+
+  function selectCountry(code: string) {
+    setSelectedRegion(code);
+    setCompletedRegion(null);
+    setLanguage("");
+    try {
+      localStorage.setItem("region", code);
+    } catch {
+      // The selected country still applies to the current page.
+    }
   }
 
-  const unknownCatalog = (p: WatchProvider) =>
-    watchAvailabilityStatus(p) === "unknown";
-  const unknownItems = visible.filter(unknownCatalog);
-  const unknownCount = unknownItems.length;
-
+  const selectStyle = "min-w-0 rounded-lg border border-line bg-panel-2 px-2 py-1.5 text-sm text-ink";
   return (
     <section className="rounded-2xl border border-line bg-panel p-4">
       <h2 className="mb-3 text-base font-bold">{t("title.watch.where")}</h2>
-
-      {/* Перемикач мови перегляду — НЕЗАЛЕЖНИЙ від мови UI. Показуємо лише коли
-          є мовні дані (інакше всі рядки чесно «невідома» і перемикач безглуздий). */}
-      {hasLangData && (
-        <div className="mb-3 flex flex-wrap gap-1.5" role="tablist" aria-label={t("watch.lang.switcher")}>
-          {groups.map((g) => {
-            const selectedStyle =
-              g.key === active
-                ? "border-accent/70 bg-accent/15 text-accent-2"
-                : "border-line bg-panel-2 text-mute hover:border-accent/40";
-            return (
-              <button
-                key={g.key}
-                type="button"
-                role="tab"
-                aria-selected={g.key === active}
-                onClick={() => setSelected(g.key)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${selectedStyle}`}
-              >
-                {t(GROUP_LABEL_KEYS[g.key])}
-                <span className="ml-1 opacity-60">{g.items.length}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Empty state 2: у вибраній мові нічого, але в інших мовах є */}
-      {!activeGroup && hasLangData && (
-        <div className="rounded-xl border border-line bg-panel-2 p-3">
-          <p className="text-sm text-mute">{t("watch.empty.lang")}</p>
-          <p className="mt-1 text-xs text-mute">{t("watch.empty.langHint")}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {groups
-              .filter((g) => g.key !== active)
-              .map((g) => (
-                <button
-                  key={g.key}
-                  type="button"
-                  onClick={() => setSelected(g.key)}
-                  className="rounded-full border border-line bg-panel px-2.5 py-1 text-xs font-semibold text-accent-2 hover:border-accent/60"
-                >
-                  {t(GROUP_LABEL_KEYS[g.key])} ({g.items.length})
-                </button>
+      <div className="mb-3 flex flex-wrap gap-3">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-mute">
+          {t("watch.region.select")}
+          <select className={selectStyle} value={region} onChange={(event) => selectCountry(event.target.value)}>
+            {countries.map((code) => <option key={code} value={code}>{regionNames.of(code)}</option>)}
+          </select>
+        </label>
+        {(languages.length > 0 || language) && (
+          <label className="flex min-w-0 flex-col gap-1 text-xs text-mute">
+            {t("watch.language.select")}
+            <select className={selectStyle} value={language} onChange={(event) => setLanguage(event.target.value)}>
+              <option value="">{t("watch.language.any")}</option>
+              {[...new Set([...languages, ...(language ? [language] : [])])].map((code) => (
+                <option key={code} value={code}>{languageNames.of(code)}</option>
               ))}
-          </div>
+            </select>
+          </label>
+        )}
+      </div>
+
+      {pending && <p role="status" className="mb-2 text-sm text-mute">{t("watch.discovery.pending")}</p>}
+      {!pending && providers.length === 0 && (
+        <p className="text-sm text-mute">{t("watch.empty.region", { region: regionNames.of(region) ?? region })}</p>
+      )}
+      {providers.length > 0 && byPrice.length === 0 && (
+        <p className="text-sm text-mute">{t("watch.empty.free")}</p>
+      )}
+      {byPrice.length > 0 && !activeGroup && <p className="text-sm text-mute">{t("watch.empty.lang")}</p>}
+
+      {groups.length > 1 && (
+        <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label={t("watch.lang.switcher")}>
+          {groups.map((group) => (
+            <button
+              key={group.key}
+              type="button"
+              aria-pressed={group.key === activeGroup?.key}
+              onClick={() => setSelected(group.key)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${group.key === activeGroup?.key
+                ? "border-accent/70 bg-accent/15 text-accent-2"
+                : "border-line bg-panel-2 text-mute hover:border-accent/40"}`}
+            >
+              {t(GROUP_LABEL_KEYS[group.key])} <span className="opacity-60">{group.items.length}</span>
+            </button>
+          ))}
         </div>
       )}
 
       {activeGroup && (
-        <div className="space-y-2">
-          {/* Теги групи з реальних даних: дубляж/аудіо/субтитри — без вигадок */}
-          {activeGroup.tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-mute">
-              <span className="text-xs font-semibold uppercase tracking-wide text-mute">
-                {t(GROUP_LABEL_KEYS[activeGroup.key])}
-              </span>
-              <span className="opacity-50">·</span>
-              {activeGroup.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-md border border-line bg-panel-2 px-1.5 py-0.5"
-                >
-                  {t(TAG_KEYS[tag])}
-                </span>
-              ))}
-            </div>
-          )}
-          <ul className="space-y-1.5">
-            {activeGroup.items.map((p, i) => (
-              <WatchRow key={`${p.provider}-${p.kind}-${p.url ?? "nourl"}-${p.audioLangs ?? "nolang"}-${i}`} watch={p} t={t} />
-            ))}
-          </ul>
-        </div>
+        <ul className="space-y-1.5">
+          {activeGroup.items.map((provider, index) => (
+            <WatchRow key={`${provider.provider}-${provider.kind}-${provider.url}-${index}`} watch={provider} languageNames={languageNames} t={t} />
+          ))}
+        </ul>
       )}
-
-      {/* Неклікабельні/unknown-рядки не ховаємо — чесний стан видно у рядку.
-          Нотатка-лічильник розгортається: перелік неперевірених варіантів під рукою. */}
-      {unknownCount > 0 && (
-        <details className="mt-2">
-          <summary className="cursor-pointer select-none list-none text-[11px] text-mute transition-colors hover:text-accent-2">
-            <span className="inline-flex items-center gap-1">
-              <span aria-hidden className="text-[9px]">▸</span>
-              {t("watch.unknownNote", { count: unknownCount })}
-            </span>
-          </summary>
-          <ul className="mt-1.5 space-y-1.5 pl-3">
-            {unknownItems.map((p, i) => (
-              <WatchRow
-                key={`unknown-${p.provider}-${p.kind}-${p.url ?? "nourl"}-${p.audioLangs ?? "nolang"}-${i}`}
-                watch={p}
-                t={t}
-              />
-            ))}
-          </ul>
-        </details>
-      )}
-
       {hasPaid && (
         <button
           type="button"
-          onClick={() => setShowPaid((v) => !v)}
+          onClick={() => setShowPaid((value) => !value)}
+          aria-pressed={showPaid}
           className="mt-3 rounded-full border border-line bg-panel-2 px-3 py-1 text-xs font-semibold text-mute transition-colors hover:border-accent/60 hover:text-accent-2"
         >
           {showPaid ? t("watch.hidePaid") : t("watch.showPaid")}
         </button>
       )}
+      {hasJustWatch && <p className="mt-2 text-xs text-mute">{t("watch.source.justwatch")}</p>}
+      {discovered.length > 0 && (
+        <details className="mt-3 border-t border-line pt-2" open={providers.length === 0}>
+          <summary className="cursor-pointer text-sm text-accent-2">{t("watch.web.links")}</summary>
+          <p className="my-2 text-xs text-mute">{t("watch.web.hint")}</p>
+          <ul className="flex flex-wrap gap-2">
+            {discovered.map((link) => (
+              <li key={link.url}>
+                <a className="rounded-lg border border-line px-2.5 py-1 text-xs hover:border-accent/60"
+                  href={link.url} target="_blank" rel="noopener noreferrer">{link.provider}</a>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {catalogs.length > 0 && (
+        <details className="mt-3 border-t border-line pt-2">
+          <summary className="cursor-pointer text-sm text-accent-2">{t("watch.catalog.search")}</summary>
+          <p className="my-2 text-xs text-mute">{t("watch.catalog.hint")}</p>
+          <ul className="flex flex-wrap gap-2">
+            {catalogs.map((link) => (
+              <li key={link.url}>
+                <a className="rounded-lg border border-line px-2.5 py-1 text-xs hover:border-accent/60"
+                  href={link.url} target="_blank" rel="noopener noreferrer">{link.provider}</a>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }
 
-function WatchRow({ watch: p, t }: { watch: WatchProvider; t: (k: string, vars?: Record<string, string | number>) => string }) {
-  const style = PROVIDER_KIND_STYLE[p.kind as ProviderKind] ?? "bg-panel-2 text-mute border-line";
-  const name = providerDisplayName((k) => t(k), p.provider);
-  const kindKey = p.kind === "free" ? "watch.kind.free" : `watch.kind.${p.kind}`;
-  const kindLabel = ["free", "ads", "stream", "rent", "buy"].includes(p.kind) ? t(kindKey) : p.kind;
-  const quality = qualityLabel(p.quality);
-  const avail = watchAvailabilityStatus(p);
-  const isFind = watchUrlKind(p) === "find";
-
-  // Чесні підписи стану (unknown ≠ «Безкоштовно»-бейдж):
-  const statusLabel =
-    avail === "unknown"
-      ? p.source === "plex"
-        ? t("watch.unknown.plexCatalog")
-        : t("watch.status.unknown")
-      : avail === "unavailable"
-        ? t("watch.status.unavailable")
-        : null;
-
-  // Ціна чесна: лише якщо є в даних (rent/buy); free/ads/stream ціну не показуємо.
-  const price = (p.kind === "rent" || p.kind === "buy") && p.price ? p.price : null;
-
-  const inner = (
+function WatchRow({ watch: provider, languageNames, t }: {
+  watch: WatchProvider;
+  languageNames: Intl.DisplayNames;
+  t: (k: string, vars?: Record<string, string | number>) => string;
+}) {
+  const nameKey = `provider.${provider.provider}`;
+  const translated = t(nameKey);
+  const name = translated === nameKey ? provider.provider : translated;
+  const kind = provider.kind === "subscription" ? "stream" : provider.kind;
+  const kindKey = `watch.kind.${kind}`;
+  const kindLabel = t(kindKey);
+  const quality = qualityLabel(provider.quality);
+  const price = (kind === "rent" || kind === "buy") ? provider.price : null;
+  const isFind = watchUrlKind(provider) === "find";
+  const isCatalog = provider.source === "tmdb-providers";
+  const url = /^https?:\/\//i.test(provider.url ?? "") ? provider.url : null;
+  const labels = (csv: string | null | undefined) => parseLangCsv(csv).map((code) =>
+    /^[a-z]{2}$/.test(code) ? languageNames.of(code) : t(`watch.lang.code.${code}`)).join(", ");
+  const audio = labels(provider.audioLangs) || (provider.audioLang ? t(`watch.audio.${provider.audioLang}`) : "");
+  const subtitles = labels(provider.subLangs);
+  const style = PROVIDER_KIND_STYLE[provider.kind] ?? "bg-panel-2 text-mute border-line";
+  const className = `inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-1.5 text-xs ${style}`;
+  const entry = (
     <>
-      {isFind ? (
-        <span aria-hidden="true" className="text-mute">🔍</span>
-      ) : null}
       <span className="font-semibold">{name}</span>
-      <span className="opacity-60">·</span>
-      <span className="opacity-80">{kindLabel}</span>
-      {price && (
-        <>
-          <span className="opacity-60">·</span>
-          <span className="font-bold">{price}</span>
-        </>
-      )}
-      {quality && (
-        <>
-          <span className="opacity-60">·</span>
-          <span className="font-bold">{quality}</span>
-        </>
-      )}
-      {/* Мовні набори конкретного оффера (не прикрашаємо: показуємо лише відомі) */}
-      {parseLangCsv(p.audioLangs).length > 0 && (
-        <>
-          <span className="opacity-60">·</span>
-          <span className="opacity-80">{t("watch.tag.audioShort")}: {parseLangCsv(p.audioLangs).map((l) => t(`watch.lang.code.${l}`)).filter((x) => !x.startsWith("watch.")).join(", ")}</span>
-        </>
-      )}
-      {statusLabel && (
-        <>
-          <span className="opacity-60">·</span>
-          <span className="italic opacity-80">{statusLabel}</span>
-        </>
-      )}
-      {isFind && (
-        <>
-          <span className="opacity-60">·</span>
-          <span className="opacity-70">{t("watch.findOn", { provider: name })}</span>
-        </>
-      )}
+      <span>{kindLabel === kindKey ? kind : kindLabel}</span>
+      {price && <span className="font-bold">{price}</span>}
+      {quality && <span className="font-bold">{quality}</span>}
+      {provider.dub && <span>{t("watch.tag.dub")}</span>}
+      {audio && !audio.startsWith("watch.") && <span>{t("watch.tag.audioShort")} {audio}</span>}
+      {subtitles && <span>{t("watch.tag.sub")} {subtitles}</span>}
+      {isCatalog && <span className="italic">{t("watch.catalog.listing")}</span>}
+      {!isCatalog && watchAvailabilityStatus(provider) === "unknown" && <span className="italic">{t("watch.status.unknown")}</span>}
+      {isFind && !isCatalog && url && <span>{t("watch.findOn", { provider: name })}</span>}
     </>
   );
-  const cls = `inline-flex flex-wrap items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${style}`;
 
-  // find-лінк теж клікабельний (корисний вихід на сервіс), але чесно підписаний
-  // «Знайти на сервісу» — НЕ як пряме переглядання; url:null → неклікабельний.
-  if (p.url && p.url !== "#") {
-    return (
-      <li>
-        <a href={p.url} target="_blank" rel="noopener noreferrer" className={`${cls} hover:brightness-125`}>
-          {inner}
-        </a>
-      </li>
-    );
-  }
   return (
     <li>
-      <span className={`${cls} opacity-90`}>{inner}</span>
+      {url ? <a href={url} target="_blank" rel="noopener noreferrer" className={`${className} hover:brightness-125`}>{entry}</a>
+        : <span className={className}>{entry}</span>}
     </li>
   );
 }
-
-// Реекспорт для зручності інтеграції в page.tsx (pag-2): один import.
-export { watchLangGroupOf };

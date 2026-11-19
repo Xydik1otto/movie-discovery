@@ -122,7 +122,7 @@ public static class JustWatchMapper
     public static List<Provider> BuildProviders(int titleId, IEnumerable<JustWatchOffer> offers, string region, DateTime now)
     {
         var rows = new List<Provider>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var byOffer = new Dictionary<string, Provider>(StringComparer.OrdinalIgnoreCase);
         foreach (var o in offers)
         {
             var kind = MapKind(o.MonetizationType);
@@ -134,14 +134,24 @@ public static class JustWatchMapper
             var audioLangs = WatchLanguages.NormalizeSet(o.AudioLanguages);
             var subLangs = WatchLanguages.NormalizeSet(o.SubtitleLanguages);
             var key = $"{name}|{kind}|{WatchLanguages.Signature(audioLangs)}";
-            if (!seen.Add(key)) continue; // дублікат presentation-type з тим самим аудіо-набором
+            var url = Uri.TryCreate(o.StandardWebUrl, UriKind.Absolute, out var target) &&
+                target.Scheme is "https" or "http" ? target.AbsoluteUri : null;
+            if (byOffer.TryGetValue(key, out var existing))
+            {
+                // Different presentation types can repeat an offer and disclose complementary subtitle data.
+                if (existing.Url is null || (WatchUrlClassifier.Classify(existing.Url) == WatchUrlClassifier.Find &&
+                                             WatchUrlClassifier.Classify(url) == WatchUrlClassifier.Direct))
+                    existing.Url = url;
+                existing.SubLangs = WatchLanguages.Union(existing.SubLangs, subLangs);
+                continue;
+            }
 
-            rows.Add(new Provider
+            var row = new Provider
             {
                 TitleId = titleId,
                 ProviderName = name,
                 Kind = kind,
-                Url = string.IsNullOrWhiteSpace(o.StandardWebUrl) ? null : o.StandardWebUrl,
+                Url = url,
                 Source = Source,
                 Region = region,
                 AudioLangs = audioLangs,
@@ -149,7 +159,9 @@ public static class JustWatchMapper
                 Price = string.IsNullOrWhiteSpace(o.RetailPrice) ? null : o.RetailPrice.Trim(),
                 Currency = string.IsNullOrWhiteSpace(o.Currency) ? null : o.Currency.Trim(),
                 UpdatedAt = now,
-            });
+            };
+            rows.Add(row);
+            byOffer.Add(key, row);
         }
         return rows;
     }
@@ -448,10 +460,10 @@ public sealed class JustWatchSyncService(
         if (cap <= 0) return (0, 0);
 
         var candidates = await db.Titles.AsNoTracking()
-            .Where(t => (t.Type == "movie" || t.Type == "series")
+            .Where(t => t.Type != "manga"
                         && t.ImdbId != null && t.ImdbId != ""
                         && t.TitleEn != ""
-                        && !db.Providers.Any(p => p.TitleId == t.Id && p.Source == Source))
+                        && !db.Providers.Any(p => p.TitleId == t.Id && p.Source == Source && p.Region == _opt.Country))
             .OrderByDescending(t => t.Popularity)
             .ThenBy(t => t.Id)
             .Take(cap)
@@ -475,15 +487,15 @@ public sealed class JustWatchSyncService(
                 continue;
             }
 
-            var hit = JustWatchMapper.MatchByImdb(results, t.ImdbId!) ?? JustWatchMapper.MatchByTitleYear(results, t.TitleEn, t.Year);
+            await Task.Delay(_opt.RequestDelayMs, ct);
+            var hit = JustWatchMapper.MatchByImdb(results, t.ImdbId!);
             if (hit is not { Offers.Count: > 0 }) continue;
 
             var providers = JustWatchMapper.BuildProviders(t.Id, hit.Offers, _opt.Country, DateTime.UtcNow);
             if (providers.Count == 0) continue; // усі оффери невідомих kind/без пакетів — нічого не пишемо
 
-            await ReplaceProvidersAsync(db, t.Id, providers, ct);
+            await ReplaceProvidersAsync(db, t.Id, providers, ct, _opt.Country);
             matched++;
-            await Task.Delay(_opt.RequestDelayMs, ct);
         }
         return (candidates.Count, matched);
     }
@@ -536,7 +548,7 @@ public sealed class JustWatchSyncService(
             {
                 var providers = JustWatchMapper.BuildProviders(t.Id, offersByImdb[t.ImdbId!], _opt.Country, DateTime.UtcNow);
                 if (providers.Count == 0) continue;
-                await ReplaceProvidersAsync(db, t.Id, providers, ct);
+                await ReplaceProvidersAsync(db, t.Id, providers, ct, _opt.Country);
                 matched++;
             }
         }
@@ -544,20 +556,21 @@ public sealed class JustWatchSyncService(
     }
 
     /// <summary>
-    /// Upsert провайдерів тайтла: DELETE source=justwatch (усі регіони) + INSERT свіжі
+    /// Upsert провайдерів тайтла: заміна знімка JustWatch лише для запитаного регіону
     /// — двома SaveChanges всередині транзакції (реляційний провайдер) / послідовно
     /// (InMemory). Ідемпотентно: повторний прогін дає той самий набір рядків.
     /// UX-04: UNIQUE тепер (title, provider, kind, source, region, COALESCE(audio_langs,'')) —
     /// різні аудіо-набори одного провайдера лишаються окремими рядками.
     /// </summary>
-    public static async Task ReplaceProvidersAsync(MovieDiscoveryDbContext db, int titleId, List<Provider> rows, CancellationToken ct)
+    public static async Task ReplaceProvidersAsync(MovieDiscoveryDbContext db, int titleId, List<Provider> rows,
+        CancellationToken ct, string region = "UA")
     {
         await using var tx = db.Database.IsRelational()
             ? await db.Database.BeginTransactionAsync(ct)
             : null;
 
         var stale = await db.Providers
-            .Where(p => p.TitleId == titleId && p.Source == Source)
+            .Where(p => p.TitleId == titleId && p.Source == Source && p.Region == region)
             .ToListAsync(ct);
         db.Providers.RemoveRange(stale);
         await db.SaveChangesAsync(ct); // DELETE перед INSERT — не тригерить UNIQUE (title, provider, kind, source, region)

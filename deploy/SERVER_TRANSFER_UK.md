@@ -22,7 +22,7 @@ bash scripts/server-preflight.sh /mnt/CHOSEN_DATA_DISK/movie-discovery /mnt/CHOS
 
 Виберіть реальні точки монтування після перегляду `df` та `lsblk`. PostgreSQL займає близько 2,4 ГБ, MinIO — 2,1 ГБ. Для PostgreSQL врахуйте індекси, тимчасове місце для їх перебудови, до 4 ГБ WAL і подальше зростання. Для даних цього проєкту орієнтиром є щонайменше 20 ГБ вільного місця. Резервні копії та архів образів також займають місце.
 
-`PG_DATA_DIR`, `MINIO_DATA_DIR` і `APP_KEYS_DIR` задаються окремо. Їх можна розмістити на різних дисках. Порівняйте `findmnt -T` для кожного шляху й `/`, щоб перевірити, чи вибране сховище розташоване поза системним розділом. Перевірте постійне монтування через `/etc/fstab` і `findmnt --verify` до запуску. Compose має `create_host_path: false`, тому порожня випадкова директорія не створиться автоматично.
+`PG_DATA_DIR`, `MINIO_DATA_DIR`, `APP_KEYS_DIR` та `CATALOG_CACHE_DIR` задаються окремо. Їх можна розмістити на різних дисках. Останній каталог зберігає стиснені файли IMDb між релізами. Порівняйте `findmnt -T` для кожного шляху й `/`, щоб перевірити, чи вибране сховище розташоване поза системним розділом. Перевірте постійне монтування через `/etc/fstab` і `findmnt --verify` до запуску. Compose має `create_host_path: false`, тому порожня випадкова директорія не створиться автоматично.
 
 Окремо перевірте диск для DockerRootDir. Образи, шари контейнерів і build cache зберігаються там, навіть коли БД винесена на інший диск. Серверний Compose обмежує журнали кожного контейнера трьома файлами по 10 МБ. Остаточний план звільнення системного диска залежить від фактичного серверного огляду.
 
@@ -71,7 +71,7 @@ cd /opt/movie-discovery
 docker compose --env-file deploy/server.env -f docker-compose.server.yml config --quiet
 ```
 
-Створіть вибрані директорії PG_DATA_DIR, MINIO_DATA_DIR та APP_KEYS_DIR. Перевірте їх порожнечу і файлові системи. Розпакуйте `minio.tar` у MINIO_DATA_DIR, а вміст `private-config/data/keys/` скопіюйте в APP_KEYS_DIR. UID/GID MinIO у підготовленому образі — `10001`. Надайте йому володіння MINIO_DATA_DIR. API читає ключі з APP_KEYS_DIR. Власність PG_DATA_DIR встановлює PostgreSQL entrypoint. Після перенесення каталогів з іншого сервера збережіть коректні UID і права.
+Створіть вибрані директорії PG_DATA_DIR, MINIO_DATA_DIR, APP_KEYS_DIR та CATALOG_CACHE_DIR. Перевірте їх порожнечу і файлові системи. Розпакуйте `minio.tar` у MINIO_DATA_DIR, а вміст `private-config/data/keys/` скопіюйте в APP_KEYS_DIR. UID/GID MinIO у підготовленому образі — `10001`. Надайте йому володіння MINIO_DATA_DIR. API читає ключі з APP_KEYS_DIR і завантажує файли IMDb в CATALOG_CACHE_DIR. Власність PG_DATA_DIR встановлює PostgreSQL entrypoint. Після перенесення каталогів з іншого сервера збережіть коректні UID і права.
 
 ```bash
 docker compose --env-file deploy/server.env -f docker-compose.server.yml up -d --no-build --pull never db
@@ -108,6 +108,8 @@ docker compose --env-file deploy/server.env -f docker-compose.server.yml up -d -
 ```
 
 Перевірте `/tunnel`, персональні списки в боті та відсутність конфлікту Telegram polling. Дочекайтеся завершення приймання перед очищенням тимчасового середовища. Збережіть фінальну резервну копію, образи й звіти.
+
+Після приймання можна під’єднати [автоматичні оновлення через GitHub Actions](runner/README_UK.md). Для цього профілю задайте `"profile": "server"` у конфігурації оновлювача.
 
 ## Відкат
 

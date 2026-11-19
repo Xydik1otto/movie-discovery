@@ -61,20 +61,20 @@ def check_config(config, check_storage):
         errors.append("The public bot profile must run without host volume access")
 
     for service, target in (("db", "/var/lib/postgresql/data"), ("minio", "/data"),
-                            ("api", "/data/keys")):
+                            ("api", "/data/keys"), ("api", "/data/catalog-cache")):
         mounts = [mount for mount in services[service].get("volumes", [])
                   if mount.get("target") == target]
         if len(mounts) != 1 or mounts[0].get("type") != "bind":
-            errors.append(f"Configure persistent bind storage for {service}")
+            errors.append(f"Configure persistent bind storage for {service} at {target}")
             continue
         mount = mounts[0]
         source = mount.get("source", "")
         if placeholder(source) or not source.startswith("/"):
-            errors.append(f"Set an absolute Linux data path for {service}")
+            errors.append(f"Set an absolute Linux data path for {service} at {target}")
         if mount.get("bind", {}).get("create_host_path") is not False:
-            errors.append(f"Disable automatic creation of {service}'s storage path")
+            errors.append(f"Disable automatic creation of {service}'s storage path at {target}")
         if check_storage and not Path(source).is_dir():
-            errors.append(f"Create and verify the chosen storage directory for {service}")
+            errors.append(f"Create and verify the chosen storage directory for {service} at {target}")
         elif check_storage:
             free = shutil.disk_usage(source).free
             if free < 20 * 1024 ** 3:

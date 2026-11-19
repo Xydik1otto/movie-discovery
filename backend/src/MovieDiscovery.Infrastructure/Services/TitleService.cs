@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Tmdb;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Infrastructure.Services;
 
@@ -66,40 +67,12 @@ public sealed class TitleService(
         return new TitleDetail(title, providers);
     }
 
-    public async Task<List<Provider>> GetProvidersAsync(Title title, string region, CancellationToken ct = default)
-    {
-        var list = await LoadProvidersAsync(title.Id, region, ct);
-        if (list.Count > 0 || !tmdb.IsConfigured || title.TmdbId is not int tmdbId) return list;
-
-        // on-demand: перший запит тягне watch/providers (через кеш), зберігає назавжди
-        try
-        {
-            var isMovie = title.Type == "movie";
-            var en = isMovie
-                ? await tmdb.MovieDetailsAsync(tmdbId, "en-US", ct)
-                : null;
-            var tv = !isMovie ? await tmdb.TvDetailsAsync(tmdbId, "en-US", ct) : null;
-            var wp = en?.WatchProviders ?? tv?.WatchProviders;
-            if (wp is null) return list;
-
-            var fresh = TmdbMapper.ExtractProviders(title.Id, wp, region);
-            if (fresh.Count > 0)
-            {
-                db.Providers.AddRange(fresh);
-                await db.SaveChangesAsync(ct);
-            }
-        }
-        catch (Exception ex)
-        {
-            log.LogWarning(ex, "Провайдери on-demand не вдалося (title_id={Id}, region={Region})", title.Id, region);
-        }
-
-        return await LoadProvidersAsync(title.Id, region, ct);
-    }
+    public Task<List<Provider>> GetProvidersAsync(Title title, string region, CancellationToken ct = default) =>
+        LoadProvidersAsync(title.Id, region, ct);
 
     private Task<List<Provider>> LoadProvidersAsync(int titleId, string region, CancellationToken ct) =>
         db.Providers.AsNoTracking()
-            .Where(p => p.TitleId == titleId && p.Region == region)
+            .Where(p => p.TitleId == titleId && p.Region == region && p.Source != WebWatchSearch.Source)
             .OrderBy(p => p.ProviderName)
             .ToListAsync(ct);
 
@@ -117,14 +90,12 @@ public sealed class TitleService(
             var uk = "uk-UA";
             var en = "en-US";
 
-            List<Provider> freshProviders = [];
             if (isMovie)
             {
                 var enD = await tmdb.MovieDetailsAsync(tmdbId, en, ct);
                 var ukD = await tmdb.MovieDetailsAsync(tmdbId, uk, ct);
                 if (enD is null) return;
                 TmdbMapper.ApplyMovieDetails(tracked, enD, ukD);
-                freshProviders = TmdbMapper.ExtractProviders(title.Id, enD.WatchProviders, "UA");
             }
             else
             {
@@ -132,18 +103,6 @@ public sealed class TitleService(
                 var ukD = await tmdb.TvDetailsAsync(tmdbId, uk, ct);
                 if (enD is null) return;
                 TmdbMapper.ApplyTvDetails(tracked, enD, ukD);
-                freshProviders = TmdbMapper.ExtractProviders(title.Id, enD.WatchProviders, "UA");
-            }
-
-            if (freshProviders.Count > 0)
-            {
-                var existing = await db.Providers
-                    .Where(p => p.TitleId == title.Id && p.Region == "UA")
-                    .Select(p => new { p.ProviderName, p.Kind })
-                    .ToListAsync(ct);
-                var known = existing.Select(p => (p.ProviderName, p.Kind)).ToHashSet();
-                db.Providers.AddRange(freshProviders
-                    .Where(p => !known.Contains((p.ProviderName, p.Kind))));
             }
 
             tracked.UpdatedAt = DateTime.UtcNow;

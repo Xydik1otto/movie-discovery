@@ -438,7 +438,7 @@ public sealed class AdminController(
     }
 
     /// <summary>
-    /// FR-14: TMDB watch/providers (JustWatch через TMDB, region UA) → watch_links(tmdb-streaming).
+    /// TMDB watch/providers (дані JustWatch): регіональні пропозиції → providers.
     /// Без TMDB_API_KEY → 400 з підказкою зареєструвати безкоштовний ключ (dormant, нічого не ламається).
     /// З ключем → 202 {queued:true, source:"tmdb-providers"}; опційний body {limit} — скільки тайтлів обробити.
     /// </summary>

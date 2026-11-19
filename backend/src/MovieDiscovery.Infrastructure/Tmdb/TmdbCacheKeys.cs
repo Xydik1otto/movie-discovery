@@ -14,7 +14,7 @@ public static class TmdbCacheKeys
     public static string Details(string type, int tmdbId, string lang) =>
         $"details:{type}:{tmdbId}:{lang}";
 
-    /// <summary>Провайдери регіону: "providers:movie:123:UA".</summary>
+    /// <summary>Кеш відповіді каталогу. Суфікс «all» — свіжий знімок усіх країн.</summary>
     public static string Providers(string type, int tmdbId, string region) =>
         $"providers:{type}:{tmdbId}:{region}";
 

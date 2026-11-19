@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -8,8 +9,15 @@ using MovieDiscovery.Core.Domain;
 using MovieDiscovery.Infrastructure.Embeddings;
 using MovieDiscovery.Infrastructure.Persistence;
 using MovieDiscovery.Infrastructure.Tmdb;
+using Npgsql;
 
 namespace MovieDiscovery.Infrastructure.Sync;
+
+public sealed class CatalogSyncOptions
+{
+    public int TmdbIntervalHours { get; set; }
+    public int TmdbPages { get; set; } = 5;
+}
 
 /// <summary>
 /// Фонова синхронізація: тягне TMDB popular + discover батчами (uk + en), upsert у titles,
@@ -17,12 +25,21 @@ namespace MovieDiscovery.Infrastructure.Sync;
 /// </summary>
 public sealed class SyncBackgroundService(
     IServiceScopeFactory scopeFactory,
+    IOptions<CatalogSyncOptions> options,
     ILogger<SyncBackgroundService> log)
     : BackgroundService
 {
+    internal const string ScheduledKind = "scheduled-popular";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var queue = scopeFactory.CreateScope().ServiceProvider.GetRequiredService<SyncQueue>();
+        using var startupScope = scopeFactory.CreateScope();
+        var queue = startupScope.ServiceProvider.GetRequiredService<SyncQueue>();
+        await Task.WhenAll(ConsumeAsync(queue, stoppingToken), ScheduleAsync(queue, stoppingToken));
+    }
+
+    private async Task ConsumeAsync(SyncQueue queue, CancellationToken stoppingToken)
+    {
         await foreach (var job in queue.ReadAllAsync(stoppingToken))
         {
             try
@@ -40,19 +57,42 @@ public sealed class SyncBackgroundService(
         }
     }
 
-    private async Task RunJobAsync(SyncJob job, CancellationToken ct)
+    private async Task ScheduleAsync(SyncQueue queue, CancellationToken ct)
+    {
+        var config = options.Value;
+        if (config.TmdbIntervalHours <= 0) return;
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        do
+        {
+            if (queue.Count == 0)
+                queue.TryEnqueue(new SyncJob(config.TmdbPages, "all", Automatic: true));
+        }
+        while (await timer.WaitForNextTickAsync(ct));
+    }
+
+    internal async Task RunJobAsync(SyncJob job, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
         var tmdb = scope.ServiceProvider.GetRequiredService<TmdbClient>();
-        var cache = scope.ServiceProvider.GetRequiredService<ICacheStore>();
         var embeddingQueue = scope.ServiceProvider.GetRequiredService<EmbeddingQueue>();
         var embedder = scope.ServiceProvider.GetRequiredService<IEmbedder>();
 
         if (!tmdb.IsConfigured)
         {
-            log.LogWarning("TMDB_API_KEY не задано — синхронізація неможлива");
+            if (!job.Automatic)
+                log.LogWarning("TMDB_API_KEY не задано — синхронізація неможлива");
             return;
+        }
+
+        var pages = Math.Clamp(job.Pages, 1, 500);
+        SyncState? scheduledState = null;
+        if (job.Automatic)
+        {
+            scheduledState = await db.SyncStates.FirstOrDefaultAsync(s => s.Source == TmdbCacheKeys.Source && s.Kind == ScheduledKind, ct);
+            if (scheduledState?.LastRunAt is { } lastRun && scheduledState.LastPages == pages &&
+                DateTime.UtcNow - lastRun < TimeSpan.FromHours(options.Value.TmdbIntervalHours))
+                return;
         }
 
         var types = job.Type switch
@@ -68,11 +108,12 @@ public sealed class SyncBackgroundService(
 
         var uk = "uk-UA";
         var en = "en-US";
-        var pages = Math.Clamp(job.Pages, 1, 500);
         var totalUpserted = 0;
+        var complete = true;
 
         foreach (var type in types)
         {
+            var seenIds = new HashSet<int>();
             for (var page = 1; page <= pages; page++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -83,16 +124,19 @@ public sealed class SyncBackgroundService(
                     var enPop = await tmdb.MoviePopularAsync(page, en, ct);
                     var ukDisc = await tmdb.DiscoverMoviesAsync(page, uk, ct);
                     var enDisc = await tmdb.DiscoverMoviesAsync(page, en, ct);
+                    complete &= enPop is not null && enDisc is not null && ukPop is not null && ukDisc is not null;
 
                     var baseSummaries = new Dictionary<int, TmdbMovieSummary>();
                     var ukSummaries = new Dictionary<int, TmdbMovieSummary>();
                     foreach (var s in Concat(enPop?.Results, enDisc?.Results))
-                        baseSummaries.TryAdd(s.Id, s);
+                        if (s.Id > 0 && seenIds.Add(s.Id)) baseSummaries.Add(s.Id, s);
                     foreach (var s in Concat(ukPop?.Results, ukDisc?.Results))
                         ukSummaries.TryAdd(s.Id, s);
 
-                    var (upserted, localIds) = await UpsertMovieSummariesAsync(db, baseSummaries, ukSummaries, ct);
-                    totalUpserted += upserted;
+                    var (localIds, identitiesComplete) = await UpsertSummariesAsync(
+                        tmdb, type, baseSummaries, ukSummaries, TmdbMapper.ApplyMovieSummary, ct);
+                    complete &= identitiesComplete;
+                    totalUpserted += localIds.Count;
                     if (ollamaAlive)
                         foreach (var localId in localIds) embeddingQueue.TryEnqueue(localId);
                 }
@@ -102,27 +146,35 @@ public sealed class SyncBackgroundService(
                     var enPop = await tmdb.TvPopularAsync(page, en, ct);
                     var ukDisc = await tmdb.DiscoverTvAsync(page, uk, ct);
                     var enDisc = await tmdb.DiscoverTvAsync(page, en, ct);
+                    complete &= enPop is not null && enDisc is not null && ukPop is not null && ukDisc is not null;
 
                     var baseSummaries = new Dictionary<int, TmdbTvSummary>();
                     var ukSummaries = new Dictionary<int, TmdbTvSummary>();
                     foreach (var s in Concat(enPop?.Results, enDisc?.Results))
-                        baseSummaries.TryAdd(s.Id, s);
+                        if (s.Id > 0 && seenIds.Add(s.Id)) baseSummaries.Add(s.Id, s);
                     foreach (var s in Concat(ukPop?.Results, ukDisc?.Results))
                         ukSummaries.TryAdd(s.Id, s);
 
-                    var (upserted, localIds) = await UpsertTvSummariesAsync(db, baseSummaries, ukSummaries, ct);
-                    totalUpserted += upserted;
+                    var (localIds, identitiesComplete) = await UpsertSummariesAsync(
+                        tmdb, type, baseSummaries, ukSummaries, TmdbMapper.ApplyTvSummary, ct);
+                    complete &= identitiesComplete;
+                    totalUpserted += localIds.Count;
                     if (ollamaAlive)
                         foreach (var localId in localIds) embeddingQueue.TryEnqueue(localId);
                 }
             }
+            complete &= seenIds.Count > 0;
         }
 
-        // sync_state upsert
-        var state = await db.SyncStates.FirstOrDefaultAsync(s => s.Source == TmdbCacheKeys.Source && s.Kind == "popular", ct);
+        if (job.Automatic && (!complete || totalUpserted == 0))
+            throw new InvalidDataException("Запланована синхронізація TMDB отримала неповну або порожню відповідь.");
+
+        var kind = job.Automatic ? ScheduledKind : "popular";
+        var state = job.Automatic ? scheduledState :
+            await db.SyncStates.FirstOrDefaultAsync(s => s.Source == TmdbCacheKeys.Source && s.Kind == kind, ct);
         if (state is null)
         {
-            state = new SyncState { Source = TmdbCacheKeys.Source, Kind = "popular" };
+            state = new SyncState { Source = TmdbCacheKeys.Source, Kind = kind };
             db.SyncStates.Add(state);
         }
         state.LastRunAt = DateTime.UtcNow;
@@ -143,63 +195,110 @@ public sealed class SyncBackgroundService(
         }
     }
 
-    /// <summary>Upsert фільмів: en — база, uk — оверлей. Повертає (кількість, локальні id).</summary>
-    private static async Task<(int Upserted, List<int> LocalIds)> UpsertMovieSummariesAsync(
-        MovieDiscoveryDbContext db,
-        Dictionary<int, TmdbMovieSummary> baseSummaries,
-        Dictionary<int, TmdbMovieSummary> ukSummaries,
-        CancellationToken ct)
+    private async Task<(List<int> LocalIds, bool IdentitiesComplete)> UpsertSummariesAsync<TSummary>(
+        TmdbClient tmdb,
+        string type,
+        Dictionary<int, TSummary> baseSummaries,
+        Dictionary<int, TSummary> ukSummaries,
+        Action<Title, TSummary, TSummary?> applySummary,
+        CancellationToken ct) where TSummary : class
     {
-        if (baseSummaries.Count == 0) return (0, []);
-        var tmdbIds = baseSummaries.Keys.ToList();
-        var existing = await db.Titles
-            .Where(t => tmdbIds.Contains(t.TmdbId!.Value) && t.Type == "movie")
-            .ToDictionaryAsync(t => t.TmdbId!.Value, ct);
+        if (baseSummaries.Count == 0) return ([], true);
 
-        var touched = new List<Title>();
+        var externalIds = new Dictionary<int, string?>();
+        foreach (var tmdbId in baseSummaries.Keys)
+        {
+            var external = await tmdb.ExternalIdsAsync(type, tmdbId, ct);
+            if (external?.Id != tmdbId || external.ImdbId is { Length: > 0 } rawId && !IsImdbId(rawId))
+            {
+                log.LogWarning("TMDB external ID unavailable for {Type} {TmdbId}", type, tmdbId);
+                continue;
+            }
+            externalIds.Add(tmdbId, string.IsNullOrEmpty(external.ImdbId) ? null : external.ImdbId);
+        }
+
+        if (externalIds.Count == 0) return ([], false);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var localIds = await SaveSummariesAsync(type, baseSummaries, ukSummaries, externalIds, applySummary, ct);
+                return (localIds, externalIds.Count == baseSummaries.Count);
+            }
+            catch (Exception ex) when (attempt < 3 && IsConcurrentCatalogWrite(ex.GetBaseException()))
+            {
+                log.LogWarning("Concurrent {Type} catalog write during TMDB sync; retrying batch ({Attempt}/3)", type, attempt);
+            }
+        }
+    }
+
+    private async Task<List<int>> SaveSummariesAsync<TSummary>(
+        string type,
+        Dictionary<int, TSummary> baseSummaries,
+        Dictionary<int, TSummary> ukSummaries,
+        Dictionary<int, string?> externalIds,
+        Action<Title, TSummary, TSummary?> applySummary,
+        CancellationToken ct) where TSummary : class
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<MovieDiscoveryDbContext>();
+        // IMDb may reclassify an unlinked row while TMDB is reading its identity.
+        await using var transaction = db.Database.IsNpgsql()
+            ? await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct)
+            : null;
+        var tmdbIds = externalIds.Keys.ToArray();
+        var byTmdbId = await db.Titles
+            .Where(t => t.TmdbId.HasValue && tmdbIds.Contains(t.TmdbId.Value) && t.Type == type)
+            .ToDictionaryAsync(t => t.TmdbId!.Value, ct);
+        var imdbIds = externalIds.Values.OfType<string>().Distinct().ToArray();
+        var byImdbId = imdbIds.Length == 0 ? new Dictionary<string, Title>(StringComparer.Ordinal) : await db.Titles
+            .Where(t => t.ImdbId != null && imdbIds.Contains(t.ImdbId))
+            .ToDictionaryAsync(t => t.ImdbId!, StringComparer.Ordinal, ct);
+
+        var touched = new List<Title>(baseSummaries.Count);
         foreach (var (tmdbId, summary) in baseSummaries)
         {
-            if (!existing.TryGetValue(tmdbId, out var title))
+            if (!externalIds.TryGetValue(tmdbId, out var imdbId)) continue;
+
+            var tmdbTitle = byTmdbId.GetValueOrDefault(tmdbId);
+            var imdbTitle = imdbId is null ? null : byImdbId.GetValueOrDefault(imdbId);
+            if ((imdbTitle is not null && (imdbTitle.Type != type ||
+                    (imdbTitle.TmdbId is { } existingId && existingId != tmdbId) ||
+                    (tmdbTitle is not null && tmdbTitle.Id != imdbTitle.Id))) ||
+                (imdbId is not null && tmdbTitle?.ImdbId is { } existingImdbId && existingImdbId != imdbId))
             {
-                title = new Title { TmdbId = tmdbId, Type = "movie", CreatedAt = DateTime.UtcNow };
-                db.Titles.Add(title);
-                existing[tmdbId] = title;
+                log.LogWarning("TMDB catalog identity conflict for {Type} {TmdbId}, IMDb {ImdbId}, TMDB row {TmdbRow}, IMDb row {ImdbRow}",
+                    type, tmdbId, imdbId, tmdbTitle?.Id, imdbTitle?.Id);
+                continue;
             }
-            TmdbMapper.ApplyMovieSummary(title, summary, ukSummaries.GetValueOrDefault(tmdbId));
+
+            var title = tmdbTitle ?? imdbTitle;
+            if (title is null)
+            {
+                // Новий запис без спільного ID може дублювати запис з IMDb.
+                if (imdbId is null) continue;
+                title = new Title { Type = type, ImdbId = imdbId };
+                db.Titles.Add(title);
+            }
+            if (imdbId is not null)
+            {
+                title.ImdbId = imdbId;
+                byImdbId[imdbId] = title;
+            }
+            applySummary(title, summary, ukSummaries.GetValueOrDefault(tmdbId));
             touched.Add(title);
         }
 
         await db.SaveChangesAsync(ct);
-        return (touched.Count, touched.Select(t => t.Id).ToList());
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return touched.Select(t => t.Id).ToList();
     }
 
-    /// <summary>Upsert серіалів: en — база, uk — оверлей. Повертає (кількість, локальні id).</summary>
-    private static async Task<(int Upserted, List<int> LocalIds)> UpsertTvSummariesAsync(
-        MovieDiscoveryDbContext db,
-        Dictionary<int, TmdbTvSummary> baseSummaries,
-        Dictionary<int, TmdbTvSummary> ukSummaries,
-        CancellationToken ct)
-    {
-        if (baseSummaries.Count == 0) return (0, []);
-        var tmdbIds = baseSummaries.Keys.ToList();
-        var existing = await db.Titles
-            .Where(t => tmdbIds.Contains(t.TmdbId!.Value) && t.Type == "series")
-            .ToDictionaryAsync(t => t.TmdbId!.Value, ct);
+    private static bool IsConcurrentCatalogWrite(Exception ex) => ex is PostgresException pg &&
+        (pg.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected ||
+         pg.SqlState == PostgresErrorCodes.UniqueViolation &&
+         pg.ConstraintName is "ix_titles_imdb_id" or "ix_titles_tmdb_id_type");
 
-        var touched = new List<Title>();
-        foreach (var (tmdbId, summary) in baseSummaries)
-        {
-            if (!existing.TryGetValue(tmdbId, out var title))
-            {
-                title = new Title { TmdbId = tmdbId, Type = "series", CreatedAt = DateTime.UtcNow };
-                db.Titles.Add(title);
-                existing[tmdbId] = title;
-            }
-            TmdbMapper.ApplyTvSummary(title, summary, ukSummaries.GetValueOrDefault(tmdbId));
-            touched.Add(title);
-        }
-
-        await db.SaveChangesAsync(ct);
-        return (touched.Count, touched.Select(t => t.Id).ToList());
-    }
+    private static bool IsImdbId(string value) => value.Length is >= 3 and <= 16 &&
+        value.StartsWith("tt", StringComparison.Ordinal) && value.AsSpan(2).IndexOfAnyExceptInRange('0', '9') < 0;
 }

@@ -1,4 +1,5 @@
 using MovieDiscovery.Core.Domain;
+using MovieDiscovery.Infrastructure.Watchability;
 
 namespace MovieDiscovery.Infrastructure.Tmdb;
 
@@ -104,30 +105,32 @@ public static class TmdbMapper
     }
 
     /// <summary>Провайдери регіону з watch/providers (дані JustWatch через TMDB).</summary>
-    public static List<Provider> ExtractProviders(int titleId, TmdbWatchProviders? wp, string region)
+    public static List<Provider> ExtractProviders(int titleId, TmdbWatchProviders? wp, string region, DateTime? updatedAt = null)
     {
         var result = new List<Provider>();
         if (wp?.Results is null || !wp.Results.TryGetValue(region, out var r) || r is null) return result;
 
-        var kinds = new (List<TmdbProviderEntry>?, string)[] { (r.Flatrate, "stream"), (r.Rent, "rent"), (r.Buy, "buy"), (r.Free, "free") };
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (list, kind) in kinds)
+        var when = updatedAt ?? DateTime.UtcNow;
+        var url = Uri.TryCreate(r.Link, UriKind.Absolute, out var link) && link.Scheme == Uri.UriSchemeHttps &&
+            link.Host is "www.themoviedb.org" or "themoviedb.org" ? link.AbsoluteUri : null;
+        var seen = new HashSet<(string Provider, string Kind)>();
+        foreach (var (list, sourceKind) in TmdbProviderKindMapper.Lists(r))
         {
-            if (list is null) continue;
-            foreach (var p in list.OrderBy(p => p.DisplayPriority))
+            var kind = WatchOptionsMerger.NormalizeKind(sourceKind);
+            foreach (var p in list)
             {
-                if (string.IsNullOrWhiteSpace(p.ProviderName)) continue;
-                var key = $"{p.ProviderName}|{kind}";
+                var providerName = p.ProviderName.Trim();
+                var key = (providerName.ToUpperInvariant(), kind);
                 if (!seen.Add(key)) continue;
                 result.Add(new Provider
                 {
                     TitleId = titleId,
-                    ProviderName = p.ProviderName.Trim(),
+                    ProviderName = providerName,
                     Kind = kind,
-                    Url = r.Link,
-                    Source = "justwatch",
+                    Url = url,
+                    Source = TmdbProvidersService.Source,
                     Region = region,
-                    UpdatedAt = DateTime.UtcNow,
+                    UpdatedAt = when,
                 });
             }
         }

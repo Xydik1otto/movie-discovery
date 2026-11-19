@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MovieDiscovery.Infrastructure.AnimeManga;
 using MovieDiscovery.Infrastructure.Imdb;
 using MovieDiscovery.Infrastructure.Watchability;
@@ -11,7 +13,7 @@ using MovieDiscovery.Infrastructure.YouTube;
 namespace MovieDiscovery.Infrastructure.Sync;
 
 /// <summary>Джоба imdb bulk sync (FR-15).</summary>
-public sealed record ImdbSyncJob(IReadOnlyList<string> MediaTypes, int? MaxRows);
+public sealed record ImdbSyncJob(IReadOnlyList<string> MediaTypes, int? MaxRows, bool Automatic = false);
 
 /// <summary>Черга imdb-синхронізації (202 → фонова джоба).</summary>
 public sealed class ImdbSyncQueue
@@ -21,7 +23,7 @@ public sealed class ImdbSyncQueue
             new System.Threading.Channels.BoundedChannelOptions(10)
             {
                 SingleReader = true,
-                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait,
             });
 
     public int Count => _channel.Reader.Count;
@@ -32,41 +34,95 @@ public sealed class ImdbSyncQueue
 }
 
 /// <summary>Джоба watchability-синків (FR-14): archive-films | sweettv | tmdb-providers.</summary>
-public sealed record WatchSyncJob(string Source, int Pages, int Limit);
+public sealed record WatchSyncJob(string Source, int Pages, int Limit, int? TitleId = null, bool Sweep = false);
 
 /// <summary>Черга watchability-синхронізацій.</summary>
-public sealed class WatchSyncQueue
+public sealed class WatchSyncQueue : IDisposable
 {
-    private readonly System.Threading.Channels.Channel<WatchSyncJob> _channel =
-        System.Threading.Channels.Channel.CreateBounded<WatchSyncJob>(
-            new System.Threading.Channels.BoundedChannelOptions(100)
+    private const int Capacity = 100;
+    private readonly System.Threading.Channels.Channel<WatchSyncJob> _channel;
+    private readonly object _gate = new();
+    private readonly HashSet<int> _pending = [];
+    private readonly MemoryCache _completed = new(new MemoryCacheOptions { SizeLimit = 8192 });
+
+    public WatchSyncQueue()
+    {
+        _channel = System.Threading.Channels.Channel.CreateBounded<WatchSyncJob>(
+            new System.Threading.Channels.BoundedChannelOptions(Capacity)
             {
                 SingleReader = true,
                 FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+            }, dropped =>
+            {
+                if (dropped.TitleId is { } id)
+                {
+                    lock (_gate) _pending.Remove(id);
+                }
             });
+    }
 
     public int Count => _channel.Reader.Count;
 
     public bool TryEnqueue(WatchSyncJob job) => _channel.Writer.TryWrite(job);
 
     public IAsyncEnumerable<WatchSyncJob> ReadAllAsync(CancellationToken ct) => _channel.Reader.ReadAllAsync(ct);
+
+    public bool TryEnqueueTitle(int titleId)
+    {
+        lock (_gate)
+        {
+            if (_pending.Contains(titleId)) return true;
+            if (_completed.TryGetValue(titleId, out _) || Count >= Capacity) return false;
+
+            _pending.Add(titleId);
+            if (TryEnqueue(new WatchSyncJob(TmdbProvidersService.Source, 0, 1, TitleId: titleId))) return true;
+            _pending.Remove(titleId);
+            return false;
+        }
+    }
+
+    internal void CompleteTitle(int titleId, bool succeeded)
+    {
+        lock (_gate)
+        {
+            _completed.Set(titleId, true, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = succeeded ? TimeSpan.FromHours(6) : TimeSpan.FromMinutes(30),
+                Size = 1,
+            });
+            _pending.Remove(titleId);
+        }
+    }
+
+    public void Dispose() => _completed.Dispose();
 }
 
 /// <summary>Фонова обробка imdb bulk-джоб (потокове завантаження + staging MERGE).</summary>
 public sealed class ImdbSyncBackgroundService(
     IServiceScopeFactory scopeFactory,
+    IOptions<ImdbOptions> options,
     ILogger<ImdbSyncBackgroundService> log)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var queue = scopeFactory.CreateScope().ServiceProvider.GetRequiredService<ImdbSyncQueue>();
+        using var startupScope = scopeFactory.CreateScope();
+        var queue = startupScope.ServiceProvider.GetRequiredService<ImdbSyncQueue>();
+        var interval = TimeSpan.FromHours(Math.Max(0, options.Value.AutoSyncIntervalHours));
+        await Task.WhenAll(ConsumeAsync(queue, interval, stoppingToken), ScheduleAsync(queue, interval, stoppingToken));
+    }
+
+    private async Task ConsumeAsync(ImdbSyncQueue queue, TimeSpan interval, CancellationToken stoppingToken)
+    {
         await foreach (var job in queue.ReadAllAsync(stoppingToken))
         {
             try
             {
                 using var scope = scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<ImdbBulkService>();
+                if (job.Automatic && !await service.IsFullSyncDueAsync(interval, stoppingToken))
+                    continue;
+
                 var result = await service.RunAsync(job.MediaTypes, job.MaxRows, stoppingToken);
                 log.LogInformation("IMDb джоба завершена: movies={Movies}, series={Series}",
                     result.Movies, result.Series);
@@ -81,6 +137,18 @@ public sealed class ImdbSyncBackgroundService(
             }
         }
     }
+
+    private static async Task ScheduleAsync(ImdbSyncQueue queue, TimeSpan interval, CancellationToken ct)
+    {
+        if (interval == TimeSpan.Zero) return;
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        do
+        {
+            if (queue.Count == 0)
+                queue.TryEnqueue(new ImdbSyncJob(["movie", "series"], MaxRows: null, Automatic: true));
+        }
+        while (await timer.WaitForNextTickAsync(ct));
+    }
 }
 
 /// <summary>Фонова обробка watchability-джоб: archive-films / sweettv / tmdb-providers.</summary>
@@ -91,9 +159,11 @@ public sealed class WatchSyncBackgroundService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var queue = scopeFactory.CreateScope().ServiceProvider.GetRequiredService<WatchSyncQueue>();
+        using var queueScope = scopeFactory.CreateScope();
+        var queue = queueScope.ServiceProvider.GetRequiredService<WatchSyncQueue>();
         await foreach (var job in queue.ReadAllAsync(stoppingToken))
         {
+            var succeeded = false;
             try
             {
                 using var scope = scopeFactory.CreateScope();
@@ -107,9 +177,17 @@ public sealed class WatchSyncBackgroundService(
                         await scope.ServiceProvider.GetRequiredService<SweetTvService>()
                             .SyncAsync(job.Pages, stoppingToken);
                         break;
-                    case "tmdb-providers":
-                        await scope.ServiceProvider.GetRequiredService<TmdbProvidersService>()
-                            .SyncAsync(job.Limit, stoppingToken);
+                    case TmdbProvidersService.Source:
+                        var providers = scope.ServiceProvider.GetRequiredService<TmdbProvidersService>();
+                        if (job.TitleId is { } id)
+                        {
+                            succeeded = await providers.SyncTitleAsync(id, stoppingToken) is not null;
+                            await Task.Delay(TmdbProvidersService.RequestSpacing, stoppingToken);
+                        }
+                        else if (job.Sweep)
+                            await providers.SweepAsync(job.Limit, stoppingToken);
+                        else
+                            await providers.SyncAsync(job.Limit, stoppingToken);
                         break;
                     default:
                         log.LogWarning("Невідоме джерело watch-sync: {Source}", job.Source);
@@ -127,6 +205,10 @@ public sealed class WatchSyncBackgroundService(
             catch (Exception ex)
             {
                 log.LogWarning(ex, "Помилка watch-синхронізації (source={Source})", job.Source);
+            }
+            finally
+            {
+                if (job.TitleId is { } id) queue.CompleteTitle(id, succeeded);
             }
         }
     }

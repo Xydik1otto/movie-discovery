@@ -33,6 +33,7 @@ import type {
   TitleDetail,
   TitleTrailersResponse,
   WatchProvider,
+  WatchSearchLink,
 } from "./types";
 import type { Lang } from "../i18n/I18nContext";
 
@@ -267,8 +268,10 @@ export async function similarBySeedsEx(
 // — злиття watch_links + providers на бекенді (WatchOptionsMerger).
 export async function getWatch(
   id: number | string,
-): Promise<{ providers: WatchProvider[] }> {
-  return request<{ providers: WatchProvider[] }>(`/api/titles/${id}/watch`);
+  signal?: AbortSignal,
+  searchCountry?: string,
+): Promise<{ providers: WatchProvider[]; discoveryPending?: boolean; searchLinks?: WatchSearchLink[] }> {
+  return request(`/api/titles/${id}/watch${qs({ searchCountry })}`, { signal });
 }
 
 export async function getLists(

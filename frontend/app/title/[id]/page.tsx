@@ -5,23 +5,16 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ApiError, guardedTitle, guardedTitleSimilar } from "@/lib/fallback";
 import { addListItem } from "@/lib/listActions";
-import { getWatch, getTitleSeries } from "@/lib/api";
+import { getTitleSeries } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatLabel, posterUrlFull } from "@/lib/constants";
-import {
-  dubGroupLabelKey,
-  groupWatchByDub,
-  hasDubMetadata,
-  qualityLabel,
-} from "@/lib/watch";
-import type { ListKind, SeriesResponse, SimilarItem, TitleDetail, WatchProvider } from "@/lib/types";
+import type { ListKind, SeriesResponse, SimilarItem, TitleDetail } from "@/lib/types";
 import { useI18n } from "@/i18n/I18nContext";
 import TitleCard from "@/components/TitleCard";
 import ApiBanner from "@/components/ApiBanner";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import RatingBadge from "@/components/RatingBadge";
-import ProviderBadge from "@/components/ProviderBadge";
 import SeriesBlock from "@/components/SeriesBlock";
 import WatchPanel from "@/components/WatchPanel";
 import TrailerSection from "@/components/TrailerSection";
@@ -45,14 +38,6 @@ export default function TitleDetailPage() {
   const [similarLoading, setSimilarLoading] = useState(true);
   const [similarUnavailable, setSimilarUnavailable] = useState(false);
 
-  const [region, setRegion] = useState("UA");
-  // Повна форма провайдерів з GET /api/titles/{id}/watch (FR-14).
-  // null = ендпоінт недоступний → fallback на компактні detail.providers.
-  const [watchList, setWatchList] = useState<WatchProvider[] | null>(null);
-  // Рішення власника (09.11): платні варіанти приховані за замовчуванням;
-  // перемикач «Показати платні» розкриває їх (стан лише клієнтський).
-  const [showPaid, setShowPaid] = useState(false);
-
   // FR: франшиза/сага з GET /api/titles/{id}/series — підтягуємо ПІСЛЯ основного
   // detail (не блокує рендер); помилка/відсутність серії — блок просто не з'явиться.
   const [series, setSeries] = useState<SeriesResponse | null>(null);
@@ -68,15 +53,6 @@ export default function TitleDetailPage() {
   useEffect(() => {
     setBackdropFailed(false);
   }, [detail?.backdropUrl]);
-
-  useEffect(() => {
-    try {
-      const r = window.localStorage.getItem("region");
-      if (r) setRegion(r);
-    } catch {
-      // default UA
-    }
-  }, []);
 
   useEffect(() => {
     if (!Number.isFinite(id)) return;
@@ -124,29 +100,6 @@ export default function TitleDetailPage() {
       alive = false;
     };
   }, [id, lang]);
-
-  // Повні провайдери перегляду (FR-14): /watch повертає рядки з region/isAvailable —
-  // фільтруємо за вибраним регіоном на клієнті ("*" = усі регіони).
-  useEffect(() => {
-    setWatchList(null);
-    setShowPaid(false); // новий тайтл — знову безкоштовний вигляд за замовчуванням
-    if (!detail || unavailable || !Number.isFinite(id)) return;
-    let alive = true;
-    getWatch(id)
-      .then((r) => {
-        if (alive) {
-          // UX-04 tri-state: ховаємо лише ПІДТВЕРДЖЕНО недоступні (unavailable);
-          // unknown (неперевірений каталог/не заявлено) лишається з чесним станом.
-          setWatchList((r.providers ?? []).filter((p) => p.availabilityStatus !== "unavailable"));
-        }
-      })
-      .catch(() => {
-        // ендпоінт недоступний/немає даних → лишається fallback з detail.providers
-      });
-    return () => {
-      alive = false;
-    };
-  }, [id, detail, unavailable]);
 
   useEffect(() => {
     if (detail) document.title = `${detail.title} · КіноНавігатор`;
@@ -252,18 +205,6 @@ export default function TitleDetailPage() {
     );
   }
 
-  // FR-14: спершу повні провайдери з /watch (уніфіковані: watch_links + providers,
-  // kind free|stream|rent|buy|ads), інакше компактні з detail (легасі/демо); регіон
-  // фільтруємо на клієнті. Рішення власника (09.11): ЗА ЗАМОВЧУВАННЯМ лише
-  // безкоштовні варіанти (ads — теж безкоштовний перегляд), платні (підписка/
-  // оренда/купівля) — за перемикачем «Показати платні».
-  const watchPool: WatchProvider[] = watchList ?? detail.providers ?? [];
-  const regionFiltered = watchPool.filter(
-    (p) => !p.region || p.region === "*" || p.region === region,
-  );
-  const isFreeish = (p: WatchProvider) => p.kind === "free" || p.kind === "ads";
-  const hasPaid = regionFiltered.some((p) => !isFreeish(p));
-  const providers = showPaid ? regionFiltered : regionFiltered.filter(isFreeish);
   const isAnime = detail.type === "anime";
   const isManga = detail.type === "manga";
   // FR: бейдж «У серії» на картках «Схожих» — лише коли група осмислена (≥2 тайтли).
@@ -538,9 +479,9 @@ export default function TitleDetailPage() {
             «Безкоштовно»), direct vs «Знайти на сервісу», ціни чесні.
             Рішення власника (09.11): за замовчуванням лише безкоштовні,
             перемикач розкриває платні (підписка/оренда/купівля). */}
-        {(regionFiltered.length > 0 || !!detail.keywords?.length) && (
+        {(!isManga || !!detail.keywords?.length) && (
           <aside className="space-y-5">
-            {regionFiltered.length > 0 && <WatchPanel providers={regionFiltered} region={region} />}
+            {!isManga && <WatchPanel key={detail.id} titleId={detail.id} initialProviders={detail.providers} online={!unavailable} />}
 
             {!!detail.keywords?.length && (
               <section className="rounded-2xl border border-line bg-panel p-4">
